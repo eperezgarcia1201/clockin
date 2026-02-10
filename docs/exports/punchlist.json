@@ -1,0 +1,22 @@
+[
+  {
+    "punchitems": "in",
+    "color": "#009900",
+    "in_or_out": 1
+  },
+  {
+    "punchitems": "out",
+    "color": "#FF0000",
+    "in_or_out": 0
+  },
+  {
+    "punchitems": "break",
+    "color": "#FF9900",
+    "in_or_out": 0
+  },
+  {
+    "punchitems": "lunch",
+    "color": "#0000FF",
+    "in_or_out": 0
+  }
+]

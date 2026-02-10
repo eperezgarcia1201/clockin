@@ -1,0 +1,66 @@
+@charset "utf-8";
+/* Css styles for milwaukee website */
+body {
+	margin-top:50px;
+	width:auto;
+	color:#000000;
+	font-size:17px;
+	font-family:'proxima-nova','Raleway',Helvetica, sans-serif;
+	background:url(../images/logos/tile.jpg) top left repeat;
+}
+/*FORM*/
+#form-main form  {
+	background: rgba(5, 0, 221, 0.5);
+	text-align:center;
+	border-radius: 10px;
+	box-shadow: 10px 10px 10px #01072e;
+}
+.form-horizontal .control-label.text-left{
+    text-align: left;
+}
+.navbar {
+   border-bottom: none;
+   	color:#fff;
+   font-weight:bold;
+   font-family:"Lucida Grande", "Lucida Sans Unicode", "Lucida Sans", "DejaVu Sans", Verdana, sans-serif;
+   overflow:hidden;		
+}
+.navbar-inverse{
+		background: rgba(23, 22, 22, 0.5) none repeat scroll 0% 0%;
+		box-shadow: 5px 5px 20px -10px;
+		border-radius: 0px 0px 4px 4px;
+		border-color: rgb(158, 93, 88);
+}
+.navbar li:hover {
+	background-color:#070707;
+	color:rgb(0, 51, 0);
+	transition:all 0.4s ease 0s;
+	border-bottom:1px solid #387804;
+	border-radius:20px;
+}
+@media screen and (max-width : 991px) {
+
+		#display-phone{
+			font-size:3px;
+			}
+		#employee{
+			font-size:3px;
+			}
+@media screen and (max-width : 768px){
+
+		#display-phone{
+			font-size:3px;
+			}
+		#employee{
+			font-size:3px;
+			}
+}
+@media screen and (max-width : 568px ){
+
+	#display-phone{
+			font-size:3px;
+			}
+
+
+
+	}

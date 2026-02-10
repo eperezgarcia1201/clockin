@@ -1,0 +1,28 @@
+[
+  {
+    "empfullname": "Elmer ",
+    "tstamp": 1473385732,
+    "employee_passwd": "xynhyrsnDvkYw",
+    "displayname": "Server ",
+    "email": "Admin@loc.com",
+    "groups": "MANAGERS",
+    "office": "MAYA OF DE PERE",
+    "admin": 0,
+    "reports": 0,
+    "time_admin": 0,
+    "disabled": 0
+  },
+  {
+    "empfullname": "Test employee ",
+    "tstamp": 1473384891,
+    "employee_passwd": "xyNuGzVs9aAi.",
+    "displayname": "Test ",
+    "email": "admin@localhost.com",
+    "groups": "SERVERS",
+    "office": "MAYA OF DE PERE",
+    "admin": 0,
+    "reports": 0,
+    "time_admin": 0,
+    "disabled": 0
+  }
+]

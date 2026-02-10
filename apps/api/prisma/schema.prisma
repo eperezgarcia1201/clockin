@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum PunchType {
+  IN
+  OUT
+  BREAK
+  LUNCH
+}
+
+model Tenant {
+  id        String       @id @default(cuid())
+  authOrgId String       @unique
+  name      String
+  slug      String       @unique
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  memberships Membership[]
+  locations   Location[]
+  offices     Office[]
+  groups      Group[]
+  employees   Employee[]
+  statuses    PunchStatus[]
+  punches     Punch[]
+  employeePunches EmployeePunch[]
+  timeEntries TimeEntry[]
+  settings   TenantSettings?
+}
+
+model User {
+  id         String       @id @default(cuid())
+  authUserId String       @unique
+  email      String       @unique
+  name       String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  memberships Membership[]
+  punches     Punch[]
+  timeEntries TimeEntry[]
+}
+
+model Membership {
+  id        String            @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      Role
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime          @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  address   String?
+  city      String?
+  state     String?
+  postal    String?
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+model Office {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  groups    Group[]
+  employees Employee[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Group {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  officeId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  office    Office?  @relation(fields: [officeId], references: [id])
+  employees Employee[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Employee {
+  id          String   @id @default(cuid())
+  tenantId    String
+  fullName    String
+  displayName String?
+  email       String?
+  pinHash     String?
+  hourlyRate  Float?
+  officeId    String?
+  groupId     String?
+  isAdmin     Boolean  @default(false)
+  isTimeAdmin Boolean  @default(false)
+  isReports   Boolean  @default(false)
+  disabled    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  office Office? @relation(fields: [officeId], references: [id])
+  group  Group?  @relation(fields: [groupId], references: [id])
+  punches EmployeePunch[]
+
+  @@index([tenantId])
+}
+
+model EmployeePunch {
+  id         String    @id @default(cuid())
+  tenantId   String
+  employeeId String
+  type       PunchType
+  occurredAt DateTime
+  notes      String?
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([tenantId, employeeId, occurredAt])
+}
+
+model PunchStatus {
+  id        String   @id @default(cuid())
+  tenantId  String
+  label     String
+  color     String
+  isIn      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, label])
+  @@index([tenantId])
+}
+
+model Punch {
+  id          String    @id @default(cuid())
+  tenantId    String
+  userId      String
+  type        PunchType
+  occurredAt  DateTime
+  notes       String?
+  ipAddress   String?
+  latitude    Float?
+  longitude   Float?
+  deviceLabel String?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, userId])
+  @@index([tenantId, occurredAt])
+}
+
+model TimeEntry {
+  id              String   @id @default(cuid())
+  tenantId        String
+  userId          String
+  startedAt       DateTime
+  endedAt         DateTime?
+  durationMinutes Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, userId])
+  @@index([tenantId, startedAt])
+}
+
+model TenantSettings {
+  id                  String   @id @default(cuid())
+  tenantId            String   @unique
+  timezone            String
+  roundingMinutes     Int
+  requirePin          Boolean  @default(true)
+  ipRestrictions      String?
+  reportsEnabled      Boolean  @default(true)
+  allowManualTimeEdits Boolean @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}

@@ -1,0 +1,51 @@
+[
+  {
+    "fullname": "Test employee",
+    "inout": "out",
+    "timestamp": 1473384891,
+    "notes": "",
+    "ipaddress": "66.87.76.64"
+  },
+  {
+    "fullname": "Test employee",
+    "inout": "in",
+    "timestamp": 1473381025,
+    "notes": "",
+    "ipaddress": "66.87.76.64"
+  },
+  {
+    "fullname": "Test employee",
+    "inout": "in",
+    "timestamp": 1473380755,
+    "notes": "",
+    "ipaddress": "66.87.76.64"
+  },
+  {
+    "fullname": "Test employee",
+    "inout": "break",
+    "timestamp": 1473380793,
+    "notes": "voy a salir solo una hora ",
+    "ipaddress": "66.87.76.64"
+  },
+  {
+    "fullname": "Elmer",
+    "inout": "in",
+    "timestamp": 1473385102,
+    "notes": "",
+    "ipaddress": "66.87.76.64"
+  },
+  {
+    "fullname": "Elmer",
+    "inout": "out",
+    "timestamp": 1473385249,
+    "notes": "",
+    "ipaddress": "66.87.76.64"
+  },
+  {
+    "fullname": "Elmer",
+    "inout": "in",
+    "timestamp": 1473385732,
+    "notes": "",
+    "ipaddress": "45.52.149.31"
+  }
+]

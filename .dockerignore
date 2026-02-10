@@ -1,0 +1,10 @@
+node_modules
+apps/**/node_modules
+apps/**/.next
+apps/**/dist
+apps/**/web-build
+apps/**/.expo
+apps/**/.expo-shared
+coverage
+.DS_Store
+.git
