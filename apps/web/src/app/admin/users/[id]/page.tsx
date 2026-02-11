@@ -66,7 +66,7 @@ const toLocalInput = (value: string | Date) => {
 export default function EditUser() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const employeeId = params?.id as string;
+  const [employeeId, setEmployeeId] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm);
   const [offices, setOffices] = useState<Office[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -77,6 +77,25 @@ export default function EditUser() {
   const [clockOutAt, setClockOutAt] = useState("");
   const [clockOutNotes, setClockOutNotes] = useState("Manual clock-out");
   const [timeStatus, setTimeStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    const idParam = params?.id;
+    let resolved = "";
+    if (typeof idParam === "string") {
+      resolved = idParam;
+    } else if (Array.isArray(idParam)) {
+      resolved = idParam[0] || "";
+    }
+
+    if (!resolved && typeof window !== "undefined") {
+      const match = window.location.pathname.match(/\/admin\/users\/([^/]+)/);
+      if (match) {
+        resolved = match[1];
+      }
+    }
+
+    setEmployeeId(resolved);
+  }, [params]);
 
   useEffect(() => {
     if (!employeeId) return;
@@ -105,6 +124,8 @@ export default function EditUser() {
           isReports: employee.isReports,
           disabled: employee.disabled,
         });
+      } else {
+        setStatus(`Unable to load user (status ${employeeRes.status}).`);
       }
 
       if (officesRes.ok) {
