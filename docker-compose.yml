@@ -35,6 +35,9 @@ services:
       - /app/apps/api/node_modules
     depends_on:
       - db
+    networks:
+      - default
+      - proxy
     ports:
       - "4000:4000"
 
@@ -66,8 +69,14 @@ services:
       - /app/apps/web/node_modules
     depends_on:
       - api
+    networks:
+      - default
+      - proxy
     ports:
       - "3000:3000"
 
 volumes:
   db_data:
+networks:
+  proxy:
+    external: true
