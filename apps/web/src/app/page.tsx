@@ -24,7 +24,7 @@ export default function Home() {
   const [loadingEmployees, setLoadingEmployees] = useState(true);
   const [recentPunches, setRecentPunches] = useState<PunchRow[]>([]);
   const [loadingPunches, setLoadingPunches] = useState(true);
-  const [selectedEmployee, setSelectedEmployee] = useState("");
+  const [employeeName, setEmployeeName] = useState("");
   const [punchType, setPunchType] = useState("IN");
   const [pin, setPin] = useState("");
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
@@ -70,6 +70,16 @@ export default function Home() {
     [employees],
   );
 
+  const selectedEmployee = useMemo(() => {
+    const needle = employeeName.trim().toLowerCase();
+    if (!needle) return null;
+    return (
+      activeEmployees.find(
+        (employee) => employee.name.trim().toLowerCase() === needle,
+      ) || null
+    );
+  }, [employeeName, activeEmployees]);
+
   const activePunches = useMemo(
     () =>
       recentPunches.filter(
@@ -81,8 +91,13 @@ export default function Home() {
   );
 
   const handlePunch = async () => {
+    if (!employeeName.trim()) {
+      setSubmitStatus("Please enter your username.");
+      return;
+    }
+
     if (!selectedEmployee) {
-      setSubmitStatus("Please select an employee.");
+      setSubmitStatus("Employee not found.");
       return;
     }
 
@@ -94,7 +109,7 @@ export default function Home() {
         payload.pin = pin;
       }
       const response = await fetch(
-        `${apiBase}/employee-punches/${selectedEmployee}`,
+        `${apiBase}/employee-punches/${selectedEmployee.id}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -162,25 +177,14 @@ export default function Home() {
                 </label>
                 <div className="input-row">
                   <i className="fa-solid fa-user" aria-hidden="true" />
-                  <select
+                  <input
                     id="name"
-                    aria-label="Employee name"
-                    value={selectedEmployee}
-                    onChange={(event) => setSelectedEmployee(event.target.value)}
-                  >
-                    {loadingEmployees ? (
-                      <option>Loading...</option>
-                    ) : (
-                      <>
-                        <option value="">Select employee</option>
-                        {activeEmployees.map((employee) => (
-                          <option key={employee.id} value={employee.id}>
-                            {employee.name}
-                          </option>
-                        ))}
-                      </>
-                    )}
-                  </select>
+                    aria-label="Employee username"
+                    placeholder={loadingEmployees ? "Loading employees..." : "Enter username"}
+                    value={employeeName}
+                    onChange={(event) => setEmployeeName(event.target.value)}
+                    autoComplete="off"
+                  />
                 </div>
               </div>
 
