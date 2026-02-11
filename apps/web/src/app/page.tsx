@@ -312,6 +312,34 @@ export default function Home() {
           </div>
           <div className="table-footer">Coded by Elmer Perez</div>
         </section>
+
+        <section className="mobile-apps">
+          <div>
+            <h3>Mobile Apps</h3>
+            <p>
+              Employees can clock in from mobile. Admins receive punch alerts and
+              break compliance notifications.
+            </p>
+          </div>
+          <div className="mobile-app-grid">
+            <div className="mobile-app-card">
+              <h4>Employee App</h4>
+              <span>Clock in/out, breaks, and view recent punches.</span>
+              <div className="mobile-app-actions">
+                <span className="mobile-app-button">iOS (Expo)</span>
+                <span className="mobile-app-button">Android (Expo)</span>
+              </div>
+            </div>
+            <div className="mobile-app-card">
+              <h4>Admin App</h4>
+              <span>Get alerts for punches and 6-hour no-break warnings.</span>
+              <div className="mobile-app-actions">
+                <span className="mobile-app-button">Admin Alerts</span>
+                <span className="mobile-app-button">Live Refresh</span>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
   );

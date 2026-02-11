@@ -11,11 +11,22 @@ out
 
 # Nest / TS build
 /dist
+apps/api/dist
+*.tsbuildinfo
 
 # Expo / React Native
 .expo
 .expo-shared
 web-build
+/android
+/ios
+/App.tsx
+/app.json
+/tsconfig.json
+apps/mobile-admin/android
+apps/mobile-admin/ios
+apps/mobile/android
+apps/mobile/ios
 
 # Env
 .env

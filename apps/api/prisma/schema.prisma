@@ -27,6 +27,14 @@ enum PunchType {
   LUNCH
 }
 
+enum NotificationType {
+  PUNCH_IN
+  PUNCH_OUT
+  PUNCH_BREAK
+  PUNCH_LUNCH
+  NO_BREAK_6H
+}
+
 model Tenant {
   id        String       @id @default(cuid())
   authOrgId String       @unique
@@ -44,6 +52,9 @@ model Tenant {
   punches     Punch[]
   employeePunches EmployeePunch[]
   timeEntries TimeEntry[]
+  notifications Notification[]
+  adminDevices AdminDevice[]
+  employeeSchedules EmployeeSchedule[]
   settings   TenantSettings?
 }
 
@@ -146,6 +157,56 @@ model Employee {
   office Office? @relation(fields: [officeId], references: [id])
   group  Group?  @relation(fields: [groupId], references: [id])
   punches EmployeePunch[]
+  notifications Notification[]
+  schedules EmployeeSchedule[]
+
+  @@index([tenantId])
+}
+
+model EmployeeSchedule {
+  id         String   @id @default(cuid())
+  tenantId   String
+  employeeId String
+  weekday    Int
+  startTime  String?
+  endTime    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, weekday])
+  @@index([tenantId, employeeId])
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  tenantId   String
+  employeeId String?
+  type       NotificationType
+  message    String
+  metadata   Json?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  employee Employee? @relation(fields: [employeeId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, employeeId])
+}
+
+model AdminDevice {
+  id            String   @id @default(cuid())
+  tenantId      String
+  expoPushToken String   @unique
+  label         String?
+  platform      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
 }

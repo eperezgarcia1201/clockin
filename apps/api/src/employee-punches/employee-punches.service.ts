@@ -6,12 +6,14 @@ import type { CreateEmployeePunchDto } from "./dto/create-employee-punch.dto";
 import { compare } from "bcryptjs";
 import type { ManualEmployeePunchDto } from "./dto/manual-employee-punch.dto";
 import type { UpdateEmployeePunchDto } from "./dto/update-employee-punch.dto";
+import { NotificationsService } from "../notifications/notifications.service";
 
 @Injectable()
 export class EmployeePunchesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenancy: TenancyService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async createPunch(
@@ -33,6 +35,11 @@ export class EmployeePunchesService {
     }
 
     const requirePin = settings?.requirePin ?? true;
+    const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
+
+    if (dto.type === "IN") {
+      await this.enforceSchedule(tenant.id, employee.id, occurredAt, settings?.timezone);
+    }
 
     if (requirePin && employee.pinHash) {
       if (!dto.pin) {
@@ -44,9 +51,7 @@ export class EmployeePunchesService {
       }
     }
 
-    const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
-
-    return this.prisma.employeePunch.create({
+    const punch = await this.prisma.employeePunch.create({
       data: {
         tenantId: tenant.id,
         employeeId: employee.id,
@@ -56,6 +61,10 @@ export class EmployeePunchesService {
         ipAddress: dto.ipAddress,
       },
     });
+
+    await this.notifications.notifyPunch(tenant.id, employee, dto.type, occurredAt);
+
+    return punch;
   }
 
   async getRecent(authUser: AuthUser) {
@@ -171,7 +180,7 @@ export class EmployeePunchesService {
       throw new NotFoundException("Employee not found");
     }
 
-    return this.prisma.employeePunch.create({
+    const punch = await this.prisma.employeePunch.create({
       data: {
         tenantId: tenant.id,
         employeeId: employee.id,
@@ -180,6 +189,15 @@ export class EmployeePunchesService {
         notes: dto.notes,
       },
     });
+
+    await this.notifications.notifyPunch(
+      tenant.id,
+      employee,
+      dto.type,
+      new Date(dto.occurredAt),
+    );
+
+    return punch;
   }
 
   async updateRecord(
@@ -234,5 +252,81 @@ export class EmployeePunchesService {
 
     await this.prisma.employeePunch.delete({ where: { id: existing.id } });
     return { ok: true };
+  }
+
+  private getLocalDayInfo(date: Date, timeZone?: string) {
+    const fallbackZone = timeZone || "UTC";
+    try {
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: fallbackZone,
+        weekday: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      const parts = formatter.formatToParts(date);
+      const weekday = parts.find((part) => part.type === "weekday")?.value || "Sun";
+      const hour = Number(parts.find((part) => part.type === "hour")?.value || "0");
+      const minute = Number(parts.find((part) => part.type === "minute")?.value || "0");
+      const dayIndex = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
+        weekday,
+      );
+      return {
+        weekday: dayIndex === -1 ? date.getUTCDay() : dayIndex,
+        minutes: hour * 60 + minute,
+      };
+    } catch {
+      return { weekday: date.getUTCDay(), minutes: date.getUTCHours() * 60 + date.getUTCMinutes() };
+    }
+  }
+
+  private parseTime(value?: string | null) {
+    if (!value) return null;
+    const [hours, minutes] = value.split(":").map((part) => Number(part));
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+    return hours * 60 + minutes;
+  }
+
+  private async enforceSchedule(
+    tenantId: string,
+    employeeId: string,
+    occurredAt: Date,
+    timeZone?: string,
+  ) {
+    const scheduleDay = this.getLocalDayInfo(occurredAt, timeZone);
+    const scheduleForDay = await this.prisma.employeeSchedule.findFirst({
+      where: {
+        tenantId,
+        employeeId,
+        weekday: scheduleDay.weekday,
+      },
+    });
+
+    if (!scheduleForDay) {
+      const hasAnySchedule = await this.prisma.employeeSchedule.findFirst({
+        where: { tenantId, employeeId },
+        select: { id: true },
+      });
+      if (hasAnySchedule) {
+        throw new UnauthorizedException(
+          "You are not scheduled to work today.",
+        );
+      }
+      return;
+    }
+
+    const startMinutes = this.parseTime(scheduleForDay.startTime);
+    const endMinutes = this.parseTime(scheduleForDay.endTime);
+    if (startMinutes === null || endMinutes === null) {
+      return;
+    }
+    if (endMinutes <= startMinutes) {
+      return;
+    }
+    if (scheduleDay.minutes < startMinutes || scheduleDay.minutes > endMinutes) {
+      throw new UnauthorizedException(
+        "You are outside your scheduled hours.",
+      );
+    }
   }
 }

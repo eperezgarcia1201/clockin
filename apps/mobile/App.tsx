@@ -1,5 +1,6 @@
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   SafeAreaView,
   ScrollView,
@@ -10,111 +11,254 @@ import {
   View,
 } from "react-native";
 
-const recentPunches = [
-  {
-    name: "Alan Jimenez",
-    status: "OUT",
-    time: "9:05 PM",
-    date: "Feb 8, 2026",
-  },
-  {
-    name: "Cris Hernandez",
-    status: "OUT",
-    time: "8:18 PM",
-    date: "Feb 8, 2026",
-  },
-  {
-    name: "Delfino Maciel",
-    status: "IN",
-    time: "7:53 PM",
-    date: "Feb 8, 2026",
-  },
-  {
-    name: "Isabel Rosas",
-    status: "IN",
-    time: "6:29 PM",
-    date: "Feb 8, 2026",
-  },
-];
+const apiBase = (process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000/api").replace(
+  /\/$/,
+  "",
+);
+
+const devHeaders = {
+  "x-dev-user-id": "dev-user",
+  "x-dev-tenant-id": "dev-tenant",
+  "x-dev-email": "dev@clockin.local",
+  "x-dev-name": "Dev User",
+};
+
+type Employee = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+const actions = ["IN", "OUT", "BREAK", "LUNCH"] as const;
 
 export default function App() {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeeName, setEmployeeName] = useState("");
+  const [pin, setPin] = useState("");
+  const [punchType, setPunchType] = useState<(typeof actions)[number]>("IN");
+  const [status, setStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [lastPunch, setLastPunch] = useState<{
+    name: string;
+    type: string;
+    occurredAt: Date;
+  } | null>(null);
+
+  const activeEmployees = useMemo(
+    () => employees.filter((emp) => emp.active),
+    [employees],
+  );
+
+  const matchedEmployee = useMemo(() => {
+    const normalized = employeeName.trim().toLowerCase();
+    if (!normalized) return null;
+    const exact = activeEmployees.find(
+      (emp) => emp.name.toLowerCase() === normalized,
+    );
+    if (exact) return exact;
+    const partialMatches = activeEmployees.filter((emp) =>
+      emp.name.toLowerCase().includes(normalized),
+    );
+    if (partialMatches.length === 1) return partialMatches[0];
+    return null;
+  }, [employeeName, activeEmployees]);
+
+  const fetchJson = useCallback(async (path: string, options?: RequestInit) => {
+    const response = await fetch(`${apiBase}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...devHeaders,
+        ...(options?.headers || {}),
+      },
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message || data?.error || "Request failed");
+    }
+    return response.json();
+  }, []);
+
+  const loadEmployees = useCallback(async () => {
+    try {
+      const data = (await fetchJson("/employees")) as { employees: Employee[] };
+      setEmployees(data.employees || []);
+    } catch {
+      // ignore
+    }
+  }, [fetchJson]);
+
+  useEffect(() => {
+    loadEmployees();
+  }, [loadEmployees]);
+
+  const handlePunch = async () => {
+    if (!employeeName.trim()) {
+      setStatus("Enter a username first.");
+      return;
+    }
+    if (!matchedEmployee) {
+      setStatus("Employee not found. Use the full name.");
+      return;
+    }
+
+    setLoading(true);
+    setStatus(null);
+    try {
+      await fetchJson(`/employee-punches/${matchedEmployee.id}`, {
+        method: "POST",
+        body: JSON.stringify({ type: punchType, pin: pin || undefined }),
+      });
+      setStatus("Punch recorded.");
+      setLastPunch({
+        name: matchedEmployee.name,
+        type: punchType,
+        occurredAt: new Date(),
+      });
+      setPin("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Punch failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <LinearGradient colors={["#0b1214", "#102328", "#1b3a3e"]} style={styles.gradient}>
+    <LinearGradient colors={["#0b101a", "#111c2b", "#151f30"]} style={styles.gradient}>
       <SafeAreaView style={styles.safe}>
         <ScrollView contentContainerStyle={styles.container}>
           <View style={styles.brandRow}>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>CI</Text>
+              <Text style={styles.badgeText}>WS</Text>
             </View>
             <View>
               <Text style={styles.title}>ClockIn</Text>
-              <Text style={styles.subtitle}>
-                Secure SSO time tracking for multi-site teams.
-              </Text>
+              <Text style={styles.subtitle}>Workforce Time Tracking</Text>
             </View>
           </View>
-
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Clock Station</Text>
-              <Text style={styles.pill}>Downtown • Kiosk 02</Text>
-            </View>
-
-            <Text style={styles.label}>Employee</Text>
-            <TextInput style={styles.input} placeholder="Choose a name" />
-
-            <Text style={styles.label}>PIN</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••"
-              secureTextEntry
-            />
-
-            <Text style={styles.label}>Action</Text>
-            <TextInput style={styles.input} placeholder="Clock In" />
-
-            <View style={styles.actions}>
-              <TouchableOpacity style={[styles.button, styles.primary]}>
-                <Text style={styles.primaryText}>Confirm Punch</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.button, styles.ghost]}>
-                <Text style={styles.ghostText}>Use Face ID</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.metrics}>
-              <View style={styles.metricTile}>
-                <Text style={styles.metricLabel}>On Shift</Text>
-                <Text style={styles.metricValue}>18</Text>
-              </View>
-              <View style={styles.metricTile}>
-                <Text style={styles.metricLabel}>Pending</Text>
-                <Text style={styles.metricValue}>5</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.list}>
-            <Text style={styles.listTitle}>Recent Punches</Text>
-            {recentPunches.map((item) => (
-              <View key={`${item.name}-${item.time}`} style={styles.listRow}>
-                <View>
-                  <Text style={styles.listName}>{item.name}</Text>
-                  <Text style={styles.listDate}>{item.date}</Text>
+          <>
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>Clock Station</Text>
+                <View style={styles.systemRow}>
+                  <View style={styles.systemDot} />
+                  <Text style={styles.systemText}>System Online</Text>
                 </View>
-                <View style={styles.listStatus}>
-                  <Text
-                    style={
-                      item.status === "IN" ? styles.statusIn : styles.statusOut
-                    }
-                  >
-                    {item.status}
+              </View>
+
+              <Text style={styles.label}>Username</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter full name"
+                value={employeeName}
+                onChangeText={setEmployeeName}
+                autoCorrect={false}
+                autoCapitalize="words"
+              />
+              {employeeName.trim().length > 0 && (
+                <View style={styles.verifyRow}>
+                  <View
+                    style={[
+                      styles.verifyDot,
+                      matchedEmployee ? styles.verifyDotOn : styles.verifyDotOff,
+                    ]}
+                  />
+                  <Text style={styles.verifyText}>
+                    {matchedEmployee
+                      ? `${matchedEmployee.name} (Verified)`
+                      : "No exact match yet."}
                   </Text>
-                  <Text style={styles.listTime}>{item.time}</Text>
+                </View>
+              )}
+
+              <Text style={styles.label}>PIN</Text>
+              <View style={styles.pinRow}>
+                <TextInput
+                  style={[styles.input, styles.pinInput]}
+                  placeholder="••••"
+                  secureTextEntry
+                  keyboardType="number-pad"
+                  value={pin}
+                  onChangeText={setPin}
+                  maxLength={4}
+                />
+                <View style={styles.pinIcon}>
+                  <Text style={styles.pinIconText}>123</Text>
                 </View>
               </View>
-            ))}
-          </View>
+
+              <Text style={styles.label}>Action</Text>
+              <View style={styles.actionRow}>
+                {actions.map((action) => (
+                  <TouchableOpacity
+                    key={action}
+                    style={
+                      punchType === action
+                        ? styles.actionButtonActive
+                        : styles.actionButton
+                    }
+                    onPress={() => setPunchType(action)}
+                  >
+                    <Text
+                      style={
+                        punchType === action
+                          ? styles.actionTextActive
+                          : styles.actionText
+                      }
+                    >
+                      {action}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {status && <Text style={styles.statusText}>{status}</Text>}
+
+              <TouchableOpacity
+                style={[styles.button, styles.primary]}
+                onPress={handlePunch}
+                disabled={loading}
+              >
+                <Text style={styles.primaryText}>
+                  {loading ? "Saving..." : "Confirm Punch →"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {lastPunch && (
+              <View style={styles.deviceCard}>
+                <Text style={styles.deviceTitle}>This Device</Text>
+                <View style={styles.deviceRow}>
+                  <View>
+                    <Text style={styles.deviceName}>{lastPunch.name}</Text>
+                    <Text style={styles.deviceDate}>
+                      {lastPunch.occurredAt.toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <View style={styles.deviceStatus}>
+                    <View style={styles.devicePill}>
+                      <View
+                        style={[
+                          styles.deviceDot,
+                          lastPunch.type === "IN"
+                            ? styles.deviceDotOn
+                            : styles.deviceDotOff,
+                        ]}
+                      />
+                      <Text style={styles.devicePillText}>{lastPunch.type}</Text>
+                    </View>
+                    <Text style={styles.deviceTime}>
+                      {lastPunch.occurredAt.toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+            <Text style={styles.footer}>Powered by Websys Workforce</Text>
+          </>
         </ScrollView>
         <StatusBar style="light" />
       </SafeAreaView>
@@ -130,8 +274,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   container: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 22,
+    paddingBottom: 48,
     gap: 20,
   },
   brandRow: {
@@ -140,15 +284,19 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   badge: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: "#ff8a3d",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
   },
   badgeText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     color: "#1a1a1a",
   },
@@ -158,14 +306,20 @@ const styles = StyleSheet.create({
     color: "#f9f4ea",
   },
   subtitle: {
-    color: "rgba(249, 244, 234, 0.7)",
+    color: "rgba(232, 238, 249, 0.6)",
     marginTop: 4,
     fontSize: 13,
   },
   card: {
-    backgroundColor: "#f6f1e7",
-    borderRadius: 22,
-    padding: 20,
+    backgroundColor: "#f4ece2",
+    borderRadius: 26,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.4)",
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
   },
   cardHeader: {
     flexDirection: "row",
@@ -176,15 +330,26 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: "#1f1a16",
   },
-  pill: {
-    backgroundColor: "#efe6d6",
+  systemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.7)",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
+  },
+  systemDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: "#43b36d",
+  },
+  systemText: {
     fontSize: 11,
-    color: "#5c5b56",
+    color: "#3b3b3b",
   },
   label: {
     fontSize: 11,
@@ -195,93 +360,167 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   input: {
-    backgroundColor: "#fffaf2",
-    borderRadius: 12,
+    backgroundColor: "#fffaf6",
+    borderRadius: 14,
     paddingHorizontal: 14,
-    height: 44,
+    height: 46,
     borderWidth: 1,
-    borderColor: "#ded2bf",
+    borderColor: "rgba(128, 110, 88, 0.2)",
   },
-  actions: {
-    marginTop: 16,
+  pinRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10,
+  },
+  pinInput: {
+    flex: 1,
+  },
+  pinIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: "#f0e6d8",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(128, 110, 88, 0.2)",
+  },
+  pinIconText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#5c5b56",
+  },
+  verifyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+  },
+  verifyDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 999,
+  },
+  verifyDotOn: {
+    backgroundColor: "#43b36d",
+  },
+  verifyDotOff: {
+    backgroundColor: "#c2c2c2",
+  },
+  verifyText: {
+    fontSize: 12,
+    color: "#5c5b56",
+  },
+  actionRow: {
+    flexDirection: "row",
+    gap: 8,
+    flexWrap: "wrap",
+    marginBottom: 6,
+  },
+  actionButton: {
+    borderWidth: 1,
+    borderColor: "rgba(128, 110, 88, 0.3)",
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+  },
+  actionButtonActive: {
+    borderWidth: 1,
+    borderColor: "#ff8a3d",
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    backgroundColor: "#ff8a3d",
+  },
+  actionText: {
+    color: "#1a1a1a",
+    fontSize: 12,
+  },
+  actionTextActive: {
+    color: "#1a1a1a",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  statusText: {
+    marginTop: 10,
+    color: "#5c5b56",
   },
   button: {
     height: 46,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: 14,
   },
   primary: {
     backgroundColor: "#ff8a3d",
   },
-  ghost: {
-    backgroundColor: "#fffaf2",
-    borderWidth: 1,
-    borderColor: "#e2d4be",
-  },
   primaryText: {
     fontWeight: "700",
     color: "#1a1a1a",
+    fontSize: 15,
   },
-  ghostText: {
-    color: "#1a1a1a",
-  },
-  metrics: {
-    marginTop: 16,
-    flexDirection: "row",
-    gap: 12,
-  },
-  metricTile: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-    borderRadius: 14,
-    padding: 12,
-  },
-  metricLabel: {
-    fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    color: "#5c5b56",
-  },
-  metricValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1a1a1a",
-    marginTop: 4,
-  },
-  list: {
-    backgroundColor: "rgba(246, 241, 231, 0.12)",
-    borderRadius: 22,
+  deviceCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderRadius: 20,
     padding: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
   },
-  listTitle: {
+  deviceTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: "#f9f4ea",
-    marginBottom: 12,
+    marginBottom: 10,
   },
-  listRow: {
+  deviceRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.12)",
   },
-  listName: {
+  deviceName: {
     color: "#f9f4ea",
     fontWeight: "600",
+    fontSize: 15,
   },
-  listDate: {
+  deviceDate: {
     color: "rgba(249, 244, 234, 0.7)",
     fontSize: 12,
-    marginTop: 2,
+    marginTop: 4,
   },
-  listStatus: {
+  deviceStatus: {
     alignItems: "flex-end",
+  },
+  devicePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  devicePillText: {
+    color: "#f9f4ea",
+    fontWeight: "700",
+    fontSize: 11,
+  },
+  deviceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  deviceDotOn: {
+    backgroundColor: "#43b36d",
+  },
+  deviceDotOff: {
+    backgroundColor: "#f97316",
+  },
+  deviceTime: {
+    color: "rgba(249, 244, 234, 0.7)",
+    fontSize: 12,
+    marginTop: 6,
   },
   statusIn: {
     color: "#baf2e7",
@@ -291,9 +530,10 @@ const styles = StyleSheet.create({
     color: "#ffd0c2",
     fontWeight: "700",
   },
-  listTime: {
-    color: "rgba(249, 244, 234, 0.7)",
+  footer: {
+    textAlign: "center",
+    color: "rgba(249, 244, 234, 0.45)",
     fontSize: 12,
-    marginTop: 2,
+    marginTop: 16,
   },
 });

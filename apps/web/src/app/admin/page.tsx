@@ -28,6 +28,8 @@ export default function AdminDashboard() {
     reports: 0,
   });
   const [hoursReport, setHoursReport] = useState<HoursReport | null>(null);
+  const [monthOffset, setMonthOffset] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
 
   const chartRows = useMemo(() => {
     const rows =
@@ -44,6 +46,44 @@ export default function AdminDashboard() {
     const values = chartRows.map((row) => row.hours);
     return Math.max(1, ...values);
   }, [chartRows]);
+
+  const calendar = useMemo(() => {
+    const base = hydrated ? new Date() : new Date(2024, 0, 1);
+    const viewDate = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1);
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = hydrated ? new Date() : null;
+    const isCurrentMonth =
+      !!today && today.getFullYear() === year && today.getMonth() === month;
+
+    const days: {
+      day: number;
+      isToday: boolean;
+    }[] = [];
+    for (let i = 0; i < firstDay; i += 1) {
+      days.push({ day: 0, isToday: false });
+    }
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      days.push({
+        day,
+        isToday: isCurrentMonth && day === today?.getDate(),
+      });
+    }
+    while (days.length % 7 !== 0) {
+      days.push({ day: 0, isToday: false });
+    }
+
+    return {
+      label: viewDate.toLocaleString("default", { month: "long", year: "numeric" }),
+      days,
+    };
+  }, [hydrated, monthOffset]);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -227,6 +267,47 @@ export default function AdminDashboard() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="admin-card calendar-card">
+        <div className="calendar-header">
+          <div>
+            <h2>Team Calendar</h2>
+            <p>View the current month at a glance.</p>
+          </div>
+          <div className="calendar-controls">
+            <button
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => setMonthOffset((prev) => prev - 1)}
+            >
+              <i className="fa-solid fa-chevron-left" aria-hidden="true" />
+            </button>
+            <span className="calendar-label">{calendar.label}</span>
+            <button
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => setMonthOffset((prev) => prev + 1)}
+            >
+              <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <div className="calendar-grid">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+            <div key={day} className="calendar-day calendar-day--head">
+              {day}
+            </div>
+          ))}
+          {calendar.days.map((cell, index) => (
+            <div
+              key={`${cell.day}-${index}`}
+              className={`calendar-day${cell.day ? "" : " is-empty"}${
+                cell.isToday ? " is-today" : ""
+              }`}
+            >
+              {cell.day ? cell.day : ""}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

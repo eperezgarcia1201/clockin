@@ -23,19 +23,6 @@ import { UpdateEmployeePunchDto } from "./dto/update-employee-punch.dto";
 export class EmployeePunchesController {
   constructor(private readonly punches: EmployeePunchesService) {}
 
-  @Post(":employeeId")
-  async create(
-    @Req() req: RequestWithUser,
-    @Param("employeeId") employeeId: string,
-    @Body() dto: CreateEmployeePunchDto,
-  ) {
-    if (!req.user) {
-      throw new UnauthorizedException();
-    }
-
-    return this.punches.createPunch(req.user, employeeId, dto);
-  }
-
   @Get("recent")
   async recent(@Req() req: RequestWithUser) {
     if (!req.user) {
@@ -77,6 +64,19 @@ export class EmployeePunchesController {
     }
 
     return this.punches.createManual(req.user, dto);
+  }
+
+  @Post(":employeeId")
+  async create(
+    @Req() req: RequestWithUser,
+    @Param("employeeId") employeeId: string,
+    @Body() dto: CreateEmployeePunchDto,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.punches.createPunch(req.user, employeeId, dto);
   }
 
   @Patch("records/:id")

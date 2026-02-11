@@ -29,6 +29,7 @@ const translations: Record<Lang, Record<string, string>> = {
     statusSummary: "Status Summary",
     createStatus: "Create Status",
     manageSchedules: "Manage Schedules",
+    timeEdits: "Edit Time",
     systemSettings: "System Settings",
     databaseTools: "Database Tools",
     runReports: "Run Reports",
@@ -37,6 +38,7 @@ const translations: Record<Lang, Record<string, string>> = {
     hoursReports: "Hours Reports",
     payrollReports: "Payroll Summary",
     auditReports: "Audit Reports",
+    notifications: "Notifications",
     backToAdmin: "Back to Admin",
     language: "Language",
     theme: "Theme",
@@ -63,6 +65,7 @@ const translations: Record<Lang, Record<string, string>> = {
     statusSummary: "Resumen de Estado",
     createStatus: "Crear Estado",
     manageSchedules: "Gestionar Horarios",
+    timeEdits: "Editar Tiempo",
     systemSettings: "Configuración",
     databaseTools: "Herramientas DB",
     runReports: "Ejecutar Reportes",
@@ -71,6 +74,7 @@ const translations: Record<Lang, Record<string, string>> = {
     hoursReports: "Reporte de Horas",
     payrollReports: "Resumen de Nómina",
     auditReports: "Reporte de Auditoría",
+    notifications: "Notificaciones",
     backToAdmin: "Volver a Admin",
     language: "Idioma",
     theme: "Tema",
@@ -164,12 +168,30 @@ export function AdminShell({
           </Link>
           <Link
             className={`topnav-link ${
+              pathname?.startsWith("/admin/schedules") ? "is-active" : ""
+            }`}
+            href="/admin/schedules"
+          >
+            <i className="fa-solid fa-calendar-days" aria-hidden="true" />
+            {t.manageSchedules}
+          </Link>
+          <Link
+            className={`topnav-link ${
               pathname?.startsWith("/reports") ? "is-active" : ""
             }`}
             href="/reports"
           >
             <i className="fa-solid fa-chart-column" aria-hidden="true" />
             {t.reports}
+          </Link>
+          <Link
+            className={`topnav-link ${
+              pathname?.startsWith("/admin/notifications") ? "is-active" : ""
+            }`}
+            href="/admin/notifications"
+          >
+            <i className="fa-solid fa-bell" aria-hidden="true" />
+            {t.notifications}
           </Link>
           <Link
             className={`topnav-link ${
@@ -279,9 +301,17 @@ export function AdminShell({
               </div>
               <div className="admin-section">
                 <div className="admin-section-title">{t.miscTitle}</div>
-                <Link className="admin-link" href="/admin/time">
+                <Link className="admin-link" href="/admin/schedules">
                   <i className="fa-solid fa-clock" aria-hidden="true" />
                   {t.manageSchedules}
+                </Link>
+                <Link className="admin-link" href="/admin/time">
+                  <i className="fa-solid fa-pen-to-square" aria-hidden="true" />
+                  {t.timeEdits}
+                </Link>
+                <Link className="admin-link" href="/admin/notifications">
+                  <i className="fa-solid fa-bell" aria-hidden="true" />
+                  {t.notifications}
                 </Link>
                 <Link className="admin-link" href="/admin/settings">
                   <i className="fa-solid fa-sliders" aria-hidden="true" />

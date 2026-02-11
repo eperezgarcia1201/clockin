@@ -14,6 +14,9 @@ import { ReportsModule } from "./reports/reports.module";
 import { StatusesModule } from "./statuses/statuses.module";
 import { TenancyModule } from "./tenancy/tenancy.module";
 import { SettingsModule } from "./settings/settings.module";
+import { NotificationsModule } from "./notifications/notifications.module";
+import { AdminDevicesModule } from "./admin-devices/admin-devices.module";
+import { EmployeeSchedulesModule } from "./employee-schedules/employee-schedules.module";
 
 @Module({
   imports: [
@@ -30,6 +33,9 @@ import { SettingsModule } from "./settings/settings.module";
     StatusesModule,
     ReportsModule,
     SettingsModule,
+    NotificationsModule,
+    AdminDevicesModule,
+    EmployeeSchedulesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
