@@ -344,6 +344,11 @@ export default function Home() {
             </div>
           </div>
         </section>
+        <footer className="legal-footer">
+          <a href="/privacy">Privacy Policy</a>
+          <span>•</span>
+          <a href="/terms">Terms of Service</a>
+        </footer>
       </div>
     </main>
   );
