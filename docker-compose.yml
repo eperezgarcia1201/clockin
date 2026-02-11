@@ -46,13 +46,13 @@ services:
       context: .
       dockerfile: docker/web.Dockerfile
     environment:
-      NEXT_PUBLIC_API_URL: https://websysclockin.com/api
+      NEXT_PUBLIC_API_URL: https://api.websysclockin.com/api
       CLOCKIN_API_URL: http://api:4000/api
       AUTH0_DOMAIN: ""
       AUTH0_CLIENT_ID: ""
       AUTH0_CLIENT_SECRET: ""
       AUTH0_SECRET: replace-with-32-char-random
-      APP_BASE_URL: http://localhost:3000
+      APP_BASE_URL: https://websysclockin.com
       AUTH0_AUDIENCE: https://api.clockin.local
       AUTH0_ORG_ID: ""
       NEXT_PUBLIC_AUTH0_DOMAIN: ""
