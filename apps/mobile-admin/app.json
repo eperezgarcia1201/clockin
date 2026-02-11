@@ -36,6 +36,19 @@
       "icon": "./assets/notification-icon.png",
       "color": "#3a7bd5"
     },
-    "plugins": ["expo-notifications"]
+    "plugins": [
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "072f3606-525a-4fff-b170-4fd5fb566222"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/072f3606-525a-4fff-b170-4fd5fb566222"
+    }
   }
 }
