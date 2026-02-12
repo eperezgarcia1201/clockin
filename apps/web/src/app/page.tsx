@@ -348,6 +348,8 @@ export default function Home() {
           <a href="/privacy">Privacy Policy</a>
           <span>•</span>
           <a href="/terms">Terms of Service</a>
+          <span>•</span>
+          <a href="/support">Support</a>
         </footer>
       </div>
     </main>
