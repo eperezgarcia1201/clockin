@@ -3,11 +3,13 @@ import {
   IsBoolean,
   IsEmail,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
   Min,
+  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { TenantFeaturesDto } from './create-tenant-account.dto';
@@ -34,6 +36,18 @@ export class UpdateTenantAccountDto {
   @IsString()
   @MaxLength(120)
   authOrgId?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  adminUsername?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  @MaxLength(120)
+  adminPassword?: string;
 
   @IsOptional()
   @IsEmail()

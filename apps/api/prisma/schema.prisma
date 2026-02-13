@@ -290,6 +290,8 @@ model TimeEntry {
 model TenantSettings {
   id                   String   @id @default(cuid())
   tenantId             String   @unique
+  adminUsername        String   @default("admin")
+  adminPasswordHash    String   @default("")
   timezone             String
   roundingMinutes      Int
   requirePin           Boolean  @default(true)

@@ -4,9 +4,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Tenant } from '@prisma/client';
+import { compare } from 'bcryptjs';
+import { timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import type { TenantAdminLoginDto } from './dto/admin-login.dto';
 import type { ResolveTenantDto } from './dto/resolve-tenant.dto';
 
 const slugify = (value: string): string =>
@@ -25,6 +29,9 @@ const RESERVED_SUBDOMAINS = new Set([
   'localhost',
 ]);
 
+const DEFAULT_ADMIN_USERNAME = 'admin';
+const DEFAULT_ADMIN_PASSWORD = '1234qwer';
+
 @Injectable()
 export class TenantDirectoryService {
   constructor(private readonly prisma: PrismaService) {}
@@ -37,6 +44,68 @@ export class TenantDirectoryService {
       throw new BadRequestException('Tenant is required.');
     }
 
+    const tenant = await this.resolveTenantRecord(tenantInput, hostInput);
+
+    return {
+      id: tenant.id,
+      name: tenant.name,
+      slug: tenant.slug,
+      subdomain: tenant.slug,
+      authOrgId: tenant.authOrgId,
+      isActive: tenant.isActive,
+    };
+  }
+
+  async verifyAdminLogin(dto: TenantAdminLoginDto) {
+    const tenantInput = dto.tenant?.trim() || '';
+    const hostInput = dto.host?.trim() || '';
+    const username = dto.username?.trim() || '';
+    const password = dto.password || '';
+
+    if (!tenantInput || !username || !password) {
+      throw new UnauthorizedException('Invalid administrator credentials.');
+    }
+
+    const tenant = await this.resolveTenantRecord(tenantInput, hostInput);
+
+    const settings = await this.prisma.tenantSettings.findUnique({
+      where: { tenantId: tenant.id },
+      select: {
+        adminUsername: true,
+        adminPasswordHash: true,
+      },
+    });
+
+    const expectedUsername = settings?.adminUsername || DEFAULT_ADMIN_USERNAME;
+    if (!this.safeEqual(username, expectedUsername)) {
+      throw new UnauthorizedException('Invalid administrator credentials.');
+    }
+
+    const configuredPasswordHash = settings?.adminPasswordHash?.trim() || '';
+    let validPassword = false;
+
+    if (configuredPasswordHash) {
+      validPassword = await compare(password, configuredPasswordHash);
+    } else {
+      validPassword = this.safeEqual(password, this.defaultAdminPassword());
+    }
+
+    if (!validPassword) {
+      throw new UnauthorizedException('Invalid administrator credentials.');
+    }
+
+    return {
+      id: tenant.id,
+      name: tenant.name,
+      slug: tenant.slug,
+      subdomain: tenant.slug,
+      authOrgId: tenant.authOrgId,
+      isActive: tenant.isActive,
+      adminUsername: expectedUsername,
+    };
+  }
+
+  private async resolveTenantRecord(tenantInput: string, hostInput: string) {
     const hostSubdomain = this.extractSubdomain(hostInput);
     let tenant: Tenant | null = null;
 
@@ -56,14 +125,7 @@ export class TenantDirectoryService {
       throw new ForbiddenException('Tenant account is disabled.');
     }
 
-    return {
-      id: tenant.id,
-      name: tenant.name,
-      slug: tenant.slug,
-      subdomain: tenant.slug,
-      authOrgId: tenant.authOrgId,
-      isActive: tenant.isActive,
-    };
+    return tenant;
   }
 
   private async findByExactIdentifier(input: string) {
@@ -119,6 +181,23 @@ export class TenantDirectoryService {
     return this.prisma.tenant.findUnique({
       where: { slug },
     });
+  }
+
+  private safeEqual(a: string, b: string) {
+    const left = Buffer.from(a);
+    const right = Buffer.from(b);
+    if (left.length !== right.length) {
+      return false;
+    }
+    return timingSafeEqual(left, right);
+  }
+
+  private defaultAdminPassword() {
+    return (
+      process.env.TENANT_ADMIN_DEFAULT_PASSWORD ||
+      process.env.ADMIN_PASSWORD ||
+      DEFAULT_ADMIN_PASSWORD
+    );
   }
 
   private extractSubdomain(value: string) {

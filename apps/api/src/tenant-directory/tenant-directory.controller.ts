@@ -1,4 +1,5 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { TenantAdminLoginDto } from './dto/admin-login.dto';
 import { ResolveTenantDto } from './dto/resolve-tenant.dto';
 import { TenantDirectoryService } from './tenant-directory.service';
 
@@ -9,5 +10,10 @@ export class TenantDirectoryController {
   @Get('resolve')
   async resolve(@Query() query: ResolveTenantDto) {
     return this.tenantDirectory.resolve(query);
+  }
+
+  @Post('admin-login')
+  async verifyAdminLogin(@Body() body: TenantAdminLoginDto) {
+    return this.tenantDirectory.verifyAdminLogin(body);
   }
 }

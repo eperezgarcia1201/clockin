@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { MembershipStatus, Prisma, Role } from '@prisma/client';
+import { hash } from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import type { AuthUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,6 +26,7 @@ type TenantAccountRecord = {
   createdAt: Date;
   updatedAt: Date;
   settings: {
+    adminUsername: string;
     timezone: string;
     roundingMinutes: number;
     requirePin: boolean;
@@ -49,6 +51,7 @@ type TenantAccountResponse = {
   slug: string;
   subdomain: string;
   authOrgId: string;
+  adminUsername: string;
   ownerEmail: string | null;
   ownerName: string | null;
   isActive: boolean;
@@ -69,6 +72,8 @@ type TenantAccountResponse = {
 
 const DEFAULT_TIMEZONE = 'America/New_York';
 const DEFAULT_ROUNDING_MINUTES = 15;
+const DEFAULT_ADMIN_USERNAME = 'admin';
+const DEFAULT_ADMIN_PASSWORD = '1234qwer';
 
 const defaultFeatures = () => ({
   requirePin: true,
@@ -98,6 +103,7 @@ export class TenantAccountsService {
       include: {
         settings: {
           select: {
+            adminUsername: true,
             timezone: true,
             roundingMinutes: true,
             requirePin: true,
@@ -168,6 +174,13 @@ export class TenantAccountsService {
     const authOrgId = await this.resolveUniqueAuthOrgId(requestedAuthOrgId);
     const features = this.normalizeFeatures(dto.features);
 
+    const adminUsername = this.normalizeAdminUsername(dto.adminUsername);
+    const adminPassword =
+      dto.adminPassword !== undefined
+        ? this.parseAdminPassword(dto.adminPassword)
+        : this.defaultAdminPassword();
+    const adminPasswordHash = await hash(adminPassword, 10);
+
     const tenantId = await this.prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
         data: {
@@ -182,6 +195,8 @@ export class TenantAccountsService {
       await tx.tenantSettings.create({
         data: {
           tenantId: tenant.id,
+          adminUsername,
+          adminPasswordHash,
           timezone: dto.timezone?.trim() || DEFAULT_TIMEZONE,
           roundingMinutes: dto.roundingMinutes ?? DEFAULT_ROUNDING_MINUTES,
           requirePin: features.requirePin,
@@ -266,6 +281,15 @@ export class TenantAccountsService {
       updates.isActive = dto.isActive;
     }
 
+    const normalizedAdminUsername =
+      dto.adminUsername !== undefined
+        ? this.normalizeAdminUsername(dto.adminUsername)
+        : undefined;
+    const adminPasswordHash =
+      dto.adminPassword !== undefined
+        ? await hash(this.parseAdminPassword(dto.adminPassword), 10)
+        : undefined;
+
     const hasFeaturesUpdate =
       dto.features?.requirePin !== undefined ||
       dto.features?.reportsEnabled !== undefined ||
@@ -274,7 +298,9 @@ export class TenantAccountsService {
     const hasSettingsUpdate =
       hasFeaturesUpdate ||
       dto.timezone !== undefined ||
-      dto.roundingMinutes !== undefined;
+      dto.roundingMinutes !== undefined ||
+      normalizedAdminUsername !== undefined ||
+      adminPasswordHash !== undefined;
 
     await this.prisma.$transaction(async (tx) => {
       if (Object.keys(updates).length > 0) {
@@ -289,6 +315,8 @@ export class TenantAccountsService {
         await tx.tenantSettings.upsert({
           where: { tenantId },
           update: {
+            adminUsername: normalizedAdminUsername,
+            adminPasswordHash,
             timezone: dto.timezone?.trim() || undefined,
             roundingMinutes: dto.roundingMinutes ?? undefined,
             requirePin:
@@ -306,6 +334,10 @@ export class TenantAccountsService {
           },
           create: {
             tenantId,
+            adminUsername:
+              normalizedAdminUsername ?? this.normalizeAdminUsername(undefined),
+            adminPasswordHash:
+              adminPasswordHash ?? (await hash(this.defaultAdminPassword(), 10)),
             timezone: dto.timezone?.trim() || DEFAULT_TIMEZONE,
             roundingMinutes: dto.roundingMinutes ?? DEFAULT_ROUNDING_MINUTES,
             requirePin: features.requirePin,
@@ -352,6 +384,30 @@ export class TenantAccountsService {
       allowManualTimeEdits:
         features?.allowManualTimeEdits ?? defaults.allowManualTimeEdits,
     };
+  }
+
+  private normalizeAdminUsername(value?: string) {
+    const username = (value || DEFAULT_ADMIN_USERNAME).trim();
+    if (!username) {
+      throw new BadRequestException('Admin username cannot be empty.');
+    }
+    return username;
+  }
+
+  private parseAdminPassword(value: string) {
+    const password = value.trim();
+    if (!password) {
+      throw new BadRequestException('Admin password cannot be empty.');
+    }
+    return password;
+  }
+
+  private defaultAdminPassword() {
+    return (
+      process.env.TENANT_ADMIN_DEFAULT_PASSWORD ||
+      process.env.ADMIN_PASSWORD ||
+      DEFAULT_ADMIN_PASSWORD
+    );
   }
 
   private async resolveUniqueSlug(base: string, excludeTenantId?: string) {
@@ -451,6 +507,7 @@ export class TenantAccountsService {
       include: {
         settings: {
           select: {
+            adminUsername: true,
             timezone: true,
             roundingMinutes: true,
             requirePin: true,
@@ -497,6 +554,7 @@ export class TenantAccountsService {
       slug: tenant.slug,
       subdomain: tenant.slug,
       authOrgId: tenant.authOrgId,
+      adminUsername: tenant.settings?.adminUsername || DEFAULT_ADMIN_USERNAME,
       ownerEmail: tenant.ownerEmail || owner?.email || null,
       ownerName: owner?.name || null,
       isActive: tenant.isActive,

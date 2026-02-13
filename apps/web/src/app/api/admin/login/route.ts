@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { timingSafeEqual } from "crypto";
 import {
   ADMIN_COOKIE_NAME,
   adminSessionTtlSeconds,
   createAdminSessionToken,
 } from "../../../../lib/admin-session";
 
-type ResolveTenantResult = {
+type TenantAdminLoginResult = {
   id: string;
   name: string;
   slug: string;
   subdomain: string;
   authOrgId: string;
   isActive: boolean;
+  adminUsername: string;
 };
 
 const readErrorMessage = (value: unknown, fallback: string) => {
@@ -42,7 +42,10 @@ const readErrorMessage = (value: unknown, fallback: string) => {
   return fallback;
 };
 
-const resolveTenant = async (tenant: string, hostHeader: string | null) => {
+const verifyTenantAdminLogin = async (
+  payload: { tenant: string; username: string; password: string },
+  hostHeader: string | null,
+) => {
   const apiUrl = process.env.CLOCKIN_API_URL;
   if (!apiUrl) {
     return {
@@ -52,21 +55,24 @@ const resolveTenant = async (tenant: string, hostHeader: string | null) => {
     };
   }
 
-  const endpoint = new URL(
-    `${apiUrl.replace(/\/$/, "")}/tenant-directory/resolve`,
-  );
-  endpoint.searchParams.set("tenant", tenant);
-  if (hostHeader) {
-    endpoint.searchParams.set("host", hostHeader);
-  }
+  const endpoint = `${apiUrl.replace(/\/$/, "")}/tenant-directory/admin-login`;
 
   try {
-    const response = await fetch(endpoint.toString(), {
-      headers: { Accept: "application/json" },
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...payload,
+        host: hostHeader || undefined,
+      }),
       cache: "no-store",
     });
+
     const data = (await response.json().catch(() => null)) as
-      | ResolveTenantResult
+      | TenantAdminLoginResult
       | Record<string, unknown>
       | null;
 
@@ -74,13 +80,13 @@ const resolveTenant = async (tenant: string, hostHeader: string | null) => {
       return {
         ok: false as const,
         status: response.status,
-        error: readErrorMessage(data, "Unable to resolve tenant."),
+        error: readErrorMessage(data, "Invalid administrator credentials."),
       };
     }
 
     return {
       ok: true as const,
-      tenant: data as ResolveTenantResult,
+      tenant: data as TenantAdminLoginResult,
     };
   } catch {
     return {
@@ -91,56 +97,47 @@ const resolveTenant = async (tenant: string, hostHeader: string | null) => {
   }
 };
 
-const safeEqual = (a: string, b: string) => {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) {
-    return false;
-  }
-  return timingSafeEqual(left, right);
-};
-
 export async function POST(request: Request) {
   const { tenant, username, password } = (await request.json()) as {
     tenant?: string;
     username?: string;
     password?: string;
   };
+
   const tenantInput = tenant?.trim() || "";
+  const usernameInput = username?.trim() || "";
+  const passwordInput = password || "";
 
-  const expectedUsername = process.env.ADMIN_USERNAME || "admin";
-  const expectedPassword = process.env.ADMIN_PASSWORD || "1234qwer";
-
-  if (
-    !tenantInput ||
-    !username ||
-    !password ||
-    !safeEqual(username, expectedUsername) ||
-    !safeEqual(password, expectedPassword)
-  ) {
+  if (!tenantInput || !usernameInput || !passwordInput) {
     return NextResponse.json(
       { error: "Invalid administrator credentials." },
       { status: 401 },
     );
   }
 
-  const resolvedTenant = await resolveTenant(
-    tenantInput,
+  const verified = await verifyTenantAdminLogin(
+    {
+      tenant: tenantInput,
+      username: usernameInput,
+      password: passwordInput,
+    },
     request.headers.get("host"),
   );
-  if (!resolvedTenant.ok) {
+
+  if (!verified.ok) {
     return NextResponse.json(
-      { error: resolvedTenant.error },
-      { status: resolvedTenant.status },
+      { error: verified.error },
+      { status: verified.status },
     );
   }
 
-  const token = createAdminSessionToken(username, {
-    tenantAuthOrgId: resolvedTenant.tenant.authOrgId,
-    tenantSlug: resolvedTenant.tenant.slug,
-    tenantName: resolvedTenant.tenant.name,
-    tenantSubdomain: resolvedTenant.tenant.subdomain,
+  const token = createAdminSessionToken(usernameInput, {
+    tenantAuthOrgId: verified.tenant.authOrgId,
+    tenantSlug: verified.tenant.slug,
+    tenantName: verified.tenant.name,
+    tenantSubdomain: verified.tenant.subdomain,
   });
+
   const cookieStore = await cookies();
   cookieStore.set(ADMIN_COOKIE_NAME, token, {
     httpOnly: true,
@@ -153,9 +150,9 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     tenant: {
-      name: resolvedTenant.tenant.name,
-      slug: resolvedTenant.tenant.slug,
-      subdomain: resolvedTenant.tenant.subdomain,
+      name: verified.tenant.name,
+      slug: verified.tenant.slug,
+      subdomain: verified.tenant.subdomain,
     },
   });
 }

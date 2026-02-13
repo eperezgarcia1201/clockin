@@ -14,6 +14,7 @@ type TenantAccount = {
   slug: string;
   subdomain: string;
   authOrgId: string;
+  adminUsername: string;
   ownerEmail: string | null;
   ownerName: string | null;
   isActive: boolean;
@@ -31,6 +32,8 @@ type TenantAccount = {
 type TenantDraft = {
   name: string;
   subdomain: string;
+  adminUsername: string;
+  adminPassword: string;
   ownerEmail: string;
   ownerName: string;
   isActive: boolean;
@@ -59,6 +62,8 @@ const timezoneOptions = [
 const toDraft = (tenant: TenantAccount): TenantDraft => ({
   name: tenant.name,
   subdomain: tenant.subdomain || tenant.slug,
+  adminUsername: tenant.adminUsername || "admin",
+  adminPassword: "",
   ownerEmail: tenant.ownerEmail || "",
   ownerName: tenant.ownerName || "",
   isActive: tenant.isActive,
@@ -70,6 +75,8 @@ const toDraft = (tenant: TenantAccount): TenantDraft => ({
 const emptyCreateForm = (): CreateForm => ({
   name: "",
   subdomain: "",
+  adminUsername: "admin",
+  adminPassword: "1234qwer",
   ownerEmail: "",
   ownerName: "",
   isActive: true,
@@ -203,6 +210,8 @@ export default function TenantAccountsPage() {
         body: JSON.stringify({
           name: createForm.name.trim(),
           subdomain: createForm.subdomain.trim() || undefined,
+          adminUsername: createForm.adminUsername.trim() || undefined,
+          adminPassword: createForm.adminPassword.trim() || undefined,
           ownerEmail: createForm.ownerEmail.trim() || undefined,
           ownerName: createForm.ownerName.trim() || undefined,
           isActive: createForm.isActive,
@@ -258,6 +267,8 @@ export default function TenantAccountsPage() {
         body: JSON.stringify({
           name: draft.name.trim(),
           subdomain: draft.subdomain.trim() || undefined,
+          adminUsername: draft.adminUsername.trim() || undefined,
+          adminPassword: draft.adminPassword.trim() || undefined,
           ownerEmail: draft.ownerEmail.trim() || undefined,
           ownerName: draft.ownerName.trim() || undefined,
           isActive: draft.isActive,
@@ -331,6 +342,27 @@ export default function TenantAccountsPage() {
             <div className="form-text">
               Used for tenant URLs like <code>restaurant1.yourdomain.com</code>.
             </div>
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">Admin Username</label>
+            <input
+              className="form-control"
+              value={createForm.adminUsername}
+              onChange={(event) =>
+                updateCreateForm("adminUsername", event.target.value)
+              }
+            />
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">Admin Password</label>
+            <input
+              className="form-control"
+              type="password"
+              value={createForm.adminPassword}
+              onChange={(event) =>
+                updateCreateForm("adminPassword", event.target.value)
+              }
+            />
           </div>
           <div className="col-12 col-md-6">
             <label className="form-label">Owner Name</label>
@@ -510,6 +542,36 @@ export default function TenantAccountsPage() {
                           updateDraft(
                             tenant.id,
                             "subdomain",
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label">Admin Username</label>
+                      <input
+                        className="form-control"
+                        value={draft.adminUsername}
+                        onChange={(event) =>
+                          updateDraft(
+                            tenant.id,
+                            "adminUsername",
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label">Admin Password</label>
+                      <input
+                        className="form-control"
+                        type="password"
+                        placeholder="Leave blank to keep current password"
+                        value={draft.adminPassword}
+                        onChange={(event) =>
+                          updateDraft(
+                            tenant.id,
+                            "adminPassword",
                             event.target.value,
                           )
                         }
