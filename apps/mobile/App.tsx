@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -32,12 +33,14 @@ type TenantContext = {
 };
 
 const actions = ["IN", "OUT", "BREAK", "LUNCH"] as const;
+const TENANT_STORAGE_KEY = "clockin.mobile.tenant";
 
 export default function App() {
   const [tenant, setTenant] = useState<TenantContext | null>(null);
   const [tenantInput, setTenantInput] = useState("");
   const [tenantStatus, setTenantStatus] = useState<string | null>(null);
   const [resolvingTenant, setResolvingTenant] = useState(false);
+  const [tenantHydrated, setTenantHydrated] = useState(false);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeName, setEmployeeName] = useState("");
@@ -115,8 +118,49 @@ export default function App() {
   }, [fetchJson, tenant]);
 
   useEffect(() => {
+    let active = true;
+
+    const loadTenant = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(TENANT_STORAGE_KEY);
+        if (!raw) {
+          return;
+        }
+
+        const parsed = JSON.parse(raw) as TenantContext;
+        if (
+          parsed &&
+          typeof parsed.authOrgId === "string" &&
+          typeof parsed.slug === "string" &&
+          typeof parsed.name === "string"
+        ) {
+          if (active) {
+            setTenant(parsed);
+            setTenantInput(parsed.input || parsed.slug || "");
+          }
+        }
+      } catch {
+        await AsyncStorage.removeItem(TENANT_STORAGE_KEY);
+      } finally {
+        if (active) {
+          setTenantHydrated(true);
+        }
+      }
+    };
+
+    void loadTenant();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!tenantHydrated) {
+      return;
+    }
     void loadEmployees();
-  }, [loadEmployees]);
+  }, [loadEmployees, tenantHydrated]);
 
   const configureTenant = async () => {
     const value = tenantInput.trim();
@@ -149,13 +193,19 @@ export default function App() {
         );
       }
 
-      setTenant({
+      const resolvedTenant: TenantContext = {
         input: value,
         name: data.name || value,
         slug: data.slug,
         subdomain: data.subdomain || data.slug,
         authOrgId: data.authOrgId,
-      });
+      };
+
+      setTenant(resolvedTenant);
+      await AsyncStorage.setItem(
+        TENANT_STORAGE_KEY,
+        JSON.stringify(resolvedTenant),
+      );
       setTenantStatus(null);
       setStatus(null);
       setTipsStatus(null);
@@ -171,6 +221,7 @@ export default function App() {
   };
 
   const changeTenant = () => {
+    void AsyncStorage.removeItem(TENANT_STORAGE_KEY);
     setTenantInput("");
     setTenant(null);
     setEmployees([]);
@@ -290,7 +341,12 @@ export default function App() {
             </View>
           </View>
 
-          {!tenant ? (
+          {!tenantHydrated ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Loading</Text>
+              <Text style={styles.subtitleDark}>Checking saved tenant...</Text>
+            </View>
+          ) : !tenant ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Welcome</Text>
               <Text style={styles.subtitleDark}>
