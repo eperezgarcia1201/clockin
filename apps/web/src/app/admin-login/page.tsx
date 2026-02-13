@@ -127,7 +127,7 @@ export default function AdminLoginPage() {
             <input
               id="admin-tenant"
               type="text"
-              placeholder="restaurant1"
+              placeholder="tenant-slug"
               autoComplete="organization"
               value={tenant}
               onChange={(event) => setTenant(event.target.value)}
@@ -168,8 +168,7 @@ export default function AdminLoginPage() {
           </div>
 
           <div className="alert alert-info mb-0">
-            Tenant example: <strong>Restaurant1</strong> | Username:{" "}
-            <strong>admin</strong> | Password: <strong>1234qwer</strong>
+            Use your tenant slug and admin credentials assigned by the owner.
           </div>
 
           {status && <div className="alert alert-danger">{status}</div>}
