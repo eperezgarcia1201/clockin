@@ -13,12 +13,14 @@ const translations: Record<Lang, Record<string, string>> = {
   en: {
     dashboard: "Dashboard",
     users: "Users",
+    tenants: "Tenants",
     offices: "Offices",
     reports: "Reports",
     admin: "Admin",
     userSummary: "User Summary",
     createUser: "Create New User",
     userSearch: "User Search",
+    tenantAccounts: "Tenant Accounts",
     officeSummary: "Office Summary",
     createOffice: "Create New Office",
     groupSummary: "Group Summary",
@@ -49,12 +51,14 @@ const translations: Record<Lang, Record<string, string>> = {
   es: {
     dashboard: "Tablero",
     users: "Usuarios",
+    tenants: "Inquilinos",
     offices: "Oficinas",
     reports: "Reportes",
     admin: "Admin",
     userSummary: "Resumen de Usuarios",
     createUser: "Crear Usuario",
     userSearch: "Buscar Usuario",
+    tenantAccounts: "Cuentas de Inquilinos",
     officeSummary: "Resumen de Oficinas",
     createOffice: "Crear Oficina",
     groupSummary: "Resumen de Grupos",
@@ -98,13 +102,8 @@ export function AdminShell({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [lang, setLang] = useState<Lang>("en");
-  const [theme, setTheme] = useState<Theme>("light");
-
-  useEffect(() => {
-    setLang(getStorage("clockin-lang", "en") as Lang);
-    setTheme(getStorage("clockin-theme", "light") as Theme);
-  }, []);
+  const [lang, setLang] = useState<Lang>(() => getStorage("clockin-lang", "en") as Lang);
+  const [theme, setTheme] = useState<Theme>(() => getStorage("clockin-theme", "light") as Theme);
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -156,6 +155,15 @@ export function AdminShell({
           >
             <i className="fa-solid fa-user" aria-hidden="true" />
             {t.users}
+          </Link>
+          <Link
+            className={`topnav-link ${
+              pathname?.startsWith("/admin/tenants") ? "is-active" : ""
+            }`}
+            href="/admin/tenants"
+          >
+            <i className="fa-solid fa-building-user" aria-hidden="true" />
+            {t.tenants}
           </Link>
           <Link
             className={`topnav-link ${
@@ -253,6 +261,10 @@ export function AdminShell({
             <>
               <div className="admin-section">
                 <div className="admin-section-title">{t.users}</div>
+                <Link className="admin-link" href="/admin/tenants">
+                  <i className="fa-solid fa-building-user" aria-hidden="true" />
+                  {t.tenantAccounts}
+                </Link>
                 <Link className="admin-link" href="/admin/users">
                   <i className="fa-solid fa-id-card" aria-hidden="true" />
                   {t.userSummary}

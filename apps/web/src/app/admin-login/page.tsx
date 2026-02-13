@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -82,10 +83,10 @@ export default function AdminLoginPage() {
             <h1>Administrator Access</h1>
             <p>Sign in to manage employees, offices, and reports.</p>
           </div>
-          <a href="/" className="admin-login-back">
+          <Link href="/" className="admin-login-back">
             <i className="fa-solid fa-arrow-left" aria-hidden="true" />
             Back to ClockIn
-          </a>
+          </Link>
         </div>
 
         <form className="admin-login-body" onSubmit={onSubmit}>
@@ -97,7 +98,7 @@ export default function AdminLoginPage() {
             <input
               id="admin-username"
               type="text"
-              placeholder="admin"
+              placeholder="elmer"
               autoComplete="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}

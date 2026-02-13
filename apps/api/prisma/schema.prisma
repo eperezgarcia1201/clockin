@@ -40,6 +40,8 @@ model Tenant {
   authOrgId String       @unique
   name      String
   slug      String       @unique
+  ownerEmail String?
+  isActive  Boolean      @default(true)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
@@ -56,6 +58,8 @@ model Tenant {
   adminDevices AdminDevice[]
   employeeSchedules EmployeeSchedule[]
   settings   TenantSettings?
+
+  @@index([isActive])
 }
 
 model User {

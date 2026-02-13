@@ -17,6 +17,7 @@ import { SettingsModule } from "./settings/settings.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { AdminDevicesModule } from "./admin-devices/admin-devices.module";
 import { EmployeeSchedulesModule } from "./employee-schedules/employee-schedules.module";
+import { TenantAccountsModule } from "./tenant-accounts/tenant-accounts.module";
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { EmployeeSchedulesModule } from "./employee-schedules/employee-schedules
     NotificationsModule,
     AdminDevicesModule,
     EmployeeSchedulesModule,
+    TenantAccountsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

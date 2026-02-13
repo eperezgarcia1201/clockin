@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { timingSafeEqual } from "crypto";
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import {
-  ADMIN_COOKIE_NAME,
-  adminSessionTtlSeconds,
-  createAdminSessionToken,
-} from "../../../../lib/admin-session";
+  createOwnerSessionToken,
+  OWNER_COOKIE_NAME,
+  ownerSessionTtlSeconds,
+} from "../../../../lib/owner-session";
 
 const safeEqual = (a: string, b: string) => {
   const left = Buffer.from(a);
@@ -22,8 +22,8 @@ export async function POST(request: Request) {
     password?: string;
   };
 
-  const expectedUsername = process.env.ADMIN_USERNAME || "elmer";
-  const expectedPassword = process.env.ADMIN_PASSWORD || "1234qwer";
+  const expectedUsername = process.env.OWNER_USERNAME || "elmer";
+  const expectedPassword = process.env.OWNER_PASSWORD || "1234qwer";
 
   if (
     !username ||
@@ -32,19 +32,19 @@ export async function POST(request: Request) {
     !safeEqual(password, expectedPassword)
   ) {
     return NextResponse.json(
-      { error: "Invalid administrator credentials." },
+      { error: "Invalid owner credentials." },
       { status: 401 },
     );
   }
 
-  const token = createAdminSessionToken(username);
+  const token = createOwnerSessionToken(username);
   const cookieStore = await cookies();
-  cookieStore.set(ADMIN_COOKIE_NAME, token, {
+  cookieStore.set(OWNER_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: adminSessionTtlSeconds(),
+    maxAge: ownerSessionTtlSeconds(),
   });
 
   return NextResponse.json({ ok: true });

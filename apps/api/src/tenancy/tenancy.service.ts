@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Role } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -39,6 +43,10 @@ export class TenancyService {
         slug: this.makeTenantSlug(authUser),
       },
     });
+
+    if (!tenant.isActive) {
+      throw new ForbiddenException("Tenant account is disabled.");
+    }
 
     const user = await this.prisma.user.upsert({
       where: { authUserId: authUser.authUserId },
