@@ -12,6 +12,7 @@ type TenantAccount = {
   id: string;
   name: string;
   slug: string;
+  subdomain: string;
   authOrgId: string;
   ownerEmail: string | null;
   ownerName: string | null;
@@ -29,6 +30,7 @@ type TenantAccount = {
 
 type TenantDraft = {
   name: string;
+  subdomain: string;
   ownerEmail: string;
   ownerName: string;
   isActive: boolean;
@@ -56,6 +58,7 @@ const timezoneOptions = [
 
 const toDraft = (tenant: TenantAccount): TenantDraft => ({
   name: tenant.name,
+  subdomain: tenant.subdomain || tenant.slug,
   ownerEmail: tenant.ownerEmail || "",
   ownerName: tenant.ownerName || "",
   isActive: tenant.isActive,
@@ -66,6 +69,7 @@ const toDraft = (tenant: TenantAccount): TenantDraft => ({
 
 const emptyCreateForm = (): CreateForm => ({
   name: "",
+  subdomain: "",
   ownerEmail: "",
   ownerName: "",
   isActive: true,
@@ -126,11 +130,17 @@ export default function TenantAccountsPage() {
     void loadTenants();
   }, [loadTenants]);
 
-  const updateCreateForm = (field: keyof CreateForm, value: string | boolean) => {
+  const updateCreateForm = (
+    field: keyof CreateForm,
+    value: string | boolean,
+  ) => {
     setCreateForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const updateCreateFeatures = (field: keyof TenantFeatures, value: boolean) => {
+  const updateCreateFeatures = (
+    field: keyof TenantFeatures,
+    value: boolean,
+  ) => {
     setCreateForm((prev) => ({
       ...prev,
       features: { ...prev.features, [field]: value },
@@ -192,6 +202,7 @@ export default function TenantAccountsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: createForm.name.trim(),
+          subdomain: createForm.subdomain.trim() || undefined,
           ownerEmail: createForm.ownerEmail.trim() || undefined,
           ownerName: createForm.ownerName.trim() || undefined,
           isActive: createForm.isActive,
@@ -201,7 +212,9 @@ export default function TenantAccountsPage() {
         }),
       });
 
-      const data = (await response.json()) as TenantAccount & { error?: string };
+      const data = (await response.json()) as TenantAccount & {
+        error?: string;
+      };
       if (!response.ok) {
         setStatus(data.error || "Unable to create tenant account.");
         return;
@@ -244,6 +257,7 @@ export default function TenantAccountsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: draft.name.trim(),
+          subdomain: draft.subdomain.trim() || undefined,
           ownerEmail: draft.ownerEmail.trim() || undefined,
           ownerName: draft.ownerName.trim() || undefined,
           isActive: draft.isActive,
@@ -253,7 +267,9 @@ export default function TenantAccountsPage() {
         }),
       });
 
-      const data = (await response.json()) as TenantAccount & { error?: string };
+      const data = (await response.json()) as TenantAccount & {
+        error?: string;
+      };
       if (!response.ok) {
         setStatus(data.error || "Unable to update tenant account.");
         return;
@@ -301,6 +317,20 @@ export default function TenantAccountsPage() {
                 updateCreateForm("ownerEmail", event.target.value)
               }
             />
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">Subdomain</label>
+            <input
+              className="form-control"
+              placeholder="restaurant1"
+              value={createForm.subdomain}
+              onChange={(event) =>
+                updateCreateForm("subdomain", event.target.value)
+              }
+            />
+            <div className="form-text">
+              Used for tenant URLs like <code>restaurant1.yourdomain.com</code>.
+            </div>
           </div>
           <div className="col-12 col-md-6">
             <label className="form-label">Owner Name</label>
@@ -358,7 +388,10 @@ export default function TenantAccountsPage() {
               className="form-select"
               value={createForm.features.reportsEnabled ? "yes" : "no"}
               onChange={(event) =>
-                updateCreateFeatures("reportsEnabled", event.target.value === "yes")
+                updateCreateFeatures(
+                  "reportsEnabled",
+                  event.target.value === "yes",
+                )
               }
             >
               <option value="yes">Yes</option>
@@ -395,7 +428,11 @@ export default function TenantAccountsPage() {
             </select>
           </div>
           <div className="col-12">
-            <button className="btn btn-primary" type="submit" disabled={creating}>
+            <button
+              className="btn btn-primary"
+              type="submit"
+              disabled={creating}
+            >
               {creating ? "Creating..." : "Create Tenant"}
             </button>
           </div>
@@ -420,16 +457,21 @@ export default function TenantAccountsPage() {
                 <div key={tenant.id} className="border rounded p-3">
                   <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
                     <strong>{tenant.name}</strong>
-                    <span className={`badge ${draft.isActive ? "text-bg-success" : "text-bg-secondary"}`}>
+                    <span
+                      className={`badge ${draft.isActive ? "text-bg-success" : "text-bg-secondary"}`}
+                    >
                       {draft.isActive ? "Active" : "Disabled"}
                     </span>
                   </div>
                   <div className="small text-muted mb-3">
                     <div>
-                      Slug: {tenant.slug} | Auth Org ID: {tenant.authOrgId}
+                      Slug: {tenant.slug} | Subdomain:{" "}
+                      {tenant.subdomain || tenant.slug} | Auth Org ID:{" "}
+                      {tenant.authOrgId}
                     </div>
                     <div>
-                      Employees: {tenant.counts.employees} | Members: {tenant.counts.memberships}
+                      Employees: {tenant.counts.employees} | Members:{" "}
+                      {tenant.counts.memberships}
                     </div>
                   </div>
 
@@ -451,7 +493,25 @@ export default function TenantAccountsPage() {
                         type="email"
                         value={draft.ownerEmail}
                         onChange={(event) =>
-                          updateDraft(tenant.id, "ownerEmail", event.target.value)
+                          updateDraft(
+                            tenant.id,
+                            "ownerEmail",
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="col-12 col-md-6">
+                      <label className="form-label">Subdomain</label>
+                      <input
+                        className="form-control"
+                        value={draft.subdomain}
+                        onChange={(event) =>
+                          updateDraft(
+                            tenant.id,
+                            "subdomain",
+                            event.target.value,
+                          )
                         }
                       />
                     </div>
@@ -461,7 +521,11 @@ export default function TenantAccountsPage() {
                         className="form-control"
                         value={draft.ownerName}
                         onChange={(event) =>
-                          updateDraft(tenant.id, "ownerName", event.target.value)
+                          updateDraft(
+                            tenant.id,
+                            "ownerName",
+                            event.target.value,
+                          )
                         }
                       />
                     </div>
@@ -488,7 +552,11 @@ export default function TenantAccountsPage() {
                         inputMode="numeric"
                         value={draft.roundingMinutes}
                         onChange={(event) =>
-                          updateDraft(tenant.id, "roundingMinutes", event.target.value)
+                          updateDraft(
+                            tenant.id,
+                            "roundingMinutes",
+                            event.target.value,
+                          )
                         }
                       />
                     </div>
@@ -498,7 +566,11 @@ export default function TenantAccountsPage() {
                         className="form-select"
                         value={draft.isActive ? "yes" : "no"}
                         onChange={(event) =>
-                          updateDraft(tenant.id, "isActive", event.target.value === "yes")
+                          updateDraft(
+                            tenant.id,
+                            "isActive",
+                            event.target.value === "yes",
+                          )
                         }
                       >
                         <option value="yes">Yes</option>
@@ -543,7 +615,9 @@ export default function TenantAccountsPage() {
                       <label className="form-label">Manual Time Edits</label>
                       <select
                         className="form-select"
-                        value={draft.features.allowManualTimeEdits ? "yes" : "no"}
+                        value={
+                          draft.features.allowManualTimeEdits ? "yes" : "no"
+                        }
                         onChange={(event) =>
                           updateDraftFeatures(
                             tenant.id,
@@ -563,7 +637,9 @@ export default function TenantAccountsPage() {
                         disabled={savingTenantId === tenant.id}
                         onClick={() => handleSave(tenant.id)}
                       >
-                        {savingTenantId === tenant.id ? "Saving..." : "Save Changes"}
+                        {savingTenantId === tenant.id
+                          ? "Saving..."
+                          : "Save Changes"}
                       </button>
                     </div>
                   </div>

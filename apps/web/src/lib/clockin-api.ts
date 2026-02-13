@@ -1,4 +1,5 @@
 import { auth0, authConfigured } from "./auth0";
+import { getAdminSession } from "./admin-session";
 
 export async function clockinFetch(
   path: string,
@@ -31,22 +32,39 @@ export async function clockinFetch(
   }
 
   if (!headers.has("Authorization")) {
-    headers.set(
-      "x-dev-user-id",
-      process.env.DEV_USER_ID || "dev-user",
-    );
-    headers.set(
-      "x-dev-tenant-id",
-      process.env.DEV_TENANT_ID || "dev-tenant",
-    );
-    headers.set(
-      "x-dev-email",
-      process.env.DEV_USER_EMAIL || "dev@clockin.local",
-    );
-    headers.set(
-      "x-dev-name",
-      process.env.DEV_USER_NAME || "Dev User",
-    );
+    let adminSession = null;
+    try {
+      adminSession = await getAdminSession();
+    } catch {
+      adminSession = null;
+    }
+
+    if (!headers.has("x-dev-user-id")) {
+      headers.set("x-dev-user-id", process.env.DEV_USER_ID || "dev-user");
+    }
+
+    if (!headers.has("x-dev-tenant-id")) {
+      headers.set(
+        "x-dev-tenant-id",
+        adminSession?.tenantAuthOrgId ||
+          process.env.DEV_TENANT_ID ||
+          "dev-tenant",
+      );
+    }
+
+    if (!headers.has("x-dev-email")) {
+      headers.set(
+        "x-dev-email",
+        process.env.DEV_USER_EMAIL || "dev@clockin.local",
+      );
+    }
+
+    if (!headers.has("x-dev-name")) {
+      headers.set(
+        "x-dev-name",
+        adminSession?.username || process.env.DEV_USER_NAME || "Dev User",
+      );
+    }
   }
 
   return fetch(`${apiUrl}${path}`, {

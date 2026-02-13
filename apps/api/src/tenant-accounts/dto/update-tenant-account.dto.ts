@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsEmail,
@@ -9,8 +9,8 @@ import {
   MaxLength,
   Min,
   ValidateNested,
-} from "class-validator";
-import { TenantFeaturesDto } from "./create-tenant-account.dto";
+} from 'class-validator';
+import { TenantFeaturesDto } from './create-tenant-account.dto';
 
 export class UpdateTenantAccountDto {
   @IsOptional()
@@ -23,6 +23,12 @@ export class UpdateTenantAccountDto {
   @MaxLength(120)
   @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   slug?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  subdomain?: string;
 
   @IsOptional()
   @IsString()

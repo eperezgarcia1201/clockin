@@ -3,17 +3,17 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-} from "@nestjs/common";
-import { MembershipStatus, Prisma, Role } from "@prisma/client";
-import { randomUUID } from "crypto";
-import type { AuthUser } from "../auth/auth.types";
-import { PrismaService } from "../prisma/prisma.service";
-import { TenancyService } from "../tenancy/tenancy.service";
+} from '@nestjs/common';
+import { MembershipStatus, Prisma, Role } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import type { AuthUser } from '../auth/auth.types';
+import { PrismaService } from '../prisma/prisma.service';
+import { TenancyService } from '../tenancy/tenancy.service';
 import type {
   CreateTenantAccountDto,
   TenantFeaturesDto,
-} from "./dto/create-tenant-account.dto";
-import type { UpdateTenantAccountDto } from "./dto/update-tenant-account.dto";
+} from './dto/create-tenant-account.dto';
+import type { UpdateTenantAccountDto } from './dto/update-tenant-account.dto';
 
 type TenantAccountRecord = {
   id: string;
@@ -47,6 +47,7 @@ type TenantAccountResponse = {
   id: string;
   name: string;
   slug: string;
+  subdomain: string;
   authOrgId: string;
   ownerEmail: string | null;
   ownerName: string | null;
@@ -66,7 +67,7 @@ type TenantAccountResponse = {
   updatedAt: string;
 };
 
-const DEFAULT_TIMEZONE = "America/New_York";
+const DEFAULT_TIMEZONE = 'America/New_York';
 const DEFAULT_ROUNDING_MINUTES = 15;
 
 const defaultFeatures = () => ({
@@ -79,8 +80,8 @@ const slugify = (value: string): string =>
   value
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "");
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '');
 
 @Injectable()
 export class TenantAccountsService {
@@ -93,7 +94,7 @@ export class TenantAccountsService {
     await this.requireOwner(authUser);
 
     const tenants = await this.prisma.tenant.findMany({
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: 'desc' },
       include: {
         settings: {
           select: {
@@ -109,7 +110,7 @@ export class TenantAccountsService {
             role: Role.OWNER,
             status: MembershipStatus.ACTIVE,
           },
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: 'asc' },
           take: 1,
           select: {
             user: {
@@ -141,7 +142,7 @@ export class TenantAccountsService {
 
     const tenant = await this.findTenantAccount(tenantId);
     if (!tenant) {
-      throw new NotFoundException("Tenant account not found.");
+      throw new NotFoundException('Tenant account not found.');
     }
 
     return this.toTenantAccountResponse(tenant);
@@ -152,13 +153,13 @@ export class TenantAccountsService {
 
     const name = dto.name.trim();
     if (!name) {
-      throw new BadRequestException("Tenant name is required.");
+      throw new BadRequestException('Tenant name is required.');
     }
 
-    const requestedSlug = slugify(dto.slug || name);
+    const requestedSlug = slugify(dto.subdomain || dto.slug || name);
     if (!requestedSlug) {
       throw new BadRequestException(
-        "Tenant slug must contain at least one letter or number.",
+        'Tenant slug must contain at least one letter or number.',
       );
     }
 
@@ -200,7 +201,7 @@ export class TenantAccountsService {
 
     const tenant = await this.findTenantAccount(tenantId);
     if (!tenant) {
-      throw new NotFoundException("Tenant account not found after creation.");
+      throw new NotFoundException('Tenant account not found after creation.');
     }
     return this.toTenantAccountResponse(tenant);
   }
@@ -216,12 +217,12 @@ export class TenantAccountsService {
     });
 
     if (!existing) {
-      throw new NotFoundException("Tenant account not found.");
+      throw new NotFoundException('Tenant account not found.');
     }
 
     if (dto.isActive === false && ownerContext.tenant.id === tenantId) {
       throw new BadRequestException(
-        "You cannot disable your own tenant account.",
+        'You cannot disable your own tenant account.',
       );
     }
 
@@ -230,16 +231,17 @@ export class TenantAccountsService {
     if (dto.name !== undefined) {
       const name = dto.name.trim();
       if (!name) {
-        throw new BadRequestException("Tenant name cannot be empty.");
+        throw new BadRequestException('Tenant name cannot be empty.');
       }
       updates.name = name;
     }
 
-    if (dto.slug !== undefined) {
-      const requestedSlug = slugify(dto.slug);
+    const slugInput = dto.subdomain ?? dto.slug;
+    if (slugInput !== undefined) {
+      const requestedSlug = slugify(slugInput);
       if (!requestedSlug) {
         throw new BadRequestException(
-          "Tenant slug must contain at least one letter or number.",
+          'Tenant slug must contain at least one letter or number.',
         );
       }
       updates.slug = await this.resolveUniqueSlug(requestedSlug, tenantId);
@@ -248,7 +250,7 @@ export class TenantAccountsService {
     if (dto.authOrgId !== undefined) {
       const requestedAuthOrgId = dto.authOrgId.trim();
       if (!requestedAuthOrgId) {
-        throw new BadRequestException("Auth organization ID cannot be empty.");
+        throw new BadRequestException('Auth organization ID cannot be empty.');
       }
       updates.authOrgId = await this.resolveUniqueAuthOrgId(
         requestedAuthOrgId,
@@ -324,7 +326,7 @@ export class TenantAccountsService {
 
     const tenant = await this.findTenantAccount(tenantId);
     if (!tenant) {
-      throw new NotFoundException("Tenant account not found after update.");
+      throw new NotFoundException('Tenant account not found after update.');
     }
     return this.toTenantAccountResponse(tenant);
   }
@@ -336,7 +338,7 @@ export class TenantAccountsService {
       context.membership.status !== MembershipStatus.ACTIVE
     ) {
       throw new ForbiddenException(
-        "Only active owners can manage tenant accounts.",
+        'Only active owners can manage tenant accounts.',
       );
     }
     return context;
@@ -368,10 +370,7 @@ export class TenantAccountsService {
     }
   }
 
-  private async resolveUniqueAuthOrgId(
-    base: string,
-    excludeTenantId?: string,
-  ) {
+  private async resolveUniqueAuthOrgId(base: string, excludeTenantId?: string) {
     let authOrgId = base;
     let attempt = 0;
     while (true) {
@@ -464,7 +463,7 @@ export class TenantAccountsService {
             role: Role.OWNER,
             status: MembershipStatus.ACTIVE,
           },
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: 'asc' },
           take: 1,
           select: {
             user: {
@@ -487,13 +486,16 @@ export class TenantAccountsService {
     return tenant as TenantAccountRecord | null;
   }
 
-  private toTenantAccountResponse(tenant: TenantAccountRecord): TenantAccountResponse {
+  private toTenantAccountResponse(
+    tenant: TenantAccountRecord,
+  ): TenantAccountResponse {
     const defaults = defaultFeatures();
     const owner = tenant.memberships[0]?.user;
     return {
       id: tenant.id,
       name: tenant.name,
       slug: tenant.slug,
+      subdomain: tenant.slug,
       authOrgId: tenant.authOrgId,
       ownerEmail: tenant.ownerEmail || owner?.email || null,
       ownerName: owner?.name || null,

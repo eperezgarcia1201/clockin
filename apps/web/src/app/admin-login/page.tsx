@@ -2,14 +2,41 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 const hasSso =
   Boolean(process.env.NEXT_PUBLIC_AUTH0_DOMAIN) &&
   Boolean(process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID);
 
+const inferTenantFromHostname = () => {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const hostname = window.location.hostname.toLowerCase();
+  if (
+    !hostname ||
+    hostname === "localhost" ||
+    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)
+  ) {
+    return "";
+  }
+
+  const parts = hostname.split(".").filter(Boolean);
+  if (parts.length >= 3) {
+    return parts[0];
+  }
+
+  if (parts.length === 2 && parts[1] === "localhost") {
+    return parts[0];
+  }
+
+  return "";
+};
+
 export default function AdminLoginPage() {
   const router = useRouter();
+  const [tenant, setTenant] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
@@ -18,6 +45,10 @@ export default function AdminLoginPage() {
   const [resetEmail, setResetEmail] = useState("");
   const [resetStatus, setResetStatus] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+
+  useEffect(() => {
+    setTenant((current) => current || inferTenantFromHostname());
+  }, []);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -28,7 +59,7 @@ export default function AdminLoginPage() {
       const response = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ tenant, username, password }),
       });
 
       if (!response.ok) {
@@ -38,9 +69,7 @@ export default function AdminLoginPage() {
 
       router.push("/admin");
     } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : "Unable to sign in.",
-      );
+      setStatus(error instanceof Error ? error.message : "Unable to sign in.");
     } finally {
       setSubmitting(false);
     }
@@ -90,6 +119,22 @@ export default function AdminLoginPage() {
         </div>
 
         <form className="admin-login-body" onSubmit={onSubmit}>
+          <label className="form-label" htmlFor="admin-tenant">
+            Tenant
+          </label>
+          <div className="input-row">
+            <i className="fa-solid fa-building-user" aria-hidden="true" />
+            <input
+              id="admin-tenant"
+              type="text"
+              placeholder="restaurant1"
+              autoComplete="organization"
+              value={tenant}
+              onChange={(event) => setTenant(event.target.value)}
+              required
+            />
+          </div>
+
           <label className="form-label" htmlFor="admin-username">
             Username
           </label>
@@ -98,7 +143,7 @@ export default function AdminLoginPage() {
             <input
               id="admin-username"
               type="text"
-              placeholder="elmer"
+              placeholder="admin"
               autoComplete="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
@@ -120,6 +165,11 @@ export default function AdminLoginPage() {
               onChange={(event) => setPassword(event.target.value)}
               required
             />
+          </div>
+
+          <div className="alert alert-info mb-0">
+            Tenant example: <strong>Restaurant1</strong> | Username:{" "}
+            <strong>admin</strong> | Password: <strong>1234qwer</strong>
           </div>
 
           {status && <div className="alert alert-danger">{status}</div>}
