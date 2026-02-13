@@ -58,6 +58,19 @@ export default function ReportsHome() {
             <i className="fa-solid fa-chevron-right" aria-hidden="true" />
           </div>
         </a>
+
+        <a className="report-tile" href="/reports/tips">
+          <div className="report-icon report-icon--payroll">
+            <i className="fa-solid fa-hand-holding-dollar" aria-hidden="true" />
+          </div>
+          <div className="report-copy">
+            <h2>Tips Report</h2>
+            <p>Review cash and credit card tips per server by day.</p>
+          </div>
+          <div className="report-action">
+            <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+          </div>
+        </a>
       </div>
     </div>
   );

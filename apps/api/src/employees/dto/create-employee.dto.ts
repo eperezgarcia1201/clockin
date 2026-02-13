@@ -60,5 +60,9 @@ export class CreateEmployeeDto {
 
   @IsOptional()
   @IsBoolean()
+  isServer?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   disabled?: boolean;
 }

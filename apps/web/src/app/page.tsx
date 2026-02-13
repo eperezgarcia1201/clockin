@@ -8,6 +8,7 @@ type Employee = {
   id: string;
   name: string;
   active: boolean;
+  isServer?: boolean;
 };
 
 type PunchRow = {
@@ -27,6 +28,8 @@ export default function Home() {
   const [employeeName, setEmployeeName] = useState("");
   const [punchType, setPunchType] = useState("IN");
   const [pin, setPin] = useState("");
+  const [cashTips, setCashTips] = useState("0");
+  const [creditCardTips, setCreditCardTips] = useState("0");
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -104,6 +107,35 @@ export default function Home() {
     setSubmitting(true);
     setSubmitStatus(null);
     try {
+      if (punchType === "OUT" && selectedEmployee.isServer) {
+        const cash = Number.parseFloat(cashTips || "0");
+        const credit = Number.parseFloat(creditCardTips || "0");
+        if (
+          !Number.isFinite(cash) ||
+          cash < 0 ||
+          !Number.isFinite(credit) ||
+          credit < 0
+        ) {
+          throw new Error("Tips must be valid non-negative numbers.");
+        }
+
+        const tipsResponse = await fetch(`/api/employee-tips/${selectedEmployee.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cashTips: cash,
+            creditCardTips: credit,
+          }),
+        });
+
+        if (!tipsResponse.ok) {
+          const data = await tipsResponse.json().catch(() => ({}));
+          throw new Error(
+            data?.message || data?.error || "Unable to submit tips.",
+          );
+        }
+      }
+
       const payload: Record<string, string> = { type: punchType };
       if (pin) {
         payload.pin = pin;
@@ -126,6 +158,10 @@ export default function Home() {
 
       setSubmitStatus("Punch recorded.");
       setPin("");
+      if (punchType === "OUT" && selectedEmployee.isServer) {
+        setCashTips("0");
+        setCreditCardTips("0");
+      }
       loadPunches();
     } catch (error) {
       setSubmitStatus(
@@ -224,6 +260,42 @@ export default function Home() {
                   <option value="LUNCH">Lunch</option>
                 </select>
               </div>
+              {punchType === "OUT" && selectedEmployee?.isServer && (
+                <>
+                  <div className="col-12 col-md-6">
+                    <label className="form-label" htmlFor="cash-tips">
+                      Cash Tips ($):
+                    </label>
+                    <div className="input-row">
+                      <i className="fa-solid fa-money-bill-wave" aria-hidden="true" />
+                      <input
+                        id="cash-tips"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={cashTips}
+                        onChange={(event) => setCashTips(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="col-12 col-md-6">
+                    <label className="form-label" htmlFor="credit-tips">
+                      Credit Card Tips ($):
+                    </label>
+                    <div className="input-row">
+                      <i className="fa-solid fa-credit-card" aria-hidden="true" />
+                      <input
+                        id="credit-tips"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={creditCardTips}
+                        onChange={(event) => setCreditCardTips(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
             {submitStatus && (
               <div className="alert alert-info mt-3 mb-0">{submitStatus}</div>

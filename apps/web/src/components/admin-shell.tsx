@@ -38,6 +38,7 @@ const translations: Record<Lang, Record<string, string>> = {
     hoursReports: "Hours Reports",
     payrollReports: "Payroll Summary",
     auditReports: "Audit Reports",
+    tipsReports: "Tips Reports",
     notifications: "Notifications",
     backToAdmin: "Back to Admin",
     language: "Language",
@@ -74,6 +75,7 @@ const translations: Record<Lang, Record<string, string>> = {
     hoursReports: "Reporte de Horas",
     payrollReports: "Resumen de Nómina",
     auditReports: "Reporte de Auditoría",
+    tipsReports: "Reporte de Propinas",
     notifications: "Notificaciones",
     backToAdmin: "Volver a Admin",
     language: "Idioma",
@@ -348,6 +350,10 @@ export function AdminShell({
                 <Link className="admin-link" href="/reports/audit">
                   <i className="fa-solid fa-shield" aria-hidden="true" />
                   {t.auditReports}
+                </Link>
+                <Link className="admin-link" href="/reports/tips">
+                  <i className="fa-solid fa-hand-holding-dollar" aria-hidden="true" />
+                  {t.tipsReports}
                 </Link>
               </div>
               <div className="admin-section">

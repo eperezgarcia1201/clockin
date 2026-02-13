@@ -1,12 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { clockinFetch } from "../../../../../lib/clockin-api";
 
 export async function PATCH(
-  _request: Request,
-  { params }: { params: { id: string } },
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const response = await clockinFetch(`/notifications/${params.id}/read`, {
+    const { id } = await context.params;
+    const response = await clockinFetch(`/notifications/${id}/read`, {
       method: "PATCH",
     });
     const data = await response.json();

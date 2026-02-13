@@ -27,6 +27,7 @@ type Employee = {
   id: string;
   name: string;
   active: boolean;
+  isServer?: boolean;
 };
 
 const actions = ["IN", "OUT", "BREAK", "LUNCH"] as const;
@@ -35,9 +36,13 @@ export default function App() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeName, setEmployeeName] = useState("");
   const [pin, setPin] = useState("");
+  const [cashTips, setCashTips] = useState("0");
+  const [creditCardTips, setCreditCardTips] = useState("0");
   const [punchType, setPunchType] = useState<(typeof actions)[number]>("IN");
   const [status, setStatus] = useState<string | null>(null);
+  const [tipsStatus, setTipsStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [savingTips, setSavingTips] = useState(false);
   const [lastPunch, setLastPunch] = useState<{
     name: string;
     type: string;
@@ -105,6 +110,27 @@ export default function App() {
     setLoading(true);
     setStatus(null);
     try {
+      if (punchType === "OUT" && matchedEmployee.isServer) {
+        const cash = Number.parseFloat(cashTips || "0");
+        const credit = Number.parseFloat(creditCardTips || "0");
+        if (
+          !Number.isFinite(cash) ||
+          cash < 0 ||
+          !Number.isFinite(credit) ||
+          credit < 0
+        ) {
+          throw new Error("Tips must be valid non-negative numbers.");
+        }
+
+        await fetchJson(`/employee-tips/${matchedEmployee.id}`, {
+          method: "POST",
+          body: JSON.stringify({
+            cashTips: cash,
+            creditCardTips: credit,
+          }),
+        });
+      }
+
       await fetchJson(`/employee-punches/${matchedEmployee.id}`, {
         method: "POST",
         body: JSON.stringify({ type: punchType, pin: pin || undefined }),
@@ -116,10 +142,49 @@ export default function App() {
         occurredAt: new Date(),
       });
       setPin("");
+      if (punchType === "OUT" && matchedEmployee.isServer) {
+        setCashTips("0");
+        setCreditCardTips("0");
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Punch failed.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSubmitTips = async () => {
+    if (!matchedEmployee) {
+      setTipsStatus("Select a valid employee first.");
+      return;
+    }
+    if (!matchedEmployee.isServer) {
+      setTipsStatus("Tips can only be submitted for server users.");
+      return;
+    }
+
+    const cash = Number.parseFloat(cashTips || "0");
+    const credit = Number.parseFloat(creditCardTips || "0");
+    if (!Number.isFinite(cash) || cash < 0 || !Number.isFinite(credit) || credit < 0) {
+      setTipsStatus("Tips must be valid non-negative numbers.");
+      return;
+    }
+
+    setSavingTips(true);
+    setTipsStatus(null);
+    try {
+      await fetchJson(`/employee-tips/${matchedEmployee.id}`, {
+        method: "POST",
+        body: JSON.stringify({
+          cashTips: cash,
+          creditCardTips: credit,
+        }),
+      });
+      setTipsStatus("Tips saved for today.");
+    } catch (error) {
+      setTipsStatus(error instanceof Error ? error.message : "Unable to save tips.");
+    } finally {
+      setSavingTips(false);
     }
   };
 
@@ -211,6 +276,37 @@ export default function App() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {matchedEmployee?.isServer && (
+                <>
+                  <Text style={styles.label}>Cash Tips ($)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={cashTips}
+                    onChangeText={setCashTips}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                  />
+                  <Text style={styles.label}>Credit Card Tips ($)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={creditCardTips}
+                    onChangeText={setCreditCardTips}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                  />
+                  {tipsStatus && <Text style={styles.statusText}>{tipsStatus}</Text>}
+                  <TouchableOpacity
+                    style={[styles.button, styles.secondary]}
+                    onPress={handleSubmitTips}
+                    disabled={savingTips}
+                  >
+                    <Text style={styles.secondaryText}>
+                      {savingTips ? "Saving Tips..." : "Save Tips Only"}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
 
               {status && <Text style={styles.statusText}>{status}</Text>}
 
@@ -456,10 +552,19 @@ const styles = StyleSheet.create({
   primary: {
     backgroundColor: "#ff8a3d",
   },
+  secondary: {
+    backgroundColor: "#f0e6d8",
+    marginTop: 10,
+  },
   primaryText: {
     fontWeight: "700",
     color: "#1a1a1a",
     fontSize: 15,
+  },
+  secondaryText: {
+    fontWeight: "700",
+    color: "#4b5563",
+    fontSize: 14,
   },
   deviceCard: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",

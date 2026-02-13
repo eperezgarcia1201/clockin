@@ -61,5 +61,9 @@ export class UpdateEmployeeDto {
 
   @IsOptional()
   @IsBoolean()
+  isServer?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   disabled?: boolean;
 }

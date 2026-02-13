@@ -13,6 +13,7 @@ type EmployeeRow = {
   isAdmin?: boolean;
   isTimeAdmin?: boolean;
   isReports?: boolean;
+  isServer?: boolean;
 };
 
 type Office = { id: string; name: string };
@@ -151,6 +152,7 @@ export default function UsersSummary() {
                 <th>Sys Admin</th>
                 <th>Time Admin</th>
                 <th>Reports</th>
+                <th>Server</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -174,6 +176,7 @@ export default function UsersSummary() {
                   <td>{employee.isAdmin ? "Yes" : ""}</td>
                   <td>{employee.isTimeAdmin ? "Yes" : ""}</td>
                   <td>{employee.isReports ? "Yes" : ""}</td>
+                  <td>{employee.isServer ? "Yes" : ""}</td>
                   <td>
                     <div className="d-flex gap-2">
                       <a

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { PunchType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { TenancyService } from "../tenancy/tenancy.service";
 import type { AuthUser } from "../auth/auth.types";
@@ -7,6 +8,12 @@ import { compare } from "bcryptjs";
 import type { ManualEmployeePunchDto } from "./dto/manual-employee-punch.dto";
 import type { UpdateEmployeePunchDto } from "./dto/update-employee-punch.dto";
 import { NotificationsService } from "../notifications/notifications.service";
+
+const ACTIVE_WORK_STATUSES = new Set<PunchType>([
+  PunchType.IN,
+  PunchType.BREAK,
+  PunchType.LUNCH,
+]);
 
 @Injectable()
 export class EmployeePunchesService {
@@ -51,6 +58,18 @@ export class EmployeePunchesService {
       }
     }
 
+    if (dto.type === PunchType.OUT) {
+      await this.enforceServerTipBeforeClockOut(
+        tenant.id,
+        {
+          id: employee.id,
+          isServer: employee.isServer,
+        },
+        occurredAt,
+        settings?.timezone,
+      );
+    }
+
     const punch = await this.prisma.employeePunch.create({
       data: {
         tenantId: tenant.id,
@@ -69,6 +88,11 @@ export class EmployeePunchesService {
 
   async getRecent(authUser: AuthUser) {
     const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const settings = await this.prisma.tenantSettings.findUnique({
+      where: { tenantId: tenant.id },
+      select: { timezone: true },
+    });
+    await this.autoClockOutAfterSchedule(tenant.id, settings?.timezone);
 
     const employees = await this.prisma.employee.findMany({
       where: {
@@ -285,6 +309,144 @@ export class EmployeePunchesService {
     const [hours, minutes] = value.split(":").map((part) => Number(part));
     if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
     return hours * 60 + minutes;
+  }
+
+  private toLocalDateKey(date: Date, timeZone?: string) {
+    const zone = timeZone || "UTC";
+    try {
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: zone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const parts = formatter.formatToParts(date);
+      const year = parts.find((part) => part.type === "year")?.value;
+      const month = parts.find((part) => part.type === "month")?.value;
+      const day = parts.find((part) => part.type === "day")?.value;
+      if (!year || !month || !day) {
+        return date.toISOString().slice(0, 10);
+      }
+      return `${year}-${month}-${day}`;
+    } catch {
+      return date.toISOString().slice(0, 10);
+    }
+  }
+
+  private async enforceServerTipBeforeClockOut(
+    tenantId: string,
+    employee: { id: string; isServer: boolean },
+    occurredAt: Date,
+    timeZone?: string,
+  ) {
+    if (!employee.isServer) {
+      return;
+    }
+
+    const workDate = this.toLocalDateKey(occurredAt, timeZone);
+    const workDateUtc = new Date(`${workDate}T00:00:00.000Z`);
+
+    const tip = await this.prisma.employeeTip.findUnique({
+      where: {
+        tenantId_employeeId_workDate: {
+          tenantId,
+          employeeId: employee.id,
+          workDate: workDateUtc,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!tip) {
+      throw new UnauthorizedException(
+        "Server users must submit cash and credit card tips before clocking out.",
+      );
+    }
+  }
+
+  private async autoClockOutAfterSchedule(tenantId: string, timeZone?: string) {
+    const now = new Date();
+    const current = this.getLocalDayInfo(now, timeZone);
+
+    const latestPunches = await this.prisma.employeePunch.findMany({
+      where: { tenantId },
+      orderBy: { occurredAt: "desc" },
+      distinct: ["employeeId"],
+      include: {
+        employee: {
+          select: {
+            id: true,
+            fullName: true,
+            displayName: true,
+            disabled: true,
+          },
+        },
+      },
+    });
+
+    const candidates = latestPunches.filter(
+      (punch) =>
+        punch.employee &&
+        !punch.employee.disabled &&
+        ACTIVE_WORK_STATUSES.has(punch.type),
+    );
+
+    if (!candidates.length) {
+      return;
+    }
+
+    const schedules = await this.prisma.employeeSchedule.findMany({
+      where: {
+        tenantId,
+        weekday: current.weekday,
+        employeeId: { in: candidates.map((punch) => punch.employeeId) },
+      },
+      select: {
+        employeeId: true,
+        endTime: true,
+      },
+    });
+    const scheduleByEmployee = new Map(
+      schedules.map((schedule) => [schedule.employeeId, schedule]),
+    );
+
+    for (const punch of candidates) {
+      const schedule = scheduleByEmployee.get(punch.employeeId);
+      if (!schedule) {
+        continue;
+      }
+
+      const endMinutes = this.parseTime(schedule.endTime);
+      if (endMinutes === null || current.minutes < endMinutes) {
+        continue;
+      }
+
+      const latest = await this.prisma.employeePunch.findFirst({
+        where: { tenantId, employeeId: punch.employeeId },
+        orderBy: { occurredAt: "desc" },
+        select: { type: true },
+      });
+      if (!latest || !ACTIVE_WORK_STATUSES.has(latest.type)) {
+        continue;
+      }
+
+      const autoOutAt = new Date();
+      await this.prisma.employeePunch.create({
+        data: {
+          tenantId,
+          employeeId: punch.employeeId,
+          type: PunchType.OUT,
+          occurredAt: autoOutAt,
+          notes: "Auto clock-out: schedule ended.",
+        },
+      });
+      await this.notifications.notifyPunch(
+        tenantId,
+        punch.employee,
+        PunchType.OUT,
+        autoOutAt,
+      );
+    }
   }
 
   private async enforceSchedule(

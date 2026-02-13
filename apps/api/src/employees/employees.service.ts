@@ -32,6 +32,7 @@ export class EmployeesService {
       isAdmin: employee.isAdmin,
       isTimeAdmin: employee.isTimeAdmin,
       isReports: employee.isReports,
+      isServer: employee.isServer,
     }));
   }
 
@@ -53,6 +54,7 @@ export class EmployeesService {
         isAdmin: dto.isAdmin ?? false,
         isTimeAdmin: dto.isTimeAdmin ?? false,
         isReports: dto.isReports ?? false,
+        isServer: dto.isServer ?? false,
         disabled: dto.disabled ?? false,
       },
     });
@@ -80,6 +82,7 @@ export class EmployeesService {
       isAdmin: employee.isAdmin,
       isTimeAdmin: employee.isTimeAdmin,
       isReports: employee.isReports,
+      isServer: employee.isServer,
       disabled: employee.disabled,
     };
   }
@@ -127,6 +130,9 @@ export class EmployeesService {
     }
     if (dto.isReports !== undefined) {
       data.isReports = dto.isReports;
+    }
+    if (dto.isServer !== undefined) {
+      data.isServer = dto.isServer;
     }
     if (dto.disabled !== undefined) {
       data.disabled = dto.disabled;

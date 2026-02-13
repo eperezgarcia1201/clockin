@@ -19,6 +19,7 @@ import { AdminDevicesModule } from './admin-devices/admin-devices.module';
 import { EmployeeSchedulesModule } from './employee-schedules/employee-schedules.module';
 import { TenantAccountsModule } from './tenant-accounts/tenant-accounts.module';
 import { TenantDirectoryModule } from './tenant-directory/tenant-directory.module';
+import { EmployeeTipsModule } from './employee-tips/employee-tips.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { TenantDirectoryModule } from './tenant-directory/tenant-directory.modul
     EmployeeSchedulesModule,
     TenantAccountsModule,
     TenantDirectoryModule,
+    EmployeeTipsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

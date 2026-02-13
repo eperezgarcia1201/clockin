@@ -26,6 +26,13 @@ type DayHours = {
   lastOut?: string | null;
 };
 
+type DayTips = {
+  date: string;
+  cashTips: number;
+  creditCardTips: number;
+  totalTips: number;
+};
+
 @Injectable()
 export class ReportsService {
   constructor(
@@ -269,6 +276,104 @@ export class ReportsService {
         occurredAt: punch.occurredAt.toISOString(),
         notes: punch.notes ?? "",
       })),
+    };
+  }
+
+  async getTipsReport(
+    authUser: AuthUser,
+    input: {
+      from: string;
+      to: string;
+      employeeId?: string;
+      officeId?: string;
+      groupId?: string;
+    },
+  ) {
+    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const settings = await this.prisma.tenantSettings.findUnique({
+      where: { tenantId: tenant.id },
+    });
+    if (settings && settings.reportsEnabled === false) {
+      throw new ForbiddenException("Reports are disabled.");
+    }
+
+    const fromUtc = new Date(`${input.from}T00:00:00.000Z`);
+    const toUtc = new Date(`${input.to}T00:00:00.000Z`);
+
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        tenantId: tenant.id,
+        id: input.employeeId,
+        officeId: input.officeId,
+        groupId: input.groupId,
+        isServer: true,
+      },
+      orderBy: { fullName: "asc" },
+      select: {
+        id: true,
+        fullName: true,
+        displayName: true,
+      },
+    });
+
+    if (!employees.length) {
+      return {
+        range: { from: input.from, to: input.to },
+        employees: [],
+      };
+    }
+
+    const tips = await this.prisma.employeeTip.findMany({
+      where: {
+        tenantId: tenant.id,
+        employeeId: { in: employees.map((employee) => employee.id) },
+        workDate: {
+          gte: fromUtc,
+          lte: toUtc,
+        },
+      },
+      orderBy: [{ employeeId: "asc" }, { workDate: "asc" }],
+    });
+
+    const tipsByEmployee = new Map<string, typeof tips>();
+    for (const tip of tips) {
+      const list = tipsByEmployee.get(tip.employeeId) || [];
+      list.push(tip);
+      tipsByEmployee.set(tip.employeeId, list);
+    }
+
+    return {
+      range: { from: input.from, to: input.to },
+      employees: employees.map((employee) => {
+        const rows = (tipsByEmployee.get(employee.id) || []).map((tip) => {
+          const cashTips = Number(tip.cashTips.toFixed(2));
+          const creditCardTips = Number(tip.creditCardTips.toFixed(2));
+          return {
+            date: tip.workDate.toISOString().slice(0, 10),
+            cashTips,
+            creditCardTips,
+            totalTips: Number((cashTips + creditCardTips).toFixed(2)),
+          } satisfies DayTips;
+        });
+
+        const totals = rows.reduce(
+          (acc, row) => {
+            acc.cashTips += row.cashTips;
+            acc.creditCardTips += row.creditCardTips;
+            return acc;
+          },
+          { cashTips: 0, creditCardTips: 0 },
+        );
+
+        return {
+          id: employee.id,
+          name: employee.displayName || employee.fullName,
+          totalCashTips: Number(totals.cashTips.toFixed(2)),
+          totalCreditCardTips: Number(totals.creditCardTips.toFixed(2)),
+          totalTips: Number((totals.cashTips + totals.creditCardTips).toFixed(2)),
+          days: rows,
+        };
+      }),
     };
   }
 

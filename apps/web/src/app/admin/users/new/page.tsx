@@ -16,6 +16,7 @@ type FormState = {
   isAdmin: boolean;
   isTimeAdmin: boolean;
   isReports: boolean;
+  isServer: boolean;
   disabled: boolean;
 };
 
@@ -30,6 +31,7 @@ const initialForm: FormState = {
   isAdmin: false,
   isTimeAdmin: false,
   isReports: false,
+  isServer: false,
   disabled: false,
 };
 
@@ -96,6 +98,7 @@ export default function CreateUser() {
         isAdmin: form.isAdmin,
         isTimeAdmin: form.isTimeAdmin,
         isReports: form.isReports,
+        isServer: form.isServer,
         disabled: form.disabled,
       }),
     });
@@ -247,6 +250,17 @@ export default function CreateUser() {
               className="form-select"
               value={form.isReports ? "yes" : "no"}
               onChange={(e) => update("isReports", e.target.value === "yes")}
+            >
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">Server User?</label>
+            <select
+              className="form-select"
+              value={form.isServer ? "yes" : "no"}
+              onChange={(e) => update("isServer", e.target.value === "yes")}
             >
               <option value="yes">Yes</option>
               <option value="no">No</option>

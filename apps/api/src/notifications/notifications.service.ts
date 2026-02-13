@@ -5,6 +5,7 @@ import type { AuthUser } from "../auth/auth.types";
 import { NotificationType, PunchType } from "@prisma/client";
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
 
 @Injectable()
 export class NotificationsService {
@@ -94,6 +95,47 @@ export class NotificationsService {
           employeeName,
           punchType: type,
           occurredAt: occurredAt.toISOString(),
+        },
+      },
+    });
+
+    await this.sendPush(tenantId, notification.message, notification.type);
+  }
+
+  async notifyTipSummary(
+    tenantId: string,
+    employee: { id: string; fullName: string; displayName?: string | null },
+    summary: {
+      workDate: string;
+      fromDate: string;
+      toDate: string;
+      cashTips: number;
+      creditCardTips: number;
+      totalTips: number;
+    },
+  ) {
+    const employeeName = employee.displayName || employee.fullName;
+    const message =
+      `${employeeName} submitted tips for ${summary.workDate}. ` +
+      `Last 7 days: ${formatCurrency(summary.totalTips)} ` +
+      `(CC ${formatCurrency(summary.creditCardTips)} / Cash ${formatCurrency(summary.cashTips)}).`;
+
+    const notification = await this.prisma.notification.create({
+      data: {
+        tenantId,
+        employeeId: employee.id,
+        type: NotificationType.TIPS_7D_SUMMARY,
+        message,
+        metadata: {
+          employeeName,
+          workDate: summary.workDate,
+          range: {
+            from: summary.fromDate,
+            to: summary.toDate,
+          },
+          cashTips: summary.cashTips,
+          creditCardTips: summary.creditCardTips,
+          totalTips: summary.totalTips,
         },
       },
     });

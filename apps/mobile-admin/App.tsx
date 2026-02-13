@@ -52,6 +52,7 @@ type Employee = {
   isAdmin?: boolean;
   isTimeAdmin?: boolean;
   isReports?: boolean;
+  isServer?: boolean;
 };
 
 type Office = { id: string; name: string };
@@ -66,7 +67,7 @@ type NotificationRow = {
   type: string;
 };
 
-type ReportType = "daily" | "hours" | "payroll" | "audit";
+type ReportType = "daily" | "hours" | "payroll" | "audit" | "tips";
 
 const tabs: { key: Screen; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
@@ -88,6 +89,21 @@ type ScheduleDay = {
   endTime: string;
 };
 
+type EditUserForm = {
+  fullName: string;
+  displayName: string;
+  email: string;
+  pin: string;
+  hourlyRate: string;
+  officeId: string;
+  groupId: string;
+  isAdmin: boolean;
+  isTimeAdmin: boolean;
+  isReports: boolean;
+  isServer: boolean;
+  disabled: boolean;
+};
+
 const weekDays = [
   "Sunday",
   "Monday",
@@ -106,6 +122,21 @@ const defaultScheduleDays = () =>
     startTime: "09:00",
     endTime: "17:00",
   }));
+
+const emptyEditUserForm = (): EditUserForm => ({
+  fullName: "",
+  displayName: "",
+  email: "",
+  pin: "",
+  hourlyRate: "",
+  officeId: "",
+  groupId: "",
+  isAdmin: false,
+  isTimeAdmin: false,
+  isReports: false,
+  isServer: false,
+  disabled: false,
+});
 
 const normalizeTime = (value: string) => {
   const trimmed = value.trim();
@@ -163,7 +194,13 @@ export default function App() {
   const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
   const [newUserIsTimeAdmin, setNewUserIsTimeAdmin] = useState(false);
   const [newUserIsReports, setNewUserIsReports] = useState(false);
+  const [newUserIsServer, setNewUserIsServer] = useState(false);
   const [userStatus, setUserStatus] = useState<string | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editUserForm, setEditUserForm] = useState<EditUserForm>(emptyEditUserForm());
+  const [editUserStatus, setEditUserStatus] = useState<string | null>(null);
+  const [editUserLoading, setEditUserLoading] = useState(false);
+  const [editUserSaving, setEditUserSaving] = useState(false);
 
   const [newOfficeName, setNewOfficeName] = useState("");
   const [officeStatus, setOfficeStatus] = useState<string | null>(null);
@@ -178,6 +215,7 @@ export default function App() {
   const [calendarOffset, setCalendarOffset] = useState(0);
 
   const [reportType, setReportType] = useState<ReportType>("daily");
+  const [reportEmployeeId, setReportEmployeeId] = useState("");
   const [fromDate, setFromDate] = useState(() => {
     const now = new Date();
     const start = new Date(now);
@@ -187,6 +225,7 @@ export default function App() {
   const [toDate, setToDate] = useState(() => formatDate(new Date()));
   const [reportRows, setReportRows] = useState<any[]>([]);
   const [reportStatus, setReportStatus] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("dark");
 
   const fetchJson = useCallback(async (path: string, options?: RequestInit) => {
@@ -278,6 +317,16 @@ export default function App() {
       if (!scheduleEmployeeId && data.employees?.[0]) {
         setScheduleEmployeeId(data.employees[0].id);
       }
+      if (
+        reportEmployeeId &&
+        !data.employees?.some((employee) => employee.id === reportEmployeeId)
+      ) {
+        setReportEmployeeId("");
+      }
+      if (editingUserId && !data.employees?.some((employee) => employee.id === editingUserId)) {
+        setEditingUserId(null);
+        setEditUserForm(emptyEditUserForm());
+      }
     } catch {
       // ignore
     }
@@ -346,6 +395,7 @@ export default function App() {
           isAdmin: newUserIsAdmin,
           isTimeAdmin: newUserIsTimeAdmin,
           isReports: newUserIsReports,
+          isServer: newUserIsServer,
         }),
       });
       setNewUserName("");
@@ -354,6 +404,7 @@ export default function App() {
       setNewUserIsAdmin(false);
       setNewUserIsTimeAdmin(false);
       setNewUserIsReports(false);
+      setNewUserIsServer(false);
       setUserStatus("User created.");
       loadEmployees();
       loadSummary();
@@ -362,10 +413,138 @@ export default function App() {
     }
   };
 
-  const handleDisableUser = async (id: string) => {
-    await fetchJson(`/employees/${id}`, { method: "DELETE" });
-    loadEmployees();
-    loadSummary();
+  const handleSetUserDisabled = async (id: string, disabled: boolean) => {
+    try {
+      await fetchJson(`/employees/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ disabled }),
+      });
+      if (editingUserId === id) {
+        setEditUserForm((prev) => ({ ...prev, disabled }));
+      }
+      setUserStatus(disabled ? "User disabled." : "User enabled.");
+      loadEmployees();
+      loadSummary();
+      loadActiveNow();
+    } catch (error) {
+      setUserStatus(error instanceof Error ? error.message : "Unable to update user status.");
+    }
+  };
+
+  const loadUserForEdit = async (id: string) => {
+    setEditUserLoading(true);
+    setEditUserStatus(null);
+    try {
+      const data = (await fetchJson(`/employees/${id}`)) as {
+        fullName: string;
+        displayName?: string | null;
+        email?: string | null;
+        hourlyRate?: number | null;
+        officeId?: string | null;
+        groupId?: string | null;
+        isAdmin?: boolean;
+        isTimeAdmin?: boolean;
+        isReports?: boolean;
+        isServer?: boolean;
+        disabled?: boolean;
+      };
+      setEditingUserId(id);
+      setEditUserForm({
+        fullName: data.fullName || "",
+        displayName: data.displayName || "",
+        email: data.email || "",
+        pin: "",
+        hourlyRate:
+          typeof data.hourlyRate === "number" && Number.isFinite(data.hourlyRate)
+            ? String(data.hourlyRate)
+            : "",
+        officeId: data.officeId || "",
+        groupId: data.groupId || "",
+        isAdmin: Boolean(data.isAdmin),
+        isTimeAdmin: Boolean(data.isTimeAdmin),
+        isReports: Boolean(data.isReports),
+        isServer: Boolean(data.isServer),
+        disabled: Boolean(data.disabled),
+      });
+      setEditUserStatus("Loaded user for editing.");
+    } catch (error) {
+      setEditUserStatus(error instanceof Error ? error.message : "Unable to load user.");
+    } finally {
+      setEditUserLoading(false);
+    }
+  };
+
+  const cancelEditUser = () => {
+    setEditingUserId(null);
+    setEditUserForm(emptyEditUserForm());
+    setEditUserStatus(null);
+  };
+
+  const saveUserEdits = async () => {
+    if (!editingUserId) {
+      setEditUserStatus("Select a user to edit.");
+      return;
+    }
+
+    const fullName = editUserForm.fullName.trim();
+    if (!fullName) {
+      setEditUserStatus("Full name is required.");
+      return;
+    }
+
+    const pin = editUserForm.pin.trim();
+    if (pin && !/^\d{4}$/.test(pin)) {
+      setEditUserStatus("PIN must be 4 digits.");
+      return;
+    }
+
+    let hourlyRate: number | undefined;
+    const hourlyRateRaw = editUserForm.hourlyRate.trim();
+    if (hourlyRateRaw) {
+      const parsed = Number(hourlyRateRaw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        setEditUserStatus("Hourly rate must be 0 or higher.");
+        return;
+      }
+      hourlyRate = parsed;
+    }
+
+    setEditUserSaving(true);
+    setEditUserStatus(null);
+    try {
+      const payload: Record<string, unknown> = {
+        fullName,
+        displayName: editUserForm.displayName.trim() || fullName,
+        email: editUserForm.email.trim(),
+        officeId: editUserForm.officeId,
+        groupId: editUserForm.groupId,
+        isAdmin: editUserForm.isAdmin,
+        isTimeAdmin: editUserForm.isTimeAdmin,
+        isReports: editUserForm.isReports,
+        isServer: editUserForm.isServer,
+        disabled: editUserForm.disabled,
+      };
+      if (hourlyRate !== undefined) {
+        payload.hourlyRate = hourlyRate;
+      }
+      if (pin) {
+        payload.pin = pin;
+      }
+
+      await fetchJson(`/employees/${editingUserId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      setEditUserForm((prev) => ({ ...prev, pin: "" }));
+      setEditUserStatus("User updated.");
+      loadEmployees();
+      loadSummary();
+      loadActiveNow();
+    } catch (error) {
+      setEditUserStatus(error instanceof Error ? error.message : "Unable to update user.");
+    } finally {
+      setEditUserSaving(false);
+    }
   };
 
   const handleCreateOffice = async () => {
@@ -408,18 +587,33 @@ export default function App() {
 
   const runReport = async () => {
     setReportStatus(null);
+    setReportLoading(true);
     const tzOffset = new Date().getTimezoneOffset();
     try {
+      const query = new URLSearchParams({
+        from: fromDate,
+        to: toDate,
+        round: "0",
+        tzOffset: String(tzOffset),
+      });
+      if (reportEmployeeId) {
+        query.set("employeeId", reportEmployeeId);
+      }
+
       const data = (await fetchJson(
-        `/reports/${reportType}?from=${fromDate}&to=${toDate}&round=0&tzOffset=${tzOffset}`,
+        `/reports/${reportType}?${query.toString()}`,
       )) as any;
       if (reportType === "audit") {
         setReportRows(data.records || []);
+        setReportStatus(`Generated ${(data.records || []).length} audit rows.`);
       } else {
         setReportRows(data.employees || []);
+        setReportStatus(`Generated ${(data.employees || []).length} employee report rows.`);
       }
     } catch (error) {
       setReportStatus(error instanceof Error ? error.message : "Report failed.");
+    } finally {
+      setReportLoading(false);
     }
   };
 
@@ -885,6 +1079,25 @@ export default function App() {
             Reports
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            newUserIsServer && styles.toggleActive,
+            newUserIsServer && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() => setNewUserIsServer((prev) => !prev)}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              newUserIsServer && isLight && styles.toggleTextLightActive,
+            ]}
+          >
+            Server
+          </Text>
+        </TouchableOpacity>
       </View>
       {userStatus && (
         <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
@@ -897,6 +1110,325 @@ export default function App() {
         </Text>
       </TouchableOpacity>
 
+      <View style={[styles.divider, isLight && styles.dividerLight]} />
+      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Edit User</Text>
+      {editUserLoading && (
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          Loading user...
+        </Text>
+      )}
+      {!editingUserId ? (
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          Tap Edit on a user below to load their profile.
+        </Text>
+      ) : (
+        <>
+          <Text style={[styles.label, isLight && styles.labelLight]}>Full Name</Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={editUserForm.fullName}
+            onChangeText={(value) =>
+              setEditUserForm((prev) => ({ ...prev, fullName: value }))
+            }
+            placeholder="Full name"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>Display Name</Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={editUserForm.displayName}
+            onChangeText={(value) =>
+              setEditUserForm((prev) => ({ ...prev, displayName: value }))
+            }
+            placeholder="Display name"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>Email</Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={editUserForm.email}
+            onChangeText={(value) =>
+              setEditUserForm((prev) => ({ ...prev, email: value }))
+            }
+            autoCapitalize="none"
+            placeholder="Email"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>Reset PIN (optional)</Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={editUserForm.pin}
+            onChangeText={(value) =>
+              setEditUserForm((prev) => ({ ...prev, pin: value }))
+            }
+            keyboardType="number-pad"
+            maxLength={4}
+            placeholder="4-digit PIN"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>Hourly Rate</Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={editUserForm.hourlyRate}
+            onChangeText={(value) =>
+              setEditUserForm((prev) => ({ ...prev, hourlyRate: value }))
+            }
+            keyboardType="decimal-pad"
+            placeholder="15.00"
+          />
+
+          <Text style={[styles.label, isLight && styles.labelLight]}>Office</Text>
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                !editUserForm.officeId && styles.toggleActive,
+                !editUserForm.officeId && isLight && styles.toggleActiveLight,
+              ]}
+              onPress={() => setEditUserForm((prev) => ({ ...prev, officeId: "" }))}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  !editUserForm.officeId && isLight && styles.toggleTextLightActive,
+                ]}
+              >
+                No Office
+              </Text>
+            </TouchableOpacity>
+            {offices.map((office) => (
+              <TouchableOpacity
+                key={office.id}
+                style={[
+                  styles.togglePill,
+                  isLight && styles.togglePillLight,
+                  editUserForm.officeId === office.id && styles.toggleActive,
+                  editUserForm.officeId === office.id && isLight && styles.toggleActiveLight,
+                ]}
+                onPress={() =>
+                  setEditUserForm((prev) => ({ ...prev, officeId: office.id }))
+                }
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    isLight && styles.toggleTextLight,
+                    editUserForm.officeId === office.id &&
+                      isLight &&
+                      styles.toggleTextLightActive,
+                  ]}
+                >
+                  {office.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={[styles.label, isLight && styles.labelLight]}>Group</Text>
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                !editUserForm.groupId && styles.toggleActive,
+                !editUserForm.groupId && isLight && styles.toggleActiveLight,
+              ]}
+              onPress={() => setEditUserForm((prev) => ({ ...prev, groupId: "" }))}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  !editUserForm.groupId && isLight && styles.toggleTextLightActive,
+                ]}
+              >
+                No Group
+              </Text>
+            </TouchableOpacity>
+            {groups.map((group) => (
+              <TouchableOpacity
+                key={group.id}
+                style={[
+                  styles.togglePill,
+                  isLight && styles.togglePillLight,
+                  editUserForm.groupId === group.id && styles.toggleActive,
+                  editUserForm.groupId === group.id && isLight && styles.toggleActiveLight,
+                ]}
+                onPress={() =>
+                  setEditUserForm((prev) => ({ ...prev, groupId: group.id }))
+                }
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    isLight && styles.toggleTextLight,
+                    editUserForm.groupId === group.id &&
+                      isLight &&
+                      styles.toggleTextLightActive,
+                  ]}
+                >
+                  {group.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                editUserForm.isAdmin && styles.toggleActive,
+                editUserForm.isAdmin && isLight && styles.toggleActiveLight,
+              ]}
+              onPress={() =>
+                setEditUserForm((prev) => ({ ...prev, isAdmin: !prev.isAdmin }))
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  editUserForm.isAdmin && isLight && styles.toggleTextLightActive,
+                ]}
+              >
+                Sys Admin
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                editUserForm.isTimeAdmin && styles.toggleActive,
+                editUserForm.isTimeAdmin && isLight && styles.toggleActiveLight,
+              ]}
+              onPress={() =>
+                setEditUserForm((prev) => ({
+                  ...prev,
+                  isTimeAdmin: !prev.isTimeAdmin,
+                }))
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  editUserForm.isTimeAdmin && isLight && styles.toggleTextLightActive,
+                ]}
+              >
+                Time Admin
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                editUserForm.isReports && styles.toggleActive,
+                editUserForm.isReports && isLight && styles.toggleActiveLight,
+              ]}
+              onPress={() =>
+                setEditUserForm((prev) => ({
+                  ...prev,
+                  isReports: !prev.isReports,
+                }))
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  editUserForm.isReports && isLight && styles.toggleTextLightActive,
+                ]}
+              >
+                Reports
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                editUserForm.isServer && styles.toggleActive,
+                editUserForm.isServer && isLight && styles.toggleActiveLight,
+              ]}
+              onPress={() =>
+                setEditUserForm((prev) => ({
+                  ...prev,
+                  isServer: !prev.isServer,
+                }))
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  editUserForm.isServer && isLight && styles.toggleTextLightActive,
+                ]}
+              >
+                Server
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                editUserForm.disabled && styles.toggleDanger,
+              ]}
+              onPress={() =>
+                setEditUserForm((prev) => ({ ...prev, disabled: !prev.disabled }))
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  editUserForm.disabled && styles.toggleTextLightActive,
+                ]}
+              >
+                {editUserForm.disabled ? "Disabled" : "Active"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {editUserStatus && (
+            <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+              {editUserStatus}
+            </Text>
+          )}
+          <View style={styles.rowActions}>
+            <TouchableOpacity
+              style={[
+                styles.secondaryButton,
+                isLight && styles.secondaryButtonLight,
+                styles.actionButtonCompact,
+                (editUserLoading || editUserSaving) && styles.inlineButtonDisabled,
+              ]}
+              onPress={cancelEditUser}
+              disabled={editUserLoading || editUserSaving}
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  isLight && styles.secondaryButtonTextLight,
+                ]}
+              >
+                Cancel
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.button,
+                styles.primary,
+                styles.actionButtonPrimary,
+                (editUserLoading || editUserSaving) && styles.inlineButtonDisabled,
+              ]}
+              onPress={saveUserEdits}
+              disabled={editUserLoading || editUserSaving}
+            >
+              <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+                {editUserSaving ? "Saving..." : "Save Changes"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
       <Text
         style={[
           styles.cardTitle,
@@ -904,7 +1436,7 @@ export default function App() {
           isLight && styles.cardTitleLight,
         ]}
       >
-        Active Users
+        Users
       </Text>
       <ScrollView
         style={styles.userList}
@@ -918,22 +1450,43 @@ export default function App() {
                 {employee.name}
               </Text>
               <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-                {employee.email || ""}
+                {employee.email || "No email"} • {employee.active ? "Active" : "Disabled"}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
-              onPress={() => handleDisableUser(employee.id)}
-            >
-              <Text
-                style={[
-                  styles.secondaryButtonText,
-                  isLight && styles.secondaryButtonTextLight,
-                ]}
+            <View style={styles.rowActions}>
+              <TouchableOpacity
+                style={[styles.secondaryButton, isLight && styles.secondaryButtonLight, styles.actionButtonCompact]}
+                onPress={() => loadUserForEdit(employee.id)}
               >
-                Disable
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.secondaryButtonText,
+                    isLight && styles.secondaryButtonTextLight,
+                  ]}
+                >
+                  Edit
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.secondaryButton,
+                  isLight && styles.secondaryButtonLight,
+                  styles.actionButtonCompact,
+                  employee.active && styles.secondaryButtonDanger,
+                ]}
+                onPress={() => handleSetUserDisabled(employee.id, employee.active)}
+              >
+                <Text
+                  style={[
+                    styles.secondaryButtonText,
+                    isLight && styles.secondaryButtonTextLight,
+                    employee.active && styles.secondaryButtonDangerText,
+                  ]}
+                >
+                  {employee.active ? "Disable" : "Enable"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ))}
       </ScrollView>
@@ -1002,7 +1555,7 @@ export default function App() {
         Run Reports
       </Text>
       <View style={styles.toggleRow}>
-        {(["daily", "hours", "payroll", "audit"] as ReportType[]).map((type) => (
+        {(["daily", "hours", "payroll", "audit", "tips"] as ReportType[]).map((type) => (
           <TouchableOpacity
             key={type}
             style={[
@@ -1037,14 +1590,62 @@ export default function App() {
         value={toDate}
         onChangeText={setToDate}
       />
+      <Text style={[styles.label, isLight && styles.labelLight]}>Employee Filter</Text>
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            !reportEmployeeId && styles.toggleActive,
+            !reportEmployeeId && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() => setReportEmployeeId("")}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              !reportEmployeeId && isLight && styles.toggleTextLightActive,
+            ]}
+          >
+            All Employees
+          </Text>
+        </TouchableOpacity>
+        {employees.map((employee) => (
+          <TouchableOpacity
+            key={`report-filter-${employee.id}`}
+            style={[
+              styles.togglePill,
+              isLight && styles.togglePillLight,
+              reportEmployeeId === employee.id && styles.toggleActive,
+              reportEmployeeId === employee.id && isLight && styles.toggleActiveLight,
+            ]}
+            onPress={() => setReportEmployeeId(employee.id)}
+          >
+            <Text
+              style={[
+                styles.toggleText,
+                isLight && styles.toggleTextLight,
+                reportEmployeeId === employee.id && isLight && styles.toggleTextLightActive,
+              ]}
+            >
+              {employee.name}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
       {reportStatus && (
         <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
           {reportStatus}
         </Text>
       )}
-      <TouchableOpacity style={[styles.button, styles.primary]} onPress={runReport}>
+      <TouchableOpacity
+        style={[styles.button, styles.primary, reportLoading && styles.inlineButtonDisabled]}
+        onPress={runReport}
+        disabled={reportLoading}
+      >
         <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
-          Run Report
+          {reportLoading ? "Generating..." : "Generate Report"}
         </Text>
       </TouchableOpacity>
       <View style={[styles.divider, isLight && styles.dividerLight]} />
@@ -1065,6 +1666,22 @@ export default function App() {
             </View>
             <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
               {new Date(row.occurredAt).toLocaleString()}
+            </Text>
+          </View>
+        ))
+      ) : reportType === "tips" ? (
+        reportRows.map((row: any) => (
+          <View key={row.id} style={styles.listRow}>
+            <View>
+              <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                {row.name}
+              </Text>
+              <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                CC ${row.totalCreditCardTips?.toFixed?.(2) ?? row.totalCreditCardTips} • Cash ${row.totalCashTips?.toFixed?.(2) ?? row.totalCashTips}
+              </Text>
+            </View>
+            <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+              ${row.totalTips?.toFixed?.(2) ?? row.totalTips}
             </Text>
           </View>
         ))
@@ -1092,7 +1709,7 @@ export default function App() {
     <View style={[styles.card, isLight && styles.cardLight]}>
       <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Alerts</Text>
       <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-        Push notifications are delivered for every punch and 6-hour no-break events.
+        Push notifications include punches, 6-hour no-break alerts, and 7-day tip summaries.
       </Text>
       <TouchableOpacity
         style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
@@ -1473,6 +2090,22 @@ const styles = StyleSheet.create({
   secondaryButtonText: { fontSize: 12, fontWeight: "600", color: "#e2e8f0" },
   secondaryButtonLight: { backgroundColor: "#e2e8f0" },
   secondaryButtonTextLight: { color: "#0f172a" },
+  secondaryButtonDanger: { backgroundColor: "#dc2626" },
+  secondaryButtonDangerText: { color: "#ffffff" },
+  rowActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  actionButtonCompact: {
+    marginTop: 0,
+    alignSelf: "auto",
+  },
+  actionButtonPrimary: {
+    minWidth: 140,
+    marginTop: 0,
+  },
   summaryGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1516,6 +2149,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(148, 163, 184, 0.2)",
   },
   toggleActive: { backgroundColor: "#2f5bff" },
+  toggleDanger: { backgroundColor: "#dc2626" },
   toggleText: { fontSize: 11, fontWeight: "600", color: "#e2e8f0" },
   togglePillLight: { backgroundColor: "#e2e8f0" },
   toggleActiveLight: { backgroundColor: "#2563eb" },

@@ -1,14 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { clockinFetch } from "../../../../lib/clockin-api";
 
 export async function POST(
-  request: Request,
-  context: { params: { employeeId: string } },
+  request: NextRequest,
+  context: { params: Promise<{ employeeId: string }> },
 ) {
   try {
     const body = await request.json();
+    const { employeeId } = await context.params;
     const response = await clockinFetch(
-      `/employee-punches/${context.params.employeeId}`,
+      `/employee-punches/${employeeId}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

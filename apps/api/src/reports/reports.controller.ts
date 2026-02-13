@@ -142,4 +142,25 @@ export class ReportsController {
       limit,
     });
   }
+
+  @Get("tips")
+  async tipsReport(@Req() req: RequestWithUser, @Query() query: Record<string, string>) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    const from = query.from;
+    const to = query.to;
+    if (!from || !to) {
+      throw new BadRequestException("from and to are required (YYYY-MM-DD)");
+    }
+
+    return this.reports.getTipsReport(req.user, {
+      from,
+      to,
+      employeeId: query.employeeId || undefined,
+      officeId: query.officeId || undefined,
+      groupId: query.groupId || undefined,
+    });
+  }
 }

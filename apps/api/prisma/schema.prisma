@@ -33,42 +33,44 @@ enum NotificationType {
   PUNCH_BREAK
   PUNCH_LUNCH
   NO_BREAK_6H
+  TIPS_7D_SUMMARY
 }
 
 model Tenant {
-  id        String       @id @default(cuid())
-  authOrgId String       @unique
-  name      String
-  slug      String       @unique
+  id         String   @id @default(cuid())
+  authOrgId  String   @unique
+  name       String
+  slug       String   @unique
   ownerEmail String?
-  isActive  Boolean      @default(true)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  memberships Membership[]
-  locations   Location[]
-  offices     Office[]
-  groups      Group[]
-  employees   Employee[]
-  statuses    PunchStatus[]
-  punches     Punch[]
-  employeePunches EmployeePunch[]
-  timeEntries TimeEntry[]
-  notifications Notification[]
-  adminDevices AdminDevice[]
+  memberships       Membership[]
+  locations         Location[]
+  offices           Office[]
+  groups            Group[]
+  employees         Employee[]
+  statuses          PunchStatus[]
+  punches           Punch[]
+  employeePunches   EmployeePunch[]
+  timeEntries       TimeEntry[]
+  notifications     Notification[]
+  adminDevices      AdminDevice[]
   employeeSchedules EmployeeSchedule[]
-  settings   TenantSettings?
+  employeeTips      EmployeeTip[]
+  settings          TenantSettings?
 
   @@index([isActive])
 }
 
 model User {
-  id         String       @id @default(cuid())
-  authUserId String       @unique
-  email      String       @unique
+  id         String   @id @default(cuid())
+  authUserId String   @unique
+  email      String   @unique
   name       String?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   memberships Membership[]
   punches     Punch[]
@@ -76,12 +78,12 @@ model User {
 }
 
 model Membership {
-  id        String            @id @default(cuid())
+  id        String           @id @default(cuid())
   tenantId  String
   userId    String
   role      Role
   status    MembershipStatus @default(ACTIVE)
-  createdAt DateTime          @default(now())
+  createdAt DateTime         @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
   user   User   @relation(fields: [userId], references: [id])
@@ -116,7 +118,7 @@ model Office {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
   groups    Group[]
   employees Employee[]
 
@@ -132,8 +134,8 @@ model Group {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  office    Office?  @relation(fields: [officeId], references: [id])
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  office    Office?    @relation(fields: [officeId], references: [id])
   employees Employee[]
 
   @@unique([tenantId, name])
@@ -153,16 +155,18 @@ model Employee {
   isAdmin     Boolean  @default(false)
   isTimeAdmin Boolean  @default(false)
   isReports   Boolean  @default(false)
+  isServer    Boolean  @default(false)
   disabled    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-  office Office? @relation(fields: [officeId], references: [id])
-  group  Group?  @relation(fields: [groupId], references: [id])
-  punches EmployeePunch[]
+  tenant        Tenant             @relation(fields: [tenantId], references: [id])
+  office        Office?            @relation(fields: [officeId], references: [id])
+  group         Group?             @relation(fields: [groupId], references: [id])
+  punches       EmployeePunch[]
+  tips          EmployeeTip[]
   notifications Notification[]
-  schedules EmployeeSchedule[]
+  schedules     EmployeeSchedule[]
 
   @@index([tenantId])
 }
@@ -194,7 +198,7 @@ model Notification {
   readAt     DateTime?
   createdAt  DateTime         @default(now())
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
   employee Employee? @relation(fields: [employeeId], references: [id])
 
   @@index([tenantId, createdAt])
@@ -267,14 +271,14 @@ model Punch {
 }
 
 model TimeEntry {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   tenantId        String
   userId          String
   startedAt       DateTime
   endedAt         DateTime?
   durationMinutes Int?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
   user   User   @relation(fields: [userId], references: [id])
@@ -284,16 +288,34 @@ model TimeEntry {
 }
 
 model TenantSettings {
-  id                  String   @id @default(cuid())
-  tenantId            String   @unique
-  timezone            String
-  roundingMinutes     Int
-  requirePin          Boolean  @default(true)
-  ipRestrictions      String?
-  reportsEnabled      Boolean  @default(true)
-  allowManualTimeEdits Boolean @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  tenantId             String   @unique
+  timezone             String
+  roundingMinutes      Int
+  requirePin           Boolean  @default(true)
+  ipRestrictions       String?
+  reportsEnabled       Boolean  @default(true)
+  allowManualTimeEdits Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model EmployeeTip {
+  id             String   @id @default(cuid())
+  tenantId       String
+  employeeId     String
+  workDate       DateTime
+  cashTips       Float    @default(0)
+  creditCardTips Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([tenantId, employeeId, workDate])
+  @@index([tenantId, workDate])
+  @@index([tenantId, employeeId])
 }

@@ -1,14 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { clockinFetch } from "../../../../../lib/clockin-api";
 
 export async function PATCH(
-  request: Request,
-  context: { params: { id: string } },
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
     const body = await request.json();
+    const { id } = await context.params;
     const response = await clockinFetch(
-      `/employee-punches/records/${context.params.id}`,
+      `/employee-punches/records/${id}`,
       {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -26,12 +27,13 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
-  context: { params: { id: string } },
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
+    const { id } = await context.params;
     const response = await clockinFetch(
-      `/employee-punches/records/${context.params.id}`,
+      `/employee-punches/records/${id}`,
       { method: "DELETE" },
     );
     const data = await response.json();

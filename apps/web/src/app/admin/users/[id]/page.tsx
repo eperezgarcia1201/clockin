@@ -17,6 +17,7 @@ type Employee = {
   isAdmin: boolean;
   isTimeAdmin: boolean;
   isReports: boolean;
+  isServer: boolean;
   disabled: boolean;
 };
 
@@ -37,6 +38,7 @@ type FormState = {
   isAdmin: boolean;
   isTimeAdmin: boolean;
   isReports: boolean;
+  isServer: boolean;
   disabled: boolean;
 };
 
@@ -51,6 +53,7 @@ const emptyForm: FormState = {
   isAdmin: false,
   isTimeAdmin: false,
   isReports: false,
+  isServer: false,
   disabled: false,
 };
 
@@ -122,6 +125,7 @@ export default function EditUser() {
           isAdmin: employee.isAdmin,
           isTimeAdmin: employee.isTimeAdmin,
           isReports: employee.isReports,
+          isServer: employee.isServer,
           disabled: employee.disabled,
         });
       } else {
@@ -211,6 +215,7 @@ export default function EditUser() {
         isAdmin: form.isAdmin,
         isTimeAdmin: form.isTimeAdmin,
         isReports: form.isReports,
+        isServer: form.isServer,
         disabled: form.disabled,
       }),
     });
@@ -414,6 +419,17 @@ export default function EditUser() {
               className="form-select"
               value={form.isReports ? "yes" : "no"}
               onChange={(e) => update("isReports", e.target.value === "yes")}
+            >
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">Server User?</label>
+            <select
+              className="form-select"
+              value={form.isServer ? "yes" : "no"}
+              onChange={(e) => update("isServer", e.target.value === "yes")}
             >
               <option value="yes">Yes</option>
               <option value="no">No</option>
