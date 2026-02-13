@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { clockinFetch } from "../../../lib/clockin-api";
-import { getAdminSession } from "../../../lib/admin-session";
 import { getOwnerSession } from "../../../lib/owner-session";
 
 const ownerDevHeaders = () => ({
@@ -14,18 +13,9 @@ const ownerDevHeaders = () => ({
 });
 
 export async function GET() {
-  const ownerSession = await getOwnerSession();
-  const adminSession = await getAdminSession();
-  const firstTenantAdminUsername =
-    process.env.FIRST_TENANT_ADMIN_USERNAME ||
-    process.env.ADMIN_USERNAME ||
-    "elmer";
-  const firstTenantAdminSession =
-    adminSession && adminSession.username === firstTenantAdminUsername;
-
-  if (!ownerSession && !firstTenantAdminSession) {
+  if (!(await getOwnerSession())) {
     return NextResponse.json(
-      { error: "Owner or first-tenant admin authentication required." },
+      { error: "Owner authentication required." },
       { status: 401 },
     );
   }
@@ -45,18 +35,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const ownerSession = await getOwnerSession();
-  const adminSession = await getAdminSession();
-  const firstTenantAdminUsername =
-    process.env.FIRST_TENANT_ADMIN_USERNAME ||
-    process.env.ADMIN_USERNAME ||
-    "elmer";
-  const firstTenantAdminSession =
-    adminSession && adminSession.username === firstTenantAdminUsername;
-
-  if (!ownerSession && !firstTenantAdminSession) {
+  if (!(await getOwnerSession())) {
     return NextResponse.json(
-      { error: "Owner or first-tenant admin authentication required." },
+      { error: "Owner authentication required." },
       { status: 401 },
     );
   }
