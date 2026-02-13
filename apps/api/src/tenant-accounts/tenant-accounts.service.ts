@@ -363,6 +363,73 @@ export class TenantAccountsService {
     return this.toTenantAccountResponse(tenant);
   }
 
+  async deleteTenantAccount(authUser: AuthUser, tenantId: string) {
+    const ownerContext = await this.requireOwner(authUser);
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        id: true,
+        name: true,
+        _count: {
+          select: {
+            memberships: true,
+            locations: true,
+            offices: true,
+            groups: true,
+            employees: true,
+            statuses: true,
+            punches: true,
+            employeePunches: true,
+            timeEntries: true,
+            notifications: true,
+            adminDevices: true,
+            employeeSchedules: true,
+            employeeTips: true,
+          },
+        },
+      },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant account not found.');
+    }
+
+    if (ownerContext.tenant.id === tenantId) {
+      throw new BadRequestException(
+        'You cannot delete your own tenant account.',
+      );
+    }
+
+    const totalRelated =
+      tenant._count.memberships +
+      tenant._count.locations +
+      tenant._count.offices +
+      tenant._count.groups +
+      tenant._count.employees +
+      tenant._count.statuses +
+      tenant._count.punches +
+      tenant._count.employeePunches +
+      tenant._count.timeEntries +
+      tenant._count.notifications +
+      tenant._count.adminDevices +
+      tenant._count.employeeSchedules +
+      tenant._count.employeeTips;
+
+    if (totalRelated > 0) {
+      throw new BadRequestException(
+        'Cannot delete a tenant that already has data. Deactivate it instead.',
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.tenantSettings.deleteMany({ where: { tenantId } });
+      await tx.tenant.delete({ where: { id: tenantId } });
+    });
+
+    return { ok: true, id: tenantId };
+  }
+
   private async requireOwner(authUser: AuthUser) {
     const context = await this.tenancy.requireTenantAndUser(authUser);
     if (

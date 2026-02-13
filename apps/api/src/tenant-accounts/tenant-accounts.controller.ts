@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -61,5 +62,14 @@ export class TenantAccountsController {
     }
 
     return this.tenantAccounts.updateTenantAccount(req.user, id, dto);
+  }
+
+  @Delete(":id")
+  async remove(@Req() req: RequestWithUser, @Param("id") id: string) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.tenantAccounts.deleteTenantAccount(req.user, id);
   }
 }

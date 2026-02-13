@@ -93,6 +93,10 @@ export default function TenantAccountsPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [savingTenantId, setSavingTenantId] = useState<string | null>(null);
+  const [editingTenantId, setEditingTenantId] = useState<string | null>(null);
+  const [togglingTenantId, setTogglingTenantId] = useState<string | null>(null);
+  const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const syncDrafts = useCallback((items: TenantAccount[]) => {
     const next: Record<string, TenantDraft> = {};
@@ -106,9 +110,7 @@ export default function TenantAccountsPage() {
     setLoading(true);
     setStatus(null);
     try {
-      const response = await fetch("/api/tenant-accounts", {
-        cache: "no-store",
-      });
+      const response = await fetch("/api/tenant-accounts", { cache: "no-store" });
       const data = (await response.json()) as {
         tenants?: TenantAccount[];
         error?: string;
@@ -124,6 +126,9 @@ export default function TenantAccountsPage() {
       const list = data.tenants || [];
       setTenants(list);
       syncDrafts(list);
+      if (list.length === 0) {
+        setCreateOpen(true);
+      }
     } catch {
       setStatus("Unable to load tenant accounts.");
       setTenants([]);
@@ -144,10 +149,7 @@ export default function TenantAccountsPage() {
     setCreateForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const updateCreateFeatures = (
-    field: keyof TenantFeatures,
-    value: boolean,
-  ) => {
+  const updateCreateFeatures = (field: keyof TenantFeatures, value: boolean) => {
     setCreateForm((prev) => ({
       ...prev,
       features: { ...prev.features, [field]: value },
@@ -221,9 +223,7 @@ export default function TenantAccountsPage() {
         }),
       });
 
-      const data = (await response.json()) as TenantAccount & {
-        error?: string;
-      };
+      const data = (await response.json()) as TenantAccount & { error?: string };
       if (!response.ok) {
         setStatus(data.error || "Unable to create tenant account.");
         return;
@@ -233,6 +233,7 @@ export default function TenantAccountsPage() {
       setTenants(nextTenants);
       syncDrafts(nextTenants);
       setCreateForm(emptyCreateForm());
+      setCreateOpen(false);
       setStatus("Tenant account created.");
     } catch {
       setStatus("Unable to create tenant account.");
@@ -278,9 +279,7 @@ export default function TenantAccountsPage() {
         }),
       });
 
-      const data = (await response.json()) as TenantAccount & {
-        error?: string;
-      };
+      const data = (await response.json()) as TenantAccount & { error?: string };
       if (!response.ok) {
         setStatus(data.error || "Unable to update tenant account.");
         return;
@@ -291,6 +290,7 @@ export default function TenantAccountsPage() {
       );
       setTenants(nextTenants);
       syncDrafts(nextTenants);
+      setEditingTenantId(null);
       setStatus("Tenant account updated.");
     } catch {
       setStatus("Unable to update tenant account.");
@@ -299,177 +299,237 @@ export default function TenantAccountsPage() {
     }
   };
 
+  const handleToggleActive = async (tenant: TenantAccount) => {
+    setTogglingTenantId(tenant.id);
+    setStatus(null);
+    try {
+      const response = await fetch(`/api/tenant-accounts/${tenant.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !tenant.isActive }),
+      });
+      const data = (await response.json()) as TenantAccount & { error?: string };
+      if (!response.ok) {
+        setStatus(data.error || "Unable to change tenant status.");
+        return;
+      }
+
+      const nextTenants = tenants.map((item) =>
+        item.id === tenant.id ? data : item,
+      );
+      setTenants(nextTenants);
+      syncDrafts(nextTenants);
+      setStatus(
+        data.isActive ? "Tenant account activated." : "Tenant account deactivated.",
+      );
+    } catch {
+      setStatus("Unable to change tenant status.");
+    } finally {
+      setTogglingTenantId(null);
+    }
+  };
+
+  const handleDelete = async (tenant: TenantAccount) => {
+    const approved = window.confirm(
+      `Delete tenant \"${tenant.name}\"? This action cannot be undone.`,
+    );
+    if (!approved) {
+      return;
+    }
+
+    setDeletingTenantId(tenant.id);
+    setStatus(null);
+    try {
+      const response = await fetch(`/api/tenant-accounts/${tenant.id}`, {
+        method: "DELETE",
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok || !data.ok) {
+        setStatus(data.error || data.message || "Unable to delete tenant account.");
+        return;
+      }
+
+      const nextTenants = tenants.filter((item) => item.id !== tenant.id);
+      setTenants(nextTenants);
+      syncDrafts(nextTenants);
+      if (editingTenantId === tenant.id) {
+        setEditingTenantId(null);
+      }
+      setStatus("Tenant account deleted.");
+    } catch {
+      setStatus("Unable to delete tenant account.");
+    } finally {
+      setDeletingTenantId(null);
+    }
+  };
+
   return (
     <div className="d-flex flex-column gap-4">
-      <div className="admin-header">
-        <h1>Tenant Accounts</h1>
+      <div className="admin-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <h1 className="mb-0">Tenant Accounts</h1>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => {
+            setCreateOpen((prev) => !prev);
+            setStatus(null);
+          }}
+        >
+          {createOpen ? "Close" : "Create New Tenant"}
+        </button>
       </div>
 
-      <div className="admin-card">
-        <h2 className="h5 mb-3">Create Tenant Account</h2>
-        {status && <div className="alert alert-info">{status}</div>}
-        <form onSubmit={handleCreate} className="row g-3">
-          <div className="col-12 col-md-6">
-            <label className="form-label">Tenant Name *</label>
-            <input
-              className="form-control"
-              value={createForm.name}
-              onChange={(event) => updateCreateForm("name", event.target.value)}
-              required
-            />
-          </div>
-          <div className="col-12 col-md-6">
-            <label className="form-label">Owner Email</label>
-            <input
-              className="form-control"
-              type="email"
-              value={createForm.ownerEmail}
-              onChange={(event) =>
-                updateCreateForm("ownerEmail", event.target.value)
-              }
-            />
-          </div>
-          <div className="col-12 col-md-6">
-            <label className="form-label">Subdomain</label>
-            <input
-              className="form-control"
-              placeholder="restaurant1"
-              value={createForm.subdomain}
-              onChange={(event) =>
-                updateCreateForm("subdomain", event.target.value)
-              }
-            />
-            <div className="form-text">
-              Used for tenant URLs like <code>restaurant1.yourdomain.com</code>.
+      {status && <div className="alert alert-info mb-0">{status}</div>}
+
+      {createOpen && (
+        <div className="admin-card">
+          <h2 className="h5 mb-3">Create Tenant Account</h2>
+          <form onSubmit={handleCreate} className="row g-3">
+            <div className="col-12 col-md-6">
+              <label className="form-label">Tenant Name *</label>
+              <input
+                className="form-control"
+                value={createForm.name}
+                onChange={(event) => updateCreateForm("name", event.target.value)}
+                required
+              />
             </div>
-          </div>
-          <div className="col-12 col-md-6">
-            <label className="form-label">Admin Username</label>
-            <input
-              className="form-control"
-              value={createForm.adminUsername}
-              onChange={(event) =>
-                updateCreateForm("adminUsername", event.target.value)
-              }
-            />
-          </div>
-          <div className="col-12 col-md-6">
-            <label className="form-label">Admin Password</label>
-            <input
-              className="form-control"
-              type="password"
-              value={createForm.adminPassword}
-              onChange={(event) =>
-                updateCreateForm("adminPassword", event.target.value)
-              }
-            />
-          </div>
-          <div className="col-12 col-md-6">
-            <label className="form-label">Owner Name</label>
-            <input
-              className="form-control"
-              value={createForm.ownerName}
-              onChange={(event) =>
-                updateCreateForm("ownerName", event.target.value)
-              }
-            />
-          </div>
-          <div className="col-12 col-md-3">
-            <label className="form-label">Timezone</label>
-            <select
-              className="form-select"
-              value={createForm.timezone}
-              onChange={(event) =>
-                updateCreateForm("timezone", event.target.value)
-              }
-            >
-              {timezoneOptions.map((timezone) => (
-                <option key={timezone} value={timezone}>
-                  {timezone}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="col-12 col-md-3">
-            <label className="form-label">Rounding Minutes</label>
-            <input
-              className="form-control"
-              inputMode="numeric"
-              value={createForm.roundingMinutes}
-              onChange={(event) =>
-                updateCreateForm("roundingMinutes", event.target.value)
-              }
-            />
-          </div>
-          <div className="col-12 col-md-3">
-            <label className="form-label">Account Enabled</label>
-            <select
-              className="form-select"
-              value={createForm.isActive ? "yes" : "no"}
-              onChange={(event) =>
-                updateCreateForm("isActive", event.target.value === "yes")
-              }
-            >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </div>
-          <div className="col-12 col-md-3">
-            <label className="form-label">Reports Enabled</label>
-            <select
-              className="form-select"
-              value={createForm.features.reportsEnabled ? "yes" : "no"}
-              onChange={(event) =>
-                updateCreateFeatures(
-                  "reportsEnabled",
-                  event.target.value === "yes",
-                )
-              }
-            >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </div>
-          <div className="col-12 col-md-3">
-            <label className="form-label">Require PIN</label>
-            <select
-              className="form-select"
-              value={createForm.features.requirePin ? "yes" : "no"}
-              onChange={(event) =>
-                updateCreateFeatures("requirePin", event.target.value === "yes")
-              }
-            >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </div>
-          <div className="col-12 col-md-3">
-            <label className="form-label">Manual Time Edits</label>
-            <select
-              className="form-select"
-              value={createForm.features.allowManualTimeEdits ? "yes" : "no"}
-              onChange={(event) =>
-                updateCreateFeatures(
-                  "allowManualTimeEdits",
-                  event.target.value === "yes",
-                )
-              }
-            >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </div>
-          <div className="col-12">
-            <button
-              className="btn btn-primary"
-              type="submit"
-              disabled={creating}
-            >
-              {creating ? "Creating..." : "Create Tenant"}
-            </button>
-          </div>
-        </form>
-      </div>
+            <div className="col-12 col-md-6">
+              <label className="form-label">Subdomain</label>
+              <input
+                className="form-control"
+                placeholder="restaurant1"
+                value={createForm.subdomain}
+                onChange={(event) => updateCreateForm("subdomain", event.target.value)}
+              />
+            </div>
+            <div className="col-12 col-md-6">
+              <label className="form-label">Admin Username</label>
+              <input
+                className="form-control"
+                value={createForm.adminUsername}
+                onChange={(event) => updateCreateForm("adminUsername", event.target.value)}
+              />
+            </div>
+            <div className="col-12 col-md-6">
+              <label className="form-label">Admin Password</label>
+              <input
+                className="form-control"
+                type="password"
+                value={createForm.adminPassword}
+                onChange={(event) => updateCreateForm("adminPassword", event.target.value)}
+              />
+            </div>
+            <div className="col-12 col-md-6">
+              <label className="form-label">Owner Email</label>
+              <input
+                className="form-control"
+                type="email"
+                value={createForm.ownerEmail}
+                onChange={(event) => updateCreateForm("ownerEmail", event.target.value)}
+              />
+            </div>
+            <div className="col-12 col-md-6">
+              <label className="form-label">Owner Name</label>
+              <input
+                className="form-control"
+                value={createForm.ownerName}
+                onChange={(event) => updateCreateForm("ownerName", event.target.value)}
+              />
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">Timezone</label>
+              <select
+                className="form-select"
+                value={createForm.timezone}
+                onChange={(event) => updateCreateForm("timezone", event.target.value)}
+              >
+                {timezoneOptions.map((timezone) => (
+                  <option key={timezone} value={timezone}>
+                    {timezone}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">Rounding Minutes</label>
+              <input
+                className="form-control"
+                inputMode="numeric"
+                value={createForm.roundingMinutes}
+                onChange={(event) =>
+                  updateCreateForm("roundingMinutes", event.target.value)
+                }
+              />
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">Account Enabled</label>
+              <select
+                className="form-select"
+                value={createForm.isActive ? "yes" : "no"}
+                onChange={(event) =>
+                  updateCreateForm("isActive", event.target.value === "yes")
+                }
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">Reports Enabled</label>
+              <select
+                className="form-select"
+                value={createForm.features.reportsEnabled ? "yes" : "no"}
+                onChange={(event) =>
+                  updateCreateFeatures("reportsEnabled", event.target.value === "yes")
+                }
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">Require PIN</label>
+              <select
+                className="form-select"
+                value={createForm.features.requirePin ? "yes" : "no"}
+                onChange={(event) =>
+                  updateCreateFeatures("requirePin", event.target.value === "yes")
+                }
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">Manual Time Edits</label>
+              <select
+                className="form-select"
+                value={createForm.features.allowManualTimeEdits ? "yes" : "no"}
+                onChange={(event) =>
+                  updateCreateFeatures(
+                    "allowManualTimeEdits",
+                    event.target.value === "yes",
+                  )
+                }
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+            <div className="col-12">
+              <button className="btn btn-primary" type="submit" disabled={creating}>
+                {creating ? "Creating..." : "Create Tenant"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <div className="admin-card">
         <h2 className="h5 mb-3">Existing Tenant Accounts</h2>
@@ -481,230 +541,228 @@ export default function TenantAccountsPage() {
           <div className="d-flex flex-column gap-3">
             {tenants.map((tenant) => {
               const draft = drafts[tenant.id];
-              if (!draft) {
-                return null;
-              }
+              const isEditing = editingTenantId === tenant.id;
 
               return (
                 <div key={tenant.id} className="border rounded p-3">
-                  <div className="d-flex flex-wrap justify-content-between align-items-center mb-2">
-                    <strong>{tenant.name}</strong>
-                    <span
-                      className={`badge ${draft.isActive ? "text-bg-success" : "text-bg-secondary"}`}
-                    >
-                      {draft.isActive ? "Active" : "Disabled"}
-                    </span>
-                  </div>
-                  <div className="small text-muted mb-3">
+                  <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
                     <div>
-                      Slug: {tenant.slug} | Subdomain:{" "}
-                      {tenant.subdomain || tenant.slug} | Auth Org ID:{" "}
-                      {tenant.authOrgId}
+                      <div className="fw-semibold">{tenant.name}</div>
+                      <div className="small text-muted">{tenant.subdomain || tenant.slug}</div>
                     </div>
-                    <div>
-                      Employees: {tenant.counts.employees} | Members:{" "}
-                      {tenant.counts.memberships}
-                    </div>
-                  </div>
-
-                  <div className="row g-3">
-                    <div className="col-12 col-md-6">
-                      <label className="form-label">Tenant Name</label>
-                      <input
-                        className="form-control"
-                        value={draft.name}
-                        onChange={(event) =>
-                          updateDraft(tenant.id, "name", event.target.value)
-                        }
-                      />
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <label className="form-label">Owner Email</label>
-                      <input
-                        className="form-control"
-                        type="email"
-                        value={draft.ownerEmail}
-                        onChange={(event) =>
-                          updateDraft(
-                            tenant.id,
-                            "ownerEmail",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <label className="form-label">Subdomain</label>
-                      <input
-                        className="form-control"
-                        value={draft.subdomain}
-                        onChange={(event) =>
-                          updateDraft(
-                            tenant.id,
-                            "subdomain",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <label className="form-label">Admin Username</label>
-                      <input
-                        className="form-control"
-                        value={draft.adminUsername}
-                        onChange={(event) =>
-                          updateDraft(
-                            tenant.id,
-                            "adminUsername",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <label className="form-label">Admin Password</label>
-                      <input
-                        className="form-control"
-                        type="password"
-                        placeholder="Leave blank to keep current password"
-                        value={draft.adminPassword}
-                        onChange={(event) =>
-                          updateDraft(
-                            tenant.id,
-                            "adminPassword",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <label className="form-label">Owner Name</label>
-                      <input
-                        className="form-control"
-                        value={draft.ownerName}
-                        onChange={(event) =>
-                          updateDraft(
-                            tenant.id,
-                            "ownerName",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <label className="form-label">Timezone</label>
-                      <select
-                        className="form-select"
-                        value={draft.timezone}
-                        onChange={(event) =>
-                          updateDraft(tenant.id, "timezone", event.target.value)
-                        }
+                    <div className="d-flex gap-2 flex-wrap">
+                      <span
+                        className={`badge ${tenant.isActive ? "text-bg-success" : "text-bg-secondary"}`}
                       >
-                        {timezoneOptions.map((timezone) => (
-                          <option key={timezone} value={timezone}>
-                            {timezone}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <label className="form-label">Rounding Minutes</label>
-                      <input
-                        className="form-control"
-                        inputMode="numeric"
-                        value={draft.roundingMinutes}
-                        onChange={(event) =>
-                          updateDraft(
-                            tenant.id,
-                            "roundingMinutes",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <label className="form-label">Account Enabled</label>
-                      <select
-                        className="form-select"
-                        value={draft.isActive ? "yes" : "no"}
-                        onChange={(event) =>
-                          updateDraft(
-                            tenant.id,
-                            "isActive",
-                            event.target.value === "yes",
-                          )
-                        }
-                      >
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                      </select>
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <label className="form-label">Reports Enabled</label>
-                      <select
-                        className="form-select"
-                        value={draft.features.reportsEnabled ? "yes" : "no"}
-                        onChange={(event) =>
-                          updateDraftFeatures(
-                            tenant.id,
-                            "reportsEnabled",
-                            event.target.value === "yes",
-                          )
-                        }
-                      >
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                      </select>
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <label className="form-label">Require PIN</label>
-                      <select
-                        className="form-select"
-                        value={draft.features.requirePin ? "yes" : "no"}
-                        onChange={(event) =>
-                          updateDraftFeatures(
-                            tenant.id,
-                            "requirePin",
-                            event.target.value === "yes",
-                          )
-                        }
-                      >
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                      </select>
-                    </div>
-                    <div className="col-12 col-md-3">
-                      <label className="form-label">Manual Time Edits</label>
-                      <select
-                        className="form-select"
-                        value={
-                          draft.features.allowManualTimeEdits ? "yes" : "no"
-                        }
-                        onChange={(event) =>
-                          updateDraftFeatures(
-                            tenant.id,
-                            "allowManualTimeEdits",
-                            event.target.value === "yes",
-                          )
-                        }
-                      >
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                      </select>
-                    </div>
-                    <div className="col-12">
+                        {tenant.isActive ? "Active" : "Inactive"}
+                      </span>
                       <button
                         type="button"
-                        className="btn btn-outline-primary"
-                        disabled={savingTenantId === tenant.id}
-                        onClick={() => handleSave(tenant.id)}
+                        className="btn btn-sm btn-outline-primary"
+                        onClick={() =>
+                          setEditingTenantId((prev) => (prev === tenant.id ? null : tenant.id))
+                        }
                       >
-                        {savingTenantId === tenant.id
-                          ? "Saving..."
-                          : "Save Changes"}
+                        {isEditing ? "Close" : "Edit"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary"
+                        disabled={togglingTenantId === tenant.id}
+                        onClick={() => void handleToggleActive(tenant)}
+                      >
+                        {tenant.isActive ? "Deactivate" : "Activate"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-danger"
+                        disabled={deletingTenantId === tenant.id}
+                        onClick={() => void handleDelete(tenant)}
+                      >
+                        {deletingTenantId === tenant.id ? "Deleting..." : "Delete"}
                       </button>
                     </div>
                   </div>
+
+                  {isEditing && draft && (
+                    <div className="row g-3 mt-2">
+                      <div className="col-12 col-md-6">
+                        <label className="form-label">Tenant Name</label>
+                        <input
+                          className="form-control"
+                          value={draft.name}
+                          onChange={(event) =>
+                            updateDraft(tenant.id, "name", event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="col-12 col-md-6">
+                        <label className="form-label">Subdomain</label>
+                        <input
+                          className="form-control"
+                          value={draft.subdomain}
+                          onChange={(event) =>
+                            updateDraft(tenant.id, "subdomain", event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="col-12 col-md-6">
+                        <label className="form-label">Admin Username</label>
+                        <input
+                          className="form-control"
+                          value={draft.adminUsername}
+                          onChange={(event) =>
+                            updateDraft(tenant.id, "adminUsername", event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="col-12 col-md-6">
+                        <label className="form-label">Admin Password</label>
+                        <input
+                          className="form-control"
+                          type="password"
+                          placeholder="Leave blank to keep current password"
+                          value={draft.adminPassword}
+                          onChange={(event) =>
+                            updateDraft(tenant.id, "adminPassword", event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="col-12 col-md-6">
+                        <label className="form-label">Owner Email</label>
+                        <input
+                          className="form-control"
+                          type="email"
+                          value={draft.ownerEmail}
+                          onChange={(event) =>
+                            updateDraft(tenant.id, "ownerEmail", event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="col-12 col-md-6">
+                        <label className="form-label">Owner Name</label>
+                        <input
+                          className="form-control"
+                          value={draft.ownerName}
+                          onChange={(event) =>
+                            updateDraft(tenant.id, "ownerName", event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Timezone</label>
+                        <select
+                          className="form-select"
+                          value={draft.timezone}
+                          onChange={(event) =>
+                            updateDraft(tenant.id, "timezone", event.target.value)
+                          }
+                        >
+                          {timezoneOptions.map((timezone) => (
+                            <option key={timezone} value={timezone}>
+                              {timezone}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Rounding Minutes</label>
+                        <input
+                          className="form-control"
+                          inputMode="numeric"
+                          value={draft.roundingMinutes}
+                          onChange={(event) =>
+                            updateDraft(tenant.id, "roundingMinutes", event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Account Enabled</label>
+                        <select
+                          className="form-select"
+                          value={draft.isActive ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraft(
+                              tenant.id,
+                              "isActive",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Reports Enabled</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.reportsEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "reportsEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Require PIN</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.requirePin ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "requirePin",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Manual Time Edits</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.allowManualTimeEdits ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "allowManualTimeEdits",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 d-flex gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          disabled={savingTenantId === tenant.id}
+                          onClick={() => void handleSave(tenant.id)}
+                        >
+                          {savingTenantId === tenant.id ? "Saving..." : "Save"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary"
+                          onClick={() => setEditingTenantId(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

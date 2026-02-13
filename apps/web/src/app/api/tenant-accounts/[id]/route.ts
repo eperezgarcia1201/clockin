@@ -95,3 +95,35 @@ export async function PATCH(
     );
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  if (!(await getOwnerSession())) {
+    return NextResponse.json(
+      { error: "Owner authentication required." },
+      { status: 401 },
+    );
+  }
+
+  const params = await context.params;
+  const tenantId = resolveTenantId(request, params);
+  if (!tenantId) {
+    return NextResponse.json({ error: "tenantId is required" }, { status: 400 });
+  }
+
+  try {
+    const response = await clockinFetch(`/tenant-accounts/${tenantId}`, {
+      method: "DELETE",
+      headers: ownerDevHeaders(),
+    });
+    const data = await response.json().catch(() => ({}));
+    return NextResponse.json(data, { status: response.status });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Request failed" },
+      { status: 500 },
+    );
+  }
+}
