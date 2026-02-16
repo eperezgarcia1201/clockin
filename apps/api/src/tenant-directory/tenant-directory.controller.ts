@@ -12,6 +12,11 @@ export class TenantDirectoryController {
     return this.tenantDirectory.resolve(query);
   }
 
+  @Get('employee-context')
+  async employeeContext(@Query() query: ResolveTenantDto) {
+    return this.tenantDirectory.employeeContext(query);
+  }
+
   @Post('admin-login')
   async verifyAdminLogin(@Body() body: TenantAdminLoginDto) {
     return this.tenantDirectory.verifyAdminLogin(body);

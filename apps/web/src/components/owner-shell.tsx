@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -73,7 +74,16 @@ export function OwnerShell({
     <div className="admin-shell">
       <header className="admin-topbar">
         <div className="admin-branding">
-          <div className="admin-logo">W</div>
+          <div className="admin-logo">
+            <Image
+              src="/websys-logo.png"
+              alt="Websys logo"
+              width={38}
+              height={38}
+              className="admin-logo-image"
+              priority
+            />
+          </div>
           <div className="admin-brand-text">
             <div className="admin-brand-name">Websys</div>
             <div className="admin-brand-sub">ClockIn Owner</div>

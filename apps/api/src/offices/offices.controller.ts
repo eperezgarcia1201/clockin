@@ -6,13 +6,13 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
-} from "@nestjs/common";
-import { AuthOrDevGuard } from "../auth/auth.guard";
-import type { RequestWithUser } from "../auth/auth.types";
-import { CreateOfficeDto } from "./dto/create-office.dto";
-import { OfficesService } from "./offices.service";
+} from '@nestjs/common';
+import { AuthOrDevGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.types';
+import { CreateOfficeDto } from './dto/create-office.dto';
+import { OfficesService } from './offices.service';
 
-@Controller(["offices", "locations"])
+@Controller(['offices', 'locations'])
 @UseGuards(AuthOrDevGuard)
 export class OfficesController {
   constructor(private readonly offices: OfficesService) {}

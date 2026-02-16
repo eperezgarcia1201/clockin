@@ -1,6 +1,6 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { AppController } from "./app.controller";
-import { AppService } from "./app.service";
+import { Test, TestingModule } from '@nestjs/testing';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -15,10 +15,10 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it("should return status", () => {
+    it('should return status', () => {
       expect(appController.getRoot()).toEqual({
-        status: "ok",
-        service: "clockin-api",
+        status: 'ok',
+        service: 'clockin-api',
       });
     });
   });

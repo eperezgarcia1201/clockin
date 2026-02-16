@@ -10,9 +10,9 @@ import {
   Matches,
   MaxLength,
   Min,
-} from "class-validator";
-import { Type } from "class-transformer";
-import { MANAGER_FEATURE_KEYS } from "../../tenancy/manager-features";
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { MANAGER_FEATURE_KEYS } from '../../tenancy/manager-features';
 
 export class UpdateEmployeeDto {
   @IsOptional()

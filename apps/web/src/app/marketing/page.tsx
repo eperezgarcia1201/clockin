@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 
 export const metadata: Metadata = {
   title: "ClockIn Mobile",
@@ -11,7 +12,16 @@ export default function MarketingPage() {
     <main className="page marketing-page">
       <header className="landing-nav marketing-nav">
         <div className="landing-brand">
-          <div className="landing-logo">W</div>
+          <div className="landing-logo">
+            <Image
+              src="/websys-logo.png"
+              alt="Websys logo"
+              width={40}
+              height={40}
+              className="landing-logo-image"
+              priority
+            />
+          </div>
           <div className="landing-brand-text">
             <div className="landing-brand-name">Websys</div>
             <div className="landing-brand-sub">ClockIn</div>

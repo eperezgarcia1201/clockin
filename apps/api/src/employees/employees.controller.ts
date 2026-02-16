@@ -10,14 +10,14 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
-} from "@nestjs/common";
-import { AuthOrDevGuard } from "../auth/auth.guard";
-import type { RequestWithUser } from "../auth/auth.types";
-import { CreateEmployeeDto } from "./dto/create-employee.dto";
-import { UpdateEmployeeDto } from "./dto/update-employee.dto";
-import { EmployeesService } from "./employees.service";
+} from '@nestjs/common';
+import { AuthOrDevGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.types';
+import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { EmployeesService } from './employees.service';
 
-@Controller("employees")
+@Controller('employees')
 @UseGuards(AuthOrDevGuard)
 export class EmployeesController {
   constructor(private readonly employees: EmployeesService) {}
@@ -25,22 +25,25 @@ export class EmployeesController {
   @Get()
   async list(
     @Req() req: RequestWithUser,
-    @Query("scope") scope?: string,
-    @Query("officeId") officeId?: string,
+    @Query('scope') scope?: string,
+    @Query('officeId') officeId?: string,
   ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
 
     const employees = await this.employees.listEmployees(req.user, {
-      includeDeleted: scope === "deleted",
+      includeDeleted: scope === 'deleted',
       officeId: officeId?.trim() || undefined,
     });
     return { employees };
   }
 
-  @Get("summary")
-  async summary(@Req() req: RequestWithUser, @Query("officeId") officeId?: string) {
+  @Get('summary')
+  async summary(
+    @Req() req: RequestWithUser,
+    @Query('officeId') officeId?: string,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -59,8 +62,8 @@ export class EmployeesController {
     return this.employees.createEmployee(req.user, dto);
   }
 
-  @Get(":id")
-  async getOne(@Req() req: RequestWithUser, @Param("id") id: string) {
+  @Get(':id')
+  async getOne(@Req() req: RequestWithUser, @Param('id') id: string) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -68,10 +71,10 @@ export class EmployeesController {
     return this.employees.getEmployee(req.user, id);
   }
 
-  @Patch(":id")
+  @Patch(':id')
   async update(
     @Req() req: RequestWithUser,
-    @Param("id") id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateEmployeeDto,
   ) {
     if (!req.user) {
@@ -81,8 +84,8 @@ export class EmployeesController {
     return this.employees.updateEmployee(req.user, id, dto);
   }
 
-  @Delete(":id")
-  async remove(@Req() req: RequestWithUser, @Param("id") id: string) {
+  @Delete(':id')
+  async remove(@Req() req: RequestWithUser, @Param('id') id: string) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -90,8 +93,8 @@ export class EmployeesController {
     return this.employees.softDeleteEmployee(req.user, id);
   }
 
-  @Patch(":id/restore")
-  async restore(@Req() req: RequestWithUser, @Param("id") id: string) {
+  @Patch(':id/restore')
+  async restore(@Req() req: RequestWithUser, @Param('id') id: string) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -99,8 +102,11 @@ export class EmployeesController {
     return this.employees.restoreEmployee(req.user, id);
   }
 
-  @Delete(":id/permanent")
-  async removePermanently(@Req() req: RequestWithUser, @Param("id") id: string) {
+  @Delete(':id/permanent')
+  async removePermanently(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }

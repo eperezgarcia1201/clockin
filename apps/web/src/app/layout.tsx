@@ -27,8 +27,12 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const auth0Enabled = Boolean(
+    process.env.NEXT_PUBLIC_AUTH0_DOMAIN &&
+      process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID,
+  );
   let session = null;
-  if (auth0) {
+  if (auth0Enabled && auth0) {
     try {
       session = await auth0.getSession();
     } catch {
@@ -39,7 +43,11 @@ export default async function RootLayout({
   return (
     <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body>
-        <Auth0Provider user={session?.user}>{children}</Auth0Provider>
+        {auth0Enabled ? (
+          <Auth0Provider user={session?.user}>{children}</Auth0Provider>
+        ) : (
+          children
+        )}
       </body>
     </html>
   );

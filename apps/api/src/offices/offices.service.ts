@@ -16,7 +16,7 @@ export class OfficesService {
 
     return this.prisma.office.findMany({
       where: { tenantId: tenant.id },
-      orderBy: { name: "asc" },
+      orderBy: [{ createdAt: "asc" }, { name: "asc" }],
     });
   }
 

@@ -1,8 +1,0 @@
-fullname,inout,timestamp,notes,ipaddress
-Test employee,out,1473384891,,66.87.76.64
-Test employee,in,1473381025,,66.87.76.64
-Test employee,in,1473380755,,66.87.76.64
-Test employee,break,1473380793,voy a salir solo una hora ,66.87.76.64
-Elmer,in,1473385102,,66.87.76.64
-Elmer,out,1473385249,,66.87.76.64
-Elmer,in,1473385732,,45.52.149.31

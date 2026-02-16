@@ -1,4 +1,4 @@
-import { PunchType } from "@prisma/client";
+import { PunchType } from '@prisma/client';
 import {
   IsEnum,
   IsISO8601,
@@ -6,7 +6,7 @@ import {
   IsString,
   Length,
   Matches,
-} from "class-validator";
+} from 'class-validator';
 
 export class CreateEmployeePunchDto {
   @IsEnum(PunchType)

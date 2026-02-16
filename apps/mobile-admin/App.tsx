@@ -2,6 +2,7 @@ import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Image,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -89,6 +90,7 @@ const apiBaseCandidates = (() => {
 
 const DEFAULT_TENANT =
   process.env.EXPO_PUBLIC_TENANT_SLUG || "dev-tenant";
+const BRAND_LOGO = require("./assets/websys-logo.png");
 
 type Screen =
   | "dashboard"
@@ -717,6 +719,7 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeMode>("dark");
   const [resolvedApiBase, setResolvedApiBase] = useState<string | null>(null);
   const [dataSyncError, setDataSyncError] = useState<string | null>(null);
+  const [pushRegisteredTenant, setPushRegisteredTenant] = useState("");
   const canCreateLocations = permissions.locations;
   const canManageMultiLocation =
     multiLocationEnabled && permissions.manageMultiLocation;
@@ -738,6 +741,7 @@ export default function App() {
     setPermissions(defaultAccessPermissions());
     setMultiLocationEnabled(false);
     setActiveLocationId("");
+    setPushRegisteredTenant("");
     setActiveTenant("");
     setActiveTenantLabel("");
     setActiveAdminUsername("");
@@ -857,10 +861,6 @@ export default function App() {
   );
 
   useEffect(() => {
-    registerForPush();
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
 
     const probeApi = async () => {
@@ -946,7 +946,11 @@ export default function App() {
     }
   }, [activeLocationId, canManageMultiLocation, loggedIn, offices]);
 
-  const registerForPush = async () => {
+  const registerForPush = useCallback(async () => {
+    const tenantKey = activeTenant.trim();
+    if (!loggedIn || !tenantKey || pushRegisteredTenant === tenantKey) {
+      return;
+    }
     if (!Device.isDevice) return;
     const { status } = await Notifications.getPermissionsAsync();
     let finalStatus = status;
@@ -960,7 +964,15 @@ export default function App() {
       method: "POST",
       body: JSON.stringify({ expoPushToken: token, platform: Device.osName }),
     });
-  };
+    setPushRegisteredTenant(tenantKey);
+  }, [activeTenant, fetchJson, loggedIn, pushRegisteredTenant]);
+
+  useEffect(() => {
+    if (!loggedIn || !activeTenant.trim()) {
+      return;
+    }
+    void registerForPush();
+  }, [activeTenant, loggedIn, registerForPush]);
 
   const handleLogin = async () => {
     if (!tenantInput.trim() || !username || !password) {
@@ -1158,7 +1170,7 @@ export default function App() {
     }
   };
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     try {
       const data = (await fetchJson("/notifications?limit=50")) as {
         notifications: NotificationRow[];
@@ -1167,7 +1179,19 @@ export default function App() {
     } catch {
       // ignore
     }
-  };
+  }, [fetchJson]);
+
+  useEffect(() => {
+    if (!loggedIn) {
+      return;
+    }
+    const subscription = Notifications.addNotificationReceivedListener(() => {
+      void loadNotifications();
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [loadNotifications, loggedIn]);
 
   const handleScheduleOverrideDecision = async (
     requestId: string,
@@ -4119,10 +4143,8 @@ export default function App() {
       <SafeAreaView style={styles.safe}>
         <ScrollView contentContainerStyle={styles.container}>
           <View style={styles.brandRow}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>CA</Text>
-            </View>
-            <View>
+            <Image source={BRAND_LOGO} style={styles.brandLogo} resizeMode="contain" />
+            <View style={styles.brandTextBlock}>
               <Text style={[styles.title, isLight && styles.titleLight]}>
                 ClockIn Admin
               </Text>
@@ -4309,20 +4331,17 @@ const styles = StyleSheet.create({
   gradient: { flex: 1 },
   safe: { flex: 1 },
   container: { padding: 20, paddingBottom: 40, gap: 16 },
-  brandRow: { flexDirection: "row", alignItems: "center", gap: 14 },
-  badge: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: "#3b5bdb",
+  brandRow: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#1e3a8a",
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
+    gap: 10,
+    flexWrap: "wrap",
   },
-  badgeText: { fontSize: 16, fontWeight: "700", color: "#f8fafc" },
+  brandLogo: { width: 118, height: 44 },
+  brandTextBlock: {
+    flex: 1,
+    minWidth: 160,
+  },
   title: { fontSize: 24, fontWeight: "700", color: "#eef2ff" },
   subtitle: { color: "rgba(226, 232, 240, 0.7)", marginTop: 4, fontSize: 13 },
   headerActions: {
@@ -4330,6 +4349,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    flexWrap: "wrap",
+    flexShrink: 1,
+    justifyContent: "flex-end",
   },
   languageSelector: {
     flexDirection: "row",

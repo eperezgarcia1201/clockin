@@ -24,7 +24,10 @@ export class EmployeePunchesController {
   constructor(private readonly punches: EmployeePunchesService) {}
 
   @Get('recent')
-  async recent(@Req() req: RequestWithUser, @Query('officeId') officeId?: string) {
+  async recent(
+    @Req() req: RequestWithUser,
+    @Query('officeId') officeId?: string,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }

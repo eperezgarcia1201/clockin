@@ -33,6 +33,7 @@ services:
       - .:/app
       - /app/node_modules
       - /app/apps/api/node_modules
+    command: npm run start:docker
     depends_on:
       - db
     networks:
@@ -46,6 +47,7 @@ services:
       context: .
       dockerfile: docker/web.Dockerfile
     environment:
+      NODE_ENV: production
       NEXT_PUBLIC_API_URL: https://api.websysclockin.com/api
       CLOCKIN_API_URL: http://api:4000/api
       AUTH0_DOMAIN: ""
@@ -67,8 +69,10 @@ services:
       - .:/app
       - /app/node_modules
       - /app/apps/web/node_modules
+      - web_next:/app/apps/web/.next
     depends_on:
       - api
+    command: sh -c "npm --workspace apps/web run build && npm --workspace apps/web run start -- --hostname 0.0.0.0 --port 3000"
     networks:
       - default
       - proxy
@@ -77,6 +81,7 @@ services:
 
 volumes:
   db_data:
+  web_next:
 networks:
   proxy:
     external: true

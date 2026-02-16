@@ -60,6 +60,46 @@ export class TenantDirectoryService {
     };
   }
 
+  async employeeContext(dto: ResolveTenantDto) {
+    const tenantInput = dto.tenant?.trim() || '';
+    const hostInput = dto.host?.trim() || '';
+
+    if (!tenantInput && !hostInput) {
+      throw new BadRequestException('Tenant is required.');
+    }
+
+    const tenant = await this.resolveTenantRecord(tenantInput, hostInput);
+    const [settings, offices] = await Promise.all([
+      this.prisma.tenantSettings.findUnique({
+        where: { tenantId: tenant.id },
+        select: {
+          adminUsername: true,
+          multiLocationEnabled: true,
+        },
+      }),
+      this.prisma.office.findMany({
+        where: { tenantId: tenant.id },
+        select: {
+          id: true,
+          name: true,
+        },
+        orderBy: [{ createdAt: 'asc' }, { name: 'asc' }],
+      }),
+    ]);
+
+    return {
+      id: tenant.id,
+      name: tenant.name,
+      slug: tenant.slug,
+      subdomain: tenant.slug,
+      authOrgId: tenant.authOrgId,
+      isActive: tenant.isActive,
+      adminUsername: settings?.adminUsername || DEFAULT_ADMIN_USERNAME,
+      multiLocationEnabled: settings?.multiLocationEnabled ?? false,
+      offices,
+    };
+  }
+
   async verifyAdminLogin(dto: TenantAdminLoginDto) {
     const tenantInput = dto.tenant?.trim() || '';
     const hostInput = dto.host?.trim() || '';
@@ -107,7 +147,11 @@ export class TenantDirectoryService {
       throw new UnauthorizedException('Invalid administrator credentials.');
     }
 
-    const manager = await this.verifyManagerLogin(tenant.id, username, password);
+    const manager = await this.verifyManagerLogin(
+      tenant.id,
+      username,
+      password,
+    );
     if (!manager) {
       throw new UnauthorizedException('Invalid administrator credentials.');
     }

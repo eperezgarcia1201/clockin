@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 type Summary = {
@@ -119,13 +120,31 @@ export default function AdminDashboard() {
   return (
     <div className="admin-dashboard">
       <div className="admin-page-title">
-        <span className="admin-page-icon">W</span>
+        <span className="admin-page-icon">
+          <Image
+            src="/websys-logo.png"
+            alt="Websys logo"
+            width={34}
+            height={34}
+            className="admin-page-icon-image"
+            priority
+          />
+        </span>
         Administration
       </div>
 
       <div className="admin-hero">
         <div className="admin-hero-brand">
-          <div className="admin-hero-logo">W</div>
+          <div className="admin-hero-logo">
+            <Image
+              src="/websys-logo.png"
+              alt="Websys logo"
+              width={44}
+              height={44}
+              className="admin-hero-logo-image"
+              priority
+            />
+          </div>
           <div>
             <div className="admin-hero-name">Websys</div>
             <div className="admin-hero-sub">ClockIn Admin</div>

@@ -1,10 +1,10 @@
-import { Body, Controller, Get, Put, Req, UseGuards } from "@nestjs/common";
-import { AuthOrDevGuard } from "../auth/auth.guard";
-import type { RequestWithUser } from "../auth/auth.types";
-import { SettingsService } from "./settings.service";
-import { UpdateSettingsDto } from "./dto/update-settings.dto";
+import { Body, Controller, Get, Put, Req, UseGuards } from '@nestjs/common';
+import { AuthOrDevGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.types';
+import { SettingsService } from './settings.service';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 
-@Controller("settings")
+@Controller('settings')
 @UseGuards(AuthOrDevGuard)
 export class SettingsController {
   constructor(private readonly settings: SettingsService) {}

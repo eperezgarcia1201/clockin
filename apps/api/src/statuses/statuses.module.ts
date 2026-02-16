@@ -1,8 +1,8 @@
-import { Module } from "@nestjs/common";
-import { AuthModule } from "../auth/auth.module";
-import { TenancyModule } from "../tenancy/tenancy.module";
-import { StatusesController } from "./statuses.controller";
-import { StatusesService } from "./statuses.service";
+import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
+import { TenancyModule } from '../tenancy/tenancy.module';
+import { StatusesController } from './statuses.controller';
+import { StatusesService } from './statuses.service';
 
 @Module({
   imports: [AuthModule, TenancyModule],

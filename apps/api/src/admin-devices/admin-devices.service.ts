@@ -1,7 +1,7 @@
-import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
-import { TenancyService } from "../tenancy/tenancy.service";
-import type { AuthUser } from "../auth/auth.types";
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { TenancyService } from '../tenancy/tenancy.service';
+import type { AuthUser } from '../auth/auth.types';
 
 @Injectable()
 export class AdminDevicesService {
@@ -14,7 +14,7 @@ export class AdminDevicesService {
     const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
     const devices = await this.prisma.adminDevice.findMany({
       where: { tenantId: tenant.id },
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: 'desc' },
     });
     return { devices };
   }

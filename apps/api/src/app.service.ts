@@ -1,8 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable } from '@nestjs/common';
 
 @Injectable()
 export class AppService {
   getStatus() {
-    return { status: "ok", service: "clockin-api" };
+    return { status: 'ok', service: 'clockin-api' };
   }
 }

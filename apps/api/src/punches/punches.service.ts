@@ -1,8 +1,8 @@
-import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
-import { TenancyService } from "../tenancy/tenancy.service";
-import type { AuthUser } from "../auth/auth.types";
-import type { CreatePunchDto } from "./dto/create-punch.dto";
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { TenancyService } from '../tenancy/tenancy.service';
+import type { AuthUser } from '../auth/auth.types';
+import type { CreatePunchDto } from './dto/create-punch.dto';
 
 @Injectable()
 export class PunchesService {
@@ -11,7 +11,11 @@ export class PunchesService {
     private readonly tenancy: TenancyService,
   ) {}
 
-  async createPunch(authUser: AuthUser, dto: CreatePunchDto, ipAddress?: string) {
+  async createPunch(
+    authUser: AuthUser,
+    dto: CreatePunchDto,
+    ipAddress?: string,
+  ) {
     const { tenant, user } = await this.tenancy.requireTenantAndUser(authUser);
 
     const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
@@ -40,7 +44,7 @@ export class PunchesService {
         userId: user.id,
       },
       orderBy: {
-        occurredAt: "desc",
+        occurredAt: 'desc',
       },
     });
   }

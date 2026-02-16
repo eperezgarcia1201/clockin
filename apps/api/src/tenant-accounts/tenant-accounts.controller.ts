@@ -9,14 +9,14 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
-} from "@nestjs/common";
-import { AuthOrDevGuard } from "../auth/auth.guard";
-import type { RequestWithUser } from "../auth/auth.types";
-import { CreateTenantAccountDto } from "./dto/create-tenant-account.dto";
-import { UpdateTenantAccountDto } from "./dto/update-tenant-account.dto";
-import { TenantAccountsService } from "./tenant-accounts.service";
+} from '@nestjs/common';
+import { AuthOrDevGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.types';
+import { CreateTenantAccountDto } from './dto/create-tenant-account.dto';
+import { UpdateTenantAccountDto } from './dto/update-tenant-account.dto';
+import { TenantAccountsService } from './tenant-accounts.service';
 
-@Controller("tenant-accounts")
+@Controller('tenant-accounts')
 @UseGuards(AuthOrDevGuard)
 export class TenantAccountsController {
   constructor(private readonly tenantAccounts: TenantAccountsService) {}
@@ -30,8 +30,8 @@ export class TenantAccountsController {
     return this.tenantAccounts.listTenantAccounts(req.user);
   }
 
-  @Get(":id")
-  async getOne(@Req() req: RequestWithUser, @Param("id") id: string) {
+  @Get(':id')
+  async getOne(@Req() req: RequestWithUser, @Param('id') id: string) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -51,10 +51,10 @@ export class TenantAccountsController {
     return this.tenantAccounts.createTenantAccount(req.user, dto);
   }
 
-  @Patch(":id")
+  @Patch(':id')
   async update(
     @Req() req: RequestWithUser,
-    @Param("id") id: string,
+    @Param('id') id: string,
     @Body() dto: UpdateTenantAccountDto,
   ) {
     if (!req.user) {
@@ -64,8 +64,8 @@ export class TenantAccountsController {
     return this.tenantAccounts.updateTenantAccount(req.user, id, dto);
   }
 
-  @Delete(":id")
-  async remove(@Req() req: RequestWithUser, @Param("id") id: string) {
+  @Delete(':id')
+  async remove(@Req() req: RequestWithUser, @Param('id') id: string) {
     if (!req.user) {
       throw new UnauthorizedException();
     }

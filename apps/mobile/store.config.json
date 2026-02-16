@@ -1,0 +1,47 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0",
+    "copyright": "© 2026 <Legal Entity Name>",
+    "release": {
+      "automaticRelease": true
+    },
+    "info": {
+      "en-US": {
+        "description": "ClockIn is a modern time clock for teams. Employees punch in and out in seconds using their name and PIN, with dedicated actions for breaks and lunch. Designed for kiosks, tablets, and phones, ClockIn keeps time entries consistent and easy to confirm.\n\nFeatures\n- Fast clock in/out, break, and lunch punches\n- Name + PIN verification to reduce mistakes\n- Clear status feedback and last punch confirmation\n- Works on iPhone and iPad\n- Built for organizations using the ClockIn web/admin platform\n\nRequires a ClockIn account provided by your organization.\n",
+        "keywords": [
+          "time clock",
+          "clock in",
+          "punch in",
+          "employee time",
+          "attendance",
+          "workforce",
+          "breaks",
+          "lunch",
+          "shift",
+          "timesheet",
+          "kiosk"
+        ],
+        "marketingUrl": "https://websysclockin.com/marketing",
+        "promoText": "Clock in and out in seconds. ClockIn makes workplace time tracking simple with name/PIN verification, break and lunch punches, and a clean kiosk-ready UI.",
+        "supportUrl": "https://websysclockin.com/support",
+        "title": "ClockInWebsys",
+        "subtitle": "Employees time management",
+        "privacyPolicyUrl": "https://websysclockin.com/policy"
+      }
+    },
+    "categories": [
+      "UTILITIES"
+    ],
+    "review": {
+      "firstName": "elmer",
+      "lastName": "perez",
+      "email": "elmerperez1201@gmail.com",
+      "phone": "+19204616022",
+      "demoUsername": "elmer",
+      "demoPassword": "0909",
+      "demoRequired": true,
+      "notes": "this is going to be the app only to clock in and clock out "
+    }
+  }
+}

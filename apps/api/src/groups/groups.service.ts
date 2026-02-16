@@ -1,8 +1,8 @@
-import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
-import { TenancyService } from "../tenancy/tenancy.service";
-import type { AuthUser } from "../auth/auth.types";
-import type { CreateGroupDto } from "./dto/create-group.dto";
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { TenancyService } from '../tenancy/tenancy.service';
+import type { AuthUser } from '../auth/auth.types';
+import type { CreateGroupDto } from './dto/create-group.dto';
 
 @Injectable()
 export class GroupsService {
@@ -12,7 +12,7 @@ export class GroupsService {
   ) {}
 
   async list(authUser: AuthUser, officeId?: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, "groups");
+    const { tenant } = await this.tenancy.requireFeature(authUser, 'groups');
     const scopedOfficeId = officeId?.trim() || undefined;
 
     return this.prisma.group.findMany({
@@ -22,12 +22,12 @@ export class GroupsService {
             OR: [{ officeId: scopedOfficeId }, { officeId: null }],
           }
         : { tenantId: tenant.id },
-      orderBy: { name: "asc" },
+      orderBy: { name: 'asc' },
     });
   }
 
   async create(authUser: AuthUser, dto: CreateGroupDto) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, "groups");
+    const { tenant } = await this.tenancy.requireFeature(authUser, 'groups');
 
     return this.prisma.group.create({
       data: {

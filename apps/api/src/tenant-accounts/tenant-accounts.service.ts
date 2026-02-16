@@ -357,7 +357,8 @@ export class TenantAccountsService {
             adminUsername:
               normalizedAdminUsername ?? this.normalizeAdminUsername(undefined),
             adminPasswordHash:
-              adminPasswordHash ?? (await hash(this.defaultAdminPassword(), 10)),
+              adminPasswordHash ??
+              (await hash(this.defaultAdminPassword(), 10)),
             timezone: dto.timezone?.trim() || DEFAULT_TIMEZONE,
             roundingMinutes: dto.roundingMinutes ?? DEFAULT_ROUNDING_MINUTES,
             requirePin: features.requirePin,

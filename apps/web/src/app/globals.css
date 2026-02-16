@@ -65,13 +65,18 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: 18px;
-  color: #e8f0ff;
-  background: linear-gradient(135deg, #3f7cff, #1a3f8f);
-  box-shadow: 0 10px 18px rgba(63, 124, 255, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 10px 18px rgba(4, 12, 26, 0.35);
+  overflow: hidden;
+}
+
+.landing-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .landing-brand-text {
@@ -1154,12 +1159,18 @@ body {
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  color: #fff;
-  background: linear-gradient(140deg, #3f6fcb, #162c5e);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 8px 16px rgba(20, 30, 60, 0.4);
+  overflow: hidden;
+}
+
+.admin-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .admin-brand-name {
@@ -1365,11 +1376,18 @@ body {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(140deg, #2f67d1, #152c5f);
-  color: #fff;
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  box-shadow: 0 8px 16px rgba(20, 35, 70, 0.16);
+  overflow: hidden;
+}
+
+.admin-page-icon-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .admin-hero {
@@ -1390,12 +1408,18 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 14px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-weight: 700;
-  background: linear-gradient(145deg, #376be0, #192c63);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
   box-shadow: 0 10px 20px rgba(20, 35, 70, 0.2);
+  overflow: hidden;
+}
+
+.admin-hero-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .admin-hero-name {

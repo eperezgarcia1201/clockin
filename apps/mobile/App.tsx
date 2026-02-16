@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
 import {
+  Image,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -100,6 +101,11 @@ type TenantContext = {
   authOrgId: string;
 };
 
+type TenantOffice = {
+  id: string;
+  name: string;
+};
+
 type ActiveShift = {
   tenantAuthOrgId: string;
   employeeId: string;
@@ -113,8 +119,10 @@ type Language = "en" | "es";
 
 const actions = ["IN", "OUT", "BREAK", "LUNCH"] as const;
 const TENANT_STORAGE_KEY = "clockin.mobile.tenant";
+const OFFICE_STORAGE_PREFIX = "clockin.mobile.office";
 const ACTIVE_SHIFT_STORAGE_KEY = "clockin.mobile.activeShift";
 const LANGUAGE_STORAGE_KEY = "clockin.mobile.language";
+const BRAND_LOGO = require("./assets/websys-logo.png");
 
 const i18n = {
   en: {
@@ -161,6 +169,13 @@ const i18n = {
     enterTenantNameOrSlug: "Enter your tenant name or slug.",
     unableToValidateTenant: "Unable to validate tenant right now.",
     tenantNotFound: "Tenant not found. Check with your manager.",
+    loadingLocations: "Loading locations...",
+    chooseLocation: "Choose Location",
+    selectLocationBeforeClockIn: "Select the location where you are working.",
+    location: "Location",
+    changeLocation: "Change",
+    hideLocations: "Hide",
+    unableToLoadLocations: "Unable to load locations right now.",
     autoPin: "Auto",
     language: "Language",
     actions: {
@@ -214,6 +229,13 @@ const i18n = {
     enterTenantNameOrSlug: "Ingresa el nombre o slug del tenant.",
     unableToValidateTenant: "No se puede validar el tenant ahora.",
     tenantNotFound: "Tenant no encontrado. Verifica con tu gerente.",
+    loadingLocations: "Cargando ubicaciones...",
+    chooseLocation: "Selecciona ubicacion",
+    selectLocationBeforeClockIn: "Selecciona la ubicacion donde trabajas.",
+    location: "Ubicacion",
+    changeLocation: "Cambiar",
+    hideLocations: "Ocultar",
+    unableToLoadLocations: "No se pueden cargar ubicaciones ahora.",
     autoPin: "Auto",
     language: "Idioma",
     actions: {
@@ -233,6 +255,11 @@ export default function App() {
   const [tenantStatus, setTenantStatus] = useState<string | null>(null);
   const [resolvingTenant, setResolvingTenant] = useState(false);
   const [tenantHydrated, setTenantHydrated] = useState(false);
+  const [tenantOffices, setTenantOffices] = useState<TenantOffice[]>([]);
+  const [selectedOfficeId, setSelectedOfficeId] = useState<string | null>(null);
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<string | null>(null);
+  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeName, setEmployeeName] = useState("");
@@ -311,6 +338,12 @@ export default function App() {
     (tipsReminderEmployeeId === selectedEmployee.id || serverTipsRequired);
   const needsManualPinForSession = Boolean(sessionEmployee) && !activeShift?.pin;
   const t = i18n[language];
+  const selectedOffice = useMemo(
+    () => tenantOffices.find((office) => office.id === selectedOfficeId) ?? null,
+    [tenantOffices, selectedOfficeId],
+  );
+  const requiresLocationSelection = tenantOffices.length > 1;
+  const canUseClockScreen = !requiresLocationSelection || Boolean(selectedOfficeId);
 
   const fetchJson = useCallback(
     async (path: string, options?: RequestInit) => {
@@ -374,9 +407,19 @@ export default function App() {
       setEmployees([]);
       return;
     }
+    if (loadingLocations) {
+      return;
+    }
+    if (!canUseClockScreen) {
+      setEmployees([]);
+      return;
+    }
 
     try {
-      const data = (await fetchJson("/employees")) as { employees: Employee[] };
+      const path = selectedOfficeId
+        ? `/employees?officeId=${encodeURIComponent(selectedOfficeId)}`
+        : "/employees";
+      const data = (await fetchJson(path)) as { employees: Employee[] };
       setEmployees(data.employees || []);
     } catch (error) {
       setEmployees([]);
@@ -384,7 +427,137 @@ export default function App() {
         setStatus(error.message);
       }
     }
-  }, [fetchJson, tenant]);
+  }, [canUseClockScreen, fetchJson, loadingLocations, selectedOfficeId, tenant]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadTenantLocations = async () => {
+      if (!tenant) {
+        if (active) {
+          setTenantOffices([]);
+          setSelectedOfficeId(null);
+          setLocationPickerOpen(false);
+          setLocationStatus(null);
+          setLoadingLocations(false);
+        }
+        return;
+      }
+
+      setLoadingLocations(true);
+      setLocationStatus(null);
+      try {
+        const orderedBases = Array.from(
+          new Set([resolvedApiBase, ...apiBaseCandidates].filter(Boolean)),
+        ) as string[];
+        let resolvedBase: string | null = null;
+        let payload:
+          | {
+              offices?: Array<{ id?: string; name?: string }>;
+              message?: string;
+              error?: string;
+            }
+          | null = null;
+        let lastError: Error | null = null;
+
+        for (const apiBase of orderedBases) {
+          try {
+            const endpoint = new URL(`${apiBase}/tenant-directory/employee-context`);
+            endpoint.searchParams.set("tenant", tenant.slug || tenant.input || tenant.name);
+            const response = await fetch(endpoint.toString(), {
+              headers: { Accept: "application/json" },
+            });
+            const data = (await response.json().catch(() => ({}))) as {
+              offices?: Array<{ id?: string; name?: string }>;
+              message?: string;
+              error?: string;
+            };
+
+            if (!response.ok) {
+              lastError = new Error(
+                data.message || data.error || t.unableToLoadLocations,
+              );
+              continue;
+            }
+
+            payload = data;
+            resolvedBase = apiBase;
+            break;
+          } catch (error) {
+            if (error instanceof Error) {
+              lastError = error;
+            } else {
+              lastError = new Error(t.unableToLoadLocations);
+            }
+          }
+        }
+
+        if (!payload) {
+          throw lastError || new Error(t.unableToLoadLocations);
+        }
+
+        const offices = (payload.offices || [])
+          .filter(
+            (office): office is TenantOffice =>
+              Boolean(office) &&
+              typeof office.id === "string" &&
+              typeof office.name === "string",
+          )
+          .map((office) => ({ id: office.id, name: office.name }));
+        const officeIds = new Set(offices.map((office) => office.id));
+        const officeStorageKey = `${OFFICE_STORAGE_PREFIX}.${tenant.authOrgId}`;
+        const savedOfficeId = (
+          await AsyncStorage.getItem(officeStorageKey)
+        )?.trim();
+        let nextOfficeId: string | null = null;
+
+        if (offices.length > 1) {
+          if (savedOfficeId && officeIds.has(savedOfficeId)) {
+            nextOfficeId = savedOfficeId;
+          }
+        } else if (offices.length === 1) {
+          nextOfficeId = offices[0].id;
+        }
+
+        if (nextOfficeId) {
+          await AsyncStorage.setItem(officeStorageKey, nextOfficeId);
+        } else {
+          await AsyncStorage.removeItem(officeStorageKey);
+        }
+
+        if (!active) {
+          return;
+        }
+
+        if (resolvedBase && resolvedApiBase !== resolvedBase) {
+          setResolvedApiBase(resolvedBase);
+        }
+        setTenantOffices(offices);
+        setSelectedOfficeId(nextOfficeId);
+        setLocationPickerOpen(offices.length > 1 && !nextOfficeId);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        setTenantOffices([]);
+        setSelectedOfficeId(null);
+        setLocationPickerOpen(false);
+        setLocationStatus(
+          error instanceof Error ? error.message : t.unableToLoadLocations,
+        );
+      } finally {
+        if (active) {
+          setLoadingLocations(false);
+        }
+      }
+    };
+
+    void loadTenantLocations();
+
+    return () => {
+      active = false;
+    };
+  }, [resolvedApiBase, tenant, t.unableToLoadLocations]);
 
   useEffect(() => {
     let active = true;
@@ -584,6 +757,10 @@ export default function App() {
         authOrgId: data.authOrgId,
       };
 
+      setTenantOffices([]);
+      setSelectedOfficeId(null);
+      setLocationPickerOpen(false);
+      setLocationStatus(null);
       setTenant(resolvedTenant);
       await AsyncStorage.setItem(
         TENANT_STORAGE_KEY,
@@ -607,6 +784,25 @@ export default function App() {
     const next = language === "en" ? "es" : "en";
     setLanguage(next);
     void AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, next);
+  };
+
+  const handleSelectLocation = async (officeId: string) => {
+    if (!tenant) {
+      return;
+    }
+
+    const officeStorageKey = `${OFFICE_STORAGE_PREFIX}.${tenant.authOrgId}`;
+    setSelectedOfficeId(officeId);
+    setLocationPickerOpen(false);
+    setLocationStatus(null);
+    setStatus(null);
+    setTipsStatus(null);
+    setEmployeeName("");
+    try {
+      await AsyncStorage.setItem(officeStorageKey, officeId);
+    } catch {
+      // keep in-memory selection if persistence fails
+    }
   };
 
   const handlePunch = async () => {
@@ -762,9 +958,7 @@ export default function App() {
       <SafeAreaView style={styles.safe}>
         <ScrollView ref={scrollRef} contentContainerStyle={styles.container}>
           <View style={styles.brandRow}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>WS</Text>
-            </View>
+            <Image source={BRAND_LOGO} style={styles.brandLogo} resizeMode="contain" />
             <View>
               <Text style={styles.title}>ClockIn</Text>
               <Text style={styles.subtitle}>{t.appSubtitle}</Text>
@@ -803,10 +997,12 @@ export default function App() {
                 </Text>
               </TouchableOpacity>
             </View>
-          ) : (
+          ) : loadingLocations ? (
             <>
               <View style={styles.tenantBar}>
-                <Text style={styles.tenantBarText}>{t.tenant}: {tenant.name}</Text>
+                <View style={styles.tenantBarInfo}>
+                  <Text style={styles.tenantBarText}>{t.tenant}: {tenant.name}</Text>
+                </View>
                 <View style={styles.tenantBarActions}>
                   <TouchableOpacity style={styles.tenantSwitch} onPress={toggleLanguage}>
                     <Text style={styles.tenantSwitchText}>
@@ -815,6 +1011,117 @@ export default function App() {
                   </TouchableOpacity>
                 </View>
               </View>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>{t.loadingLocations}</Text>
+              </View>
+            </>
+          ) : requiresLocationSelection && !selectedOfficeId ? (
+            <>
+              <View style={styles.tenantBar}>
+                <View style={styles.tenantBarInfo}>
+                  <Text style={styles.tenantBarText}>{t.tenant}: {tenant.name}</Text>
+                </View>
+                <View style={styles.tenantBarActions}>
+                  <TouchableOpacity style={styles.tenantSwitch} onPress={toggleLanguage}>
+                    <Text style={styles.tenantSwitchText}>
+                      {t.language}: {language.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>{t.chooseLocation}</Text>
+                <Text style={styles.subtitleDark}>{t.selectLocationBeforeClockIn}</Text>
+
+                <Text style={styles.label}>{t.location}</Text>
+                <View style={styles.locationList}>
+                  {tenantOffices.map((office) => (
+                    <TouchableOpacity
+                      key={office.id}
+                      style={styles.locationOption}
+                      onPress={() => {
+                        void handleSelectLocation(office.id);
+                      }}
+                    >
+                      <Text style={styles.locationOptionText}>{office.name}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {locationStatus && <Text style={styles.statusText}>{locationStatus}</Text>}
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.tenantBar}>
+                <View style={styles.tenantBarInfo}>
+                  <Text style={styles.tenantBarText}>{t.tenant}: {tenant.name}</Text>
+                  {!!selectedOffice && (
+                    <Text style={styles.tenantMetaText}>
+                      {t.location}: {selectedOffice.name}
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.tenantBarActions}>
+                  {tenantOffices.length > 1 && (
+                    <TouchableOpacity
+                      style={styles.tenantSwitch}
+                      onPress={() => setLocationPickerOpen((open) => !open)}
+                    >
+                      <Text style={styles.tenantSwitchText}>
+                        {locationPickerOpen ? t.hideLocations : t.changeLocation}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.tenantSwitch} onPress={toggleLanguage}>
+                    <Text style={styles.tenantSwitchText}>
+                      {t.language}: {language.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {tenantOffices.length > 1 && locationPickerOpen && (
+                <View style={styles.locationPickerPanel}>
+                  {tenantOffices.map((office) => {
+                    const isActive = office.id === selectedOfficeId;
+                    return (
+                      <TouchableOpacity
+                        key={office.id}
+                        style={
+                          isActive
+                            ? styles.locationOptionActive
+                            : styles.locationOption
+                        }
+                        onPress={() => {
+                          void handleSelectLocation(office.id);
+                        }}
+                      >
+                        <Text
+                          style={
+                            isActive
+                              ? styles.locationOptionTextActive
+                              : styles.locationOptionText
+                          }
+                        >
+                          {office.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {locationStatus && (
+                    <Text style={[styles.statusText, styles.locationStatus]}>
+                      {locationStatus}
+                    </Text>
+                  )}
+                </View>
+              )}
+              {locationStatus && !locationPickerOpen && (
+                <Text style={[styles.statusText, styles.locationStatus]}>
+                  {locationStatus}
+                </Text>
+              )}
 
               <View style={styles.card}>
                 <View style={styles.cardHeader}>
@@ -1041,22 +1348,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
   },
-  badge: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: "#ff8a3d",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-  },
-  badgeText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1a1a1a",
+  brandLogo: {
+    width: 176,
+    height: 64,
   },
   title: {
     fontSize: 26,
@@ -1084,9 +1378,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  tenantBarInfo: {
+    flex: 1,
+    paddingRight: 8,
+  },
   tenantBarText: {
     color: "#f9f4ea",
     fontWeight: "600",
+  },
+  tenantMetaText: {
+    color: "rgba(249, 244, 234, 0.76)",
+    marginTop: 3,
+    fontSize: 12,
   },
   tenantBarActions: {
     flexDirection: "row",
@@ -1104,6 +1407,46 @@ const styles = StyleSheet.create({
     color: "#f9f4ea",
     fontSize: 12,
     fontWeight: "700",
+  },
+  locationPickerPanel: {
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 14,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    gap: 8,
+  },
+  locationList: {
+    gap: 8,
+    marginTop: 2,
+  },
+  locationOption: {
+    borderWidth: 1,
+    borderColor: "rgba(128, 110, 88, 0.3)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+  },
+  locationOptionActive: {
+    borderWidth: 1,
+    borderColor: "#ff8a3d",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#ffecd9",
+  },
+  locationOptionText: {
+    color: "#1f1a16",
+    fontWeight: "600",
+  },
+  locationOptionTextActive: {
+    color: "#9a4a16",
+    fontWeight: "700",
+  },
+  locationStatus: {
+    color: "rgba(249, 244, 234, 0.82)",
+    marginTop: 0,
   },
   card: {
     backgroundColor: "#f4ece2",

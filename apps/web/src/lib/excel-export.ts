@@ -12,8 +12,13 @@ export async function excelResponse(
   await build(workbook);
 
   const buffer = await workbook.xlsx.writeBuffer();
+  const bytes = Buffer.from(buffer);
+  const body = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
 
-  return new NextResponse(Buffer.from(buffer), {
+  return new NextResponse(body, {
     headers: {
       "Content-Type":
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

@@ -1,5 +1,5 @@
-import { PunchType } from "@prisma/client";
-import { Type } from "class-transformer";
+import { PunchType } from '@prisma/client';
+import { Type } from 'class-transformer';
 import {
   IsEnum,
   IsISO8601,
@@ -7,7 +7,7 @@ import {
   IsOptional,
   IsString,
   MaxLength,
-} from "class-validator";
+} from 'class-validator';
 
 export class CreatePunchDto {
   @IsEnum(PunchType)

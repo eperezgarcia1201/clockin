@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthActions } from "./auth-actions";
@@ -123,6 +124,24 @@ const ACTIVE_LOCATION_STORAGE_KEY = "clockin_active_location_id";
 const ACTIVE_LOCATION_ALL_STORAGE_KEY = "clockin_active_location_all";
 const ACTIVE_LOCATION_COOKIE_KEY = "clockin_active_location_id";
 
+const readCookieValue = (key: string) => {
+  if (typeof document === "undefined") return "";
+  const keyPrefix = `${key}=`;
+  const cookie = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(keyPrefix));
+  if (!cookie) return "";
+
+  const rawValue = cookie.slice(keyPrefix.length).trim();
+  if (!rawValue) return "";
+  try {
+    return decodeURIComponent(rawValue);
+  } catch {
+    return rawValue;
+  }
+};
+
 export function AdminShell({
   children,
   variant,
@@ -138,7 +157,10 @@ export function AdminShell({
   const [accessLoaded, setAccessLoaded] = useState(false);
   const [multiLocationEnabled, setMultiLocationEnabled] = useState(false);
   const [offices, setOffices] = useState<Office[]>([]);
+  const [officesLoaded, setOfficesLoaded] = useState(false);
+  const [officesLoadSucceeded, setOfficesLoadSucceeded] = useState(false);
   const [activeLocationId, setActiveLocationId] = useState("");
+  const [locationScopeInitialized, setLocationScopeInitialized] = useState(false);
   const [permissions, setPermissions] = useState<AccessPermissions>({
     dashboard: true,
     users: true,
@@ -238,7 +260,10 @@ export function AdminShell({
     }
     if (!canManageMultiLocation) {
       setOffices([]);
+      setOfficesLoaded(false);
+      setOfficesLoadSucceeded(false);
       setActiveLocationId("");
+      setLocationScopeInitialized(false);
       if (typeof window !== "undefined") {
         sessionStorage.removeItem(ACTIVE_LOCATION_STORAGE_KEY);
         sessionStorage.removeItem(ACTIVE_LOCATION_ALL_STORAGE_KEY);
@@ -250,13 +275,18 @@ export function AdminShell({
     }
 
     const loadOffices = async () => {
+      setOfficesLoaded(false);
+      setOfficesLoadSucceeded(false);
       try {
         const response = await fetch("/api/offices", { cache: "no-store" });
         if (!response.ok) return;
         const data = (await response.json()) as { offices?: Office[] };
         setOffices(data.offices || []);
+        setOfficesLoadSucceeded(true);
       } catch {
         // ignore
+      } finally {
+        setOfficesLoaded(true);
       }
     };
 
@@ -265,8 +295,10 @@ export function AdminShell({
 
   useEffect(() => {
     if (!canManageMultiLocation) return;
+    if (!officesLoaded || !officesLoadSucceeded) return;
     if (offices.length === 0) {
       setActiveLocationId("");
+      setLocationScopeInitialized(true);
       return;
     }
 
@@ -274,22 +306,29 @@ export function AdminShell({
       typeof window !== "undefined"
         ? (sessionStorage.getItem(ACTIVE_LOCATION_STORAGE_KEY) || "").trim()
         : "";
+    const fromCookie = readCookieValue(ACTIVE_LOCATION_COOKIE_KEY).trim();
+    const persistedLocationId = fromSession || fromCookie;
     const explicitAllSelection =
       typeof window !== "undefined" &&
       sessionStorage.getItem(ACTIVE_LOCATION_ALL_STORAGE_KEY) === "1";
 
     if (explicitAllSelection) {
       setActiveLocationId("");
+      setLocationScopeInitialized(true);
       return;
     }
 
-    if (fromSession && offices.some((office) => office.id === fromSession)) {
+    if (
+      persistedLocationId &&
+      offices.some((office) => office.id === persistedLocationId)
+    ) {
       setActiveLocationId((prev) => {
         if (prev && offices.some((office) => office.id === prev)) {
           return prev;
         }
-        return fromSession;
+        return persistedLocationId;
       });
+      setLocationScopeInitialized(true);
       return;
     }
 
@@ -299,10 +338,12 @@ export function AdminShell({
       }
       return offices[0].id;
     });
-  }, [canManageMultiLocation, offices]);
+    setLocationScopeInitialized(true);
+  }, [canManageMultiLocation, offices, officesLoaded, officesLoadSucceeded]);
 
   useEffect(() => {
     if (!canManageMultiLocation) return;
+    if (!locationScopeInitialized) return;
     if (typeof window !== "undefined") {
       if (activeLocationId) {
         sessionStorage.setItem(ACTIVE_LOCATION_STORAGE_KEY, activeLocationId);
@@ -317,7 +358,7 @@ export function AdminShell({
         document.cookie = `${ACTIVE_LOCATION_COOKIE_KEY}=; path=/; max-age=0`;
       }
     }
-  }, [activeLocationId, canManageMultiLocation]);
+  }, [activeLocationId, canManageMultiLocation, locationScopeInitialized]);
 
   const handleLogout = async () => {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -335,7 +376,16 @@ export function AdminShell({
     <div className="admin-shell">
       <header className="admin-topbar">
         <div className="admin-branding">
-          <div className="admin-logo">W</div>
+          <div className="admin-logo">
+            <Image
+              src="/websys-logo.png"
+              alt="Websys logo"
+              width={38}
+              height={38}
+              className="admin-logo-image"
+              priority
+            />
+          </div>
           <div className="admin-brand-text">
             <div className="admin-brand-name">Websys</div>
             <div className="admin-brand-sub">Clockin Admin</div>

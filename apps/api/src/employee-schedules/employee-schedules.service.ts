@@ -1,17 +1,17 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
-import { TenancyService } from "../tenancy/tenancy.service";
-import type { AuthUser } from "../auth/auth.types";
-import type { UpdateEmployeeScheduleDto } from "./dto/update-employee-schedule.dto";
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { TenancyService } from '../tenancy/tenancy.service';
+import type { AuthUser } from '../auth/auth.types';
+import type { UpdateEmployeeScheduleDto } from './dto/update-employee-schedule.dto';
 
 const WEEKDAYS = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
 ];
 
 @Injectable()
@@ -22,12 +22,12 @@ export class EmployeeSchedulesService {
   ) {}
 
   async getSchedule(authUser: AuthUser, employeeId: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, "schedules");
+    const { tenant } = await this.tenancy.requireFeature(authUser, 'schedules');
     const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId, tenantId: tenant.id, deletedAt: null },
     });
     if (!employee) {
-      throw new NotFoundException("Employee not found");
+      throw new NotFoundException('Employee not found');
     }
 
     const entries = await this.prisma.employeeSchedule.findMany({
@@ -44,8 +44,8 @@ export class EmployeeSchedulesService {
           weekday,
           label,
           enabled: Boolean(entry),
-          startTime: entry?.startTime || "",
-          endTime: entry?.endTime || "",
+          startTime: entry?.startTime || '',
+          endTime: entry?.endTime || '',
         };
       }),
     };
@@ -56,16 +56,16 @@ export class EmployeeSchedulesService {
     employeeId: string,
     dto: UpdateEmployeeScheduleDto,
   ) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, "schedules");
+    const { tenant } = await this.tenancy.requireFeature(authUser, 'schedules');
 
     const employee = await this.prisma.employee.findFirst({
       where: { id: employeeId, tenantId: tenant.id, deletedAt: null },
     });
     if (!employee) {
-      throw new NotFoundException("Employee not found");
+      throw new NotFoundException('Employee not found');
     }
 
-    const normalized = new Map<number, typeof dto.days[number]>();
+    const normalized = new Map<number, (typeof dto.days)[number]>();
     dto.days.forEach((day) => {
       normalized.set(day.weekday, day);
     });

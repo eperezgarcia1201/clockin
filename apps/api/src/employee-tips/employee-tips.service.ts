@@ -3,12 +3,12 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-} from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
-import { TenancyService } from "../tenancy/tenancy.service";
-import type { AuthUser } from "../auth/auth.types";
-import type { SubmitEmployeeTipDto } from "./dto/submit-employee-tip.dto";
-import { NotificationsService } from "../notifications/notifications.service";
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { TenancyService } from '../tenancy/tenancy.service';
+import type { AuthUser } from '../auth/auth.types';
+import type { SubmitEmployeeTipDto } from './dto/submit-employee-tip.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TIP_EDIT_WINDOW_DAYS = 7;
@@ -33,7 +33,7 @@ export class EmployeeTipsService {
       where: { tenantId: tenant.id },
       select: { timezone: true },
     });
-    const timeZone = settings?.timezone || "UTC";
+    const timeZone = settings?.timezone || 'UTC';
 
     const employee = await this.prisma.employee.findFirst({
       where: { tenantId: tenant.id, id: employeeId, deletedAt: null },
@@ -46,13 +46,16 @@ export class EmployeeTipsService {
     });
 
     if (!employee) {
-      throw new NotFoundException("Employee not found.");
+      throw new NotFoundException('Employee not found.');
     }
     if (!employee.isServer) {
-      throw new ForbiddenException("Tips can only be submitted for server users.");
+      throw new ForbiddenException(
+        'Tips can only be submitted for server users.',
+      );
     }
 
-    const workDateKey = dto.workDate || this.toLocalDateKey(new Date(), timeZone);
+    const workDateKey =
+      dto.workDate || this.toLocalDateKey(new Date(), timeZone);
     const workDateUtc = this.dateKeyToUtc(workDateKey);
 
     this.assertWithinEditWindow(workDateUtc, timeZone);
@@ -117,7 +120,7 @@ export class EmployeeTipsService {
       where: { tenantId: tenant.id },
       select: { timezone: true },
     });
-    const timeZone = settings?.timezone || "UTC";
+    const timeZone = settings?.timezone || 'UTC';
 
     const employee = await this.prisma.employee.findFirst({
       where: { tenantId: tenant.id, id: employeeId, deletedAt: null },
@@ -130,7 +133,7 @@ export class EmployeeTipsService {
     });
 
     if (!employee) {
-      throw new NotFoundException("Employee not found.");
+      throw new NotFoundException('Employee not found.');
     }
     if (!employee.isServer) {
       return {
@@ -154,7 +157,7 @@ export class EmployeeTipsService {
     const toUtc = this.dateKeyToUtc(toKey);
 
     if (fromUtc.getTime() > toUtc.getTime()) {
-      throw new BadRequestException("from must be before or equal to to.");
+      throw new BadRequestException('from must be before or equal to to.');
     }
 
     const tips = await this.prisma.employeeTip.findMany({
@@ -166,7 +169,7 @@ export class EmployeeTipsService {
           lte: toUtc,
         },
       },
-      orderBy: { workDate: "desc" },
+      orderBy: { workDate: 'desc' },
     });
 
     const totals = tips.reduce(
@@ -229,14 +232,20 @@ export class EmployeeTipsService {
   }
 
   private assertWithinEditWindow(workDateUtc: Date, timeZone: string) {
-    const todayUtc = this.dateKeyToUtc(this.toLocalDateKey(new Date(), timeZone));
-    const deltaDays = Math.round((todayUtc.getTime() - workDateUtc.getTime()) / DAY_MS);
+    const todayUtc = this.dateKeyToUtc(
+      this.toLocalDateKey(new Date(), timeZone),
+    );
+    const deltaDays = Math.round(
+      (todayUtc.getTime() - workDateUtc.getTime()) / DAY_MS,
+    );
     if (deltaDays < 0) {
-      throw new BadRequestException("Tips cannot be submitted for future dates.");
+      throw new BadRequestException(
+        'Tips cannot be submitted for future dates.',
+      );
     }
     if (deltaDays > TIP_EDIT_WINDOW_DAYS - 1) {
       throw new ForbiddenException(
-        "Tips can only be edited within the last 7 days.",
+        'Tips can only be edited within the last 7 days.',
       );
     }
   }
@@ -263,16 +272,16 @@ export class EmployeeTipsService {
   }
 
   private toLocalDateKey(date: Date, timeZone: string) {
-    const formatter = new Intl.DateTimeFormat("en-US", {
+    const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
     });
     const parts = formatter.formatToParts(date);
-    const year = parts.find((part) => part.type === "year")?.value;
-    const month = parts.find((part) => part.type === "month")?.value;
-    const day = parts.find((part) => part.type === "day")?.value;
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
     if (!year || !month || !day) {
       return date.toISOString().slice(0, 10);
     }
@@ -281,7 +290,7 @@ export class EmployeeTipsService {
 
   private dateKeyToUtc(dateKey: string) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
-      throw new BadRequestException("Date must use YYYY-MM-DD format.");
+      throw new BadRequestException('Date must use YYYY-MM-DD format.');
     }
     return new Date(`${dateKey}T00:00:00.000Z`);
   }

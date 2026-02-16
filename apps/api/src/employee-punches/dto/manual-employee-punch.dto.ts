@@ -1,5 +1,5 @@
-import { PunchType } from "@prisma/client";
-import { IsEnum, IsISO8601, IsString, IsOptional } from "class-validator";
+import { PunchType } from '@prisma/client';
+import { IsEnum, IsISO8601, IsString, IsOptional } from 'class-validator';
 
 export class ManualEmployeePunchDto {
   @IsString()

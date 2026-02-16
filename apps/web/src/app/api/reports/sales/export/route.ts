@@ -92,7 +92,7 @@ const toCsv = (rows: unknown[][]) =>
 const escapePdfText = (value: string) =>
   value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 
-const buildPdf = (pages: string[]) => {
+const buildPdf = (pages: string[]): ArrayBuffer => {
   const pageCount = pages.length;
   const pageObjectStart = 5;
   const objectCount = 4 + pageCount * 2;
@@ -133,7 +133,11 @@ const buildPdf = (pages: string[]) => {
     pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
   }
   pdf += `trailer\n<< /Size ${objectCount + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-  return Buffer.from(pdf, "utf8");
+  const bytes = Buffer.from(pdf, "utf8");
+  return bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
 };
 
 const drawText = (
@@ -619,7 +623,7 @@ export async function GET(request: Request) {
   }
 
   const pdf = buildSalesPdf(data, companyRows);
-  return new NextResponse(Buffer.from(pdf), {
+  return new NextResponse(pdf, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="sales-report-${rangeLabel}.pdf"`,

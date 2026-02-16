@@ -19,5 +19,18 @@
         "buildType": "app-bundle"
       }
     }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "/Users/elmerperez/Downloads/project-a5f23ccc-c47c-4427-a5e-ea1caed2ea12.json",
+        "track": "internal"
+      },
+      "ios": {
+        "appleId": "usai551perez@hotmail.com",
+        "ascAppId": "6759080858",
+        "appleTeamId": "CALGHMZY25"
+      }
+    }
   }
 }

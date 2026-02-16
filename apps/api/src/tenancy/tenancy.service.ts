@@ -2,39 +2,39 @@ import {
   ForbiddenException,
   Injectable,
   UnauthorizedException,
-} from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { Role } from "@prisma/client";
-import { PrismaService } from "../prisma/prisma.service";
-import type { AuthUser } from "../auth/auth.types";
-import { randomUUID } from "crypto";
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Role } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import type { AuthUser } from '../auth/auth.types';
+import { randomUUID } from 'crypto';
 import {
   type ManagerFeatureKey,
   allManagerFeatures,
   normalizeManagerFeatures,
-} from "./manager-features";
+} from './manager-features';
 
 const slugify = (value: string): string =>
   value
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "");
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '');
 
-const DEFAULT_ADMIN_USERNAME = "admin";
+const DEFAULT_ADMIN_USERNAME = 'admin';
 
-type AdminActorType = "tenant_admin" | "manager" | "membership" | "limited";
+type AdminActorType = 'tenant_admin' | 'manager' | 'membership' | 'limited';
 
 type AdminAccess = {
   actorType: AdminActorType;
   displayName: string;
   featurePermissions: ManagerFeatureKey[];
   employeeId: string | null;
-  tenant: Awaited<ReturnType<TenancyService["requireTenantAndUser"]>>["tenant"];
-  user: Awaited<ReturnType<TenancyService["requireTenantAndUser"]>>["user"];
+  tenant: Awaited<ReturnType<TenancyService['requireTenantAndUser']>>['tenant'];
+  user: Awaited<ReturnType<TenancyService['requireTenantAndUser']>>['user'];
   membership: Awaited<
-    ReturnType<TenancyService["requireTenantAndUser"]>
-  >["membership"];
+    ReturnType<TenancyService['requireTenantAndUser']>
+  >['membership'];
   settings: {
     adminUsername: string;
     multiLocationEnabled: boolean;
@@ -50,11 +50,11 @@ export class TenancyService {
 
   async requireTenantAndUser(authUser: AuthUser) {
     if (!authUser.tenantExternalId) {
-      throw new UnauthorizedException("Missing tenant claim in token.");
+      throw new UnauthorizedException('Missing tenant claim in token.');
     }
 
     const defaultRole = this.parseRole(
-      this.config.get<string>("DEFAULT_ROLE") || "EMPLOYEE",
+      this.config.get<string>('DEFAULT_ROLE') || 'EMPLOYEE',
     );
 
     const tenant = await this.prisma.tenant.upsert({
@@ -70,18 +70,18 @@ export class TenancyService {
     });
 
     if (!tenant.isActive) {
-      throw new ForbiddenException("Tenant account is disabled.");
+      throw new ForbiddenException('Tenant account is disabled.');
     }
 
     const user = await this.prisma.user.upsert({
       where: { authUserId: authUser.authUserId },
       update: {
-        email: authUser.email || "unknown@clockin.local",
+        email: authUser.email || 'unknown@clockin.local',
         name: authUser.name,
       },
       create: {
         authUserId: authUser.authUserId,
-        email: authUser.email || "unknown@clockin.local",
+        email: authUser.email || 'unknown@clockin.local',
         name: authUser.name,
       },
     });
@@ -129,7 +129,7 @@ export class TenancyService {
     ) {
       return {
         ...context,
-        actorType: "tenant_admin",
+        actorType: 'tenant_admin',
         displayName: adminUsername,
         featurePermissions: allManagerFeatures(),
         employeeId: null,
@@ -149,7 +149,7 @@ export class TenancyService {
     if (manager) {
       return {
         ...context,
-        actorType: "manager",
+        actorType: 'manager',
         displayName: manager.displayName || manager.fullName,
         featurePermissions: this.resolveManagerFeatures(manager),
         employeeId: manager.id,
@@ -164,8 +164,8 @@ export class TenancyService {
     if (elevatedRoles.includes(context.membership.role)) {
       return {
         ...context,
-        actorType: "membership",
-        displayName: authUser.name || authUser.email || "Admin",
+        actorType: 'membership',
+        displayName: authUser.name || authUser.email || 'Admin',
         featurePermissions: allManagerFeatures(),
         employeeId: null,
         settings: {
@@ -177,8 +177,8 @@ export class TenancyService {
 
     return {
       ...context,
-      actorType: "limited",
-      displayName: authUser.name || authUser.email || "User",
+      actorType: 'limited',
+      displayName: authUser.name || authUser.email || 'User',
       featurePermissions: [],
       employeeId: null,
       settings: {
@@ -195,21 +195,20 @@ export class TenancyService {
     }
 
     throw new ForbiddenException(
-      "This account does not have access to this feature.",
+      'This account does not have access to this feature.',
     );
   }
 
-  async requireAnyFeature(
-    authUser: AuthUser,
-    features: ManagerFeatureKey[],
-  ) {
+  async requireAnyFeature(authUser: AuthUser, features: ManagerFeatureKey[]) {
     const access = await this.resolveAdminAccess(authUser);
-    if (features.some((feature) => access.featurePermissions.includes(feature))) {
+    if (
+      features.some((feature) => access.featurePermissions.includes(feature))
+    ) {
       return access;
     }
 
     throw new ForbiddenException(
-      "This account does not have access to this feature.",
+      'This account does not have access to this feature.',
     );
   }
 
@@ -219,20 +218,20 @@ export class TenancyService {
     email?: string,
   ) {
     const conditions: {
-      fullName?: { equals: string; mode: "insensitive" };
-      displayName?: { equals: string; mode: "insensitive" };
-      email?: { equals: string; mode: "insensitive" };
+      fullName?: { equals: string; mode: 'insensitive' };
+      displayName?: { equals: string; mode: 'insensitive' };
+      email?: { equals: string; mode: 'insensitive' };
     }[] = [];
 
     if (loginIdentifier) {
       conditions.push(
-        { fullName: { equals: loginIdentifier, mode: "insensitive" } },
-        { displayName: { equals: loginIdentifier, mode: "insensitive" } },
-        { email: { equals: loginIdentifier, mode: "insensitive" } },
+        { fullName: { equals: loginIdentifier, mode: 'insensitive' } },
+        { displayName: { equals: loginIdentifier, mode: 'insensitive' } },
+        { email: { equals: loginIdentifier, mode: 'insensitive' } },
       );
     }
     if (email?.trim()) {
-      conditions.push({ email: { equals: email.trim(), mode: "insensitive" } });
+      conditions.push({ email: { equals: email.trim(), mode: 'insensitive' } });
     }
 
     if (conditions.length === 0) {
@@ -273,25 +272,25 @@ export class TenancyService {
       return allManagerFeatures().filter((feature) => enabled.has(feature));
     }
 
-    const derived = new Set<ManagerFeatureKey>(["dashboard"]);
+    const derived = new Set<ManagerFeatureKey>(['dashboard']);
     if (!manager.isManager && manager.isAdmin) {
       allManagerFeatures().forEach((feature) => derived.add(feature));
     }
     if (manager.isTimeAdmin) {
-      derived.add("schedules");
-      derived.add("timeEdits");
+      derived.add('schedules');
+      derived.add('timeEdits');
     }
     if (manager.isReports) {
-      derived.add("reports");
-      derived.add("tips");
-      derived.add("salesCapture");
+      derived.add('reports');
+      derived.add('tips');
+      derived.add('salesCapture');
     }
 
     return allManagerFeatures().filter((feature) => derived.has(feature));
   }
 
   private makeTenantSlug(authUser: AuthUser): string {
-    const base = slugify(authUser.tenantName || "") || "tenant";
+    const base = slugify(authUser.tenantName || '') || 'tenant';
     return `${base}-${randomUUID().slice(0, 6)}`;
   }
 

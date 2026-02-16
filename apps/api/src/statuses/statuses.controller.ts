@@ -6,13 +6,13 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
-} from "@nestjs/common";
-import { AuthOrDevGuard } from "../auth/auth.guard";
-import type { RequestWithUser } from "../auth/auth.types";
-import { CreateStatusDto } from "./dto/create-status.dto";
-import { StatusesService } from "./statuses.service";
+} from '@nestjs/common';
+import { AuthOrDevGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.types';
+import { CreateStatusDto } from './dto/create-status.dto';
+import { StatusesService } from './statuses.service';
 
-@Controller("statuses")
+@Controller('statuses')
 @UseGuards(AuthOrDevGuard)
 export class StatusesController {
   constructor(private readonly statuses: StatusesService) {}

@@ -8,12 +8,12 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
-} from "@nestjs/common";
-import { AuthOrDevGuard } from "../auth/auth.guard";
-import type { RequestWithUser } from "../auth/auth.types";
-import { NotificationsService } from "./notifications.service";
+} from '@nestjs/common';
+import { AuthOrDevGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.types';
+import { NotificationsService } from './notifications.service';
 
-@Controller("notifications")
+@Controller('notifications')
 @UseGuards(AuthOrDevGuard)
 export class NotificationsController {
   constructor(private readonly notifications: NotificationsService) {}
@@ -21,8 +21,8 @@ export class NotificationsController {
   @Get()
   async list(
     @Req() req: RequestWithUser,
-    @Query("limit") limit?: string,
-    @Query("unread") unread?: string,
+    @Query('limit') limit?: string,
+    @Query('unread') unread?: string,
   ) {
     if (!req.user) {
       throw new UnauthorizedException();
@@ -30,12 +30,12 @@ export class NotificationsController {
 
     return this.notifications.list(req.user, {
       limit: limit ? Number(limit) : undefined,
-      unreadOnly: unread === "1" || unread === "true",
+      unreadOnly: unread === '1' || unread === 'true',
     });
   }
 
-  @Patch(":id/read")
-  async markRead(@Req() req: RequestWithUser, @Param("id") id: string) {
+  @Patch(':id/read')
+  async markRead(@Req() req: RequestWithUser, @Param('id') id: string) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -43,7 +43,7 @@ export class NotificationsController {
     return this.notifications.markRead(req.user, id);
   }
 
-  @Post("read-all")
+  @Post('read-all')
   async markAllRead(@Req() req: RequestWithUser) {
     if (!req.user) {
       throw new UnauthorizedException();

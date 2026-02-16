@@ -13,21 +13,24 @@ import {
   UnauthorizedException,
   UseGuards,
   UseInterceptors,
-} from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
-import { ExpensePaymentMethod, PunchType } from "@prisma/client";
-import type { Response } from "express";
-import { AuthOrDevGuard } from "../auth/auth.guard";
-import type { RequestWithUser } from "../auth/auth.types";
-import { ReportsService } from "./reports.service";
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ExpensePaymentMethod, PunchType } from '@prisma/client';
+import type { Response } from 'express';
+import { AuthOrDevGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.types';
+import { ReportsService } from './reports.service';
 
-@Controller("reports")
+@Controller('reports')
 @UseGuards(AuthOrDevGuard)
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
 
-  @Get("hours")
-  async hoursReport(@Req() req: RequestWithUser, @Query() query: Record<string, string>) {
+  @Get('hours')
+  async hoursReport(
+    @Req() req: RequestWithUser,
+    @Query() query: Record<string, string>,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -35,7 +38,7 @@ export class ReportsController {
     const from = query.from;
     const to = query.to;
     if (!from || !to) {
-      throw new BadRequestException("from and to are required (YYYY-MM-DD)");
+      throw new BadRequestException('from and to are required (YYYY-MM-DD)');
     }
 
     const roundMinutes = Number(query.round ?? 0);
@@ -52,12 +55,15 @@ export class ReportsController {
       employeeId: query.employeeId || undefined,
       officeId: query.officeId || undefined,
       groupId: query.groupId || undefined,
-      includeDetails: query.details === "1" || query.details === "true",
+      includeDetails: query.details === '1' || query.details === 'true',
     });
   }
 
-  @Get("daily")
-  async dailyReport(@Req() req: RequestWithUser, @Query() query: Record<string, string>) {
+  @Get('daily')
+  async dailyReport(
+    @Req() req: RequestWithUser,
+    @Query() query: Record<string, string>,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -65,7 +71,7 @@ export class ReportsController {
     const from = query.from;
     const to = query.to;
     if (!from || !to) {
-      throw new BadRequestException("from and to are required (YYYY-MM-DD)");
+      throw new BadRequestException('from and to are required (YYYY-MM-DD)');
     }
 
     const roundMinutes = Number(query.round ?? 0);
@@ -86,8 +92,11 @@ export class ReportsController {
     });
   }
 
-  @Get("payroll")
-  async payrollReport(@Req() req: RequestWithUser, @Query() query: Record<string, string>) {
+  @Get('payroll')
+  async payrollReport(
+    @Req() req: RequestWithUser,
+    @Query() query: Record<string, string>,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -95,7 +104,7 @@ export class ReportsController {
     const from = query.from;
     const to = query.to;
     if (!from || !to) {
-      throw new BadRequestException("from and to are required (YYYY-MM-DD)");
+      throw new BadRequestException('from and to are required (YYYY-MM-DD)');
     }
 
     const roundMinutes = Number(query.round ?? 0);
@@ -122,8 +131,11 @@ export class ReportsController {
     });
   }
 
-  @Get("audit")
-  async auditReport(@Req() req: RequestWithUser, @Query() query: Record<string, string>) {
+  @Get('audit')
+  async auditReport(
+    @Req() req: RequestWithUser,
+    @Query() query: Record<string, string>,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -131,14 +143,15 @@ export class ReportsController {
     const from = query.from;
     const to = query.to;
     if (!from || !to) {
-      throw new BadRequestException("from and to are required (YYYY-MM-DD)");
+      throw new BadRequestException('from and to are required (YYYY-MM-DD)');
     }
 
     const tzOffset = Number(query.tzOffset ?? 0);
     const limit = Number(query.limit ?? 200);
-    const type = query.type && Object.values(PunchType).includes(query.type as PunchType)
-      ? (query.type as PunchType)
-      : undefined;
+    const type =
+      query.type && Object.values(PunchType).includes(query.type as PunchType)
+        ? (query.type as PunchType)
+        : undefined;
 
     return this.reports.getAuditReport(req.user, {
       from,
@@ -152,8 +165,11 @@ export class ReportsController {
     });
   }
 
-  @Get("tips")
-  async tipsReport(@Req() req: RequestWithUser, @Query() query: Record<string, string>) {
+  @Get('tips')
+  async tipsReport(
+    @Req() req: RequestWithUser,
+    @Query() query: Record<string, string>,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -161,7 +177,7 @@ export class ReportsController {
     const from = query.from;
     const to = query.to;
     if (!from || !to) {
-      throw new BadRequestException("from and to are required (YYYY-MM-DD)");
+      throw new BadRequestException('from and to are required (YYYY-MM-DD)');
     }
 
     return this.reports.getTipsReport(req.user, {
@@ -173,8 +189,11 @@ export class ReportsController {
     });
   }
 
-  @Get("sales")
-  async salesReport(@Req() req: RequestWithUser, @Query() query: Record<string, string>) {
+  @Get('sales')
+  async salesReport(
+    @Req() req: RequestWithUser,
+    @Query() query: Record<string, string>,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -182,7 +201,7 @@ export class ReportsController {
     const from = query.from;
     const to = query.to;
     if (!from || !to) {
-      throw new BadRequestException("from and to are required (YYYY-MM-DD)");
+      throw new BadRequestException('from and to are required (YYYY-MM-DD)');
     }
 
     return this.reports.getSalesReport(req.user, {
@@ -191,7 +210,7 @@ export class ReportsController {
     });
   }
 
-  @Post("sales")
+  @Post('sales')
   async saveSalesReport(
     @Req() req: RequestWithUser,
     @Body() body: Record<string, unknown>,
@@ -200,45 +219,47 @@ export class ReportsController {
       throw new UnauthorizedException();
     }
 
-    const date = typeof body.date === "string" ? body.date.trim() : "";
+    const date = typeof body.date === 'string' ? body.date.trim() : '';
     if (!date) {
-      throw new BadRequestException("date is required (YYYY-MM-DD)");
+      throw new BadRequestException('date is required (YYYY-MM-DD)');
     }
 
     const parseAmount = (field: string) => {
       const raw = body[field];
-      const value = typeof raw === "number" ? raw : Number(raw);
+      const value = typeof raw === 'number' ? raw : Number(raw);
       if (!Number.isFinite(value) || value < 0) {
-        throw new BadRequestException(`${field} must be a non-negative number.`);
+        throw new BadRequestException(
+          `${field} must be a non-negative number.`,
+        );
       }
       return Number(value.toFixed(2));
     };
 
     const notesValue = body.notes;
     const notes =
-      typeof notesValue === "string" && notesValue.trim()
+      typeof notesValue === 'string' && notesValue.trim()
         ? notesValue.trim().slice(0, 500)
         : undefined;
     const bankDepositBatchValue = body.bankDepositBatch;
     const bankDepositBatch =
-      typeof bankDepositBatchValue === "string" && bankDepositBatchValue.trim()
+      typeof bankDepositBatchValue === 'string' && bankDepositBatchValue.trim()
         ? bankDepositBatchValue.trim().slice(0, 80)
         : undefined;
 
     return this.reports.upsertDailySalesReport(req.user, {
       date,
-      foodSales: parseAmount("foodSales"),
-      liquorSales: parseAmount("liquorSales"),
-      cashPayments: parseAmount("cashPayments"),
+      foodSales: parseAmount('foodSales'),
+      liquorSales: parseAmount('liquorSales'),
+      cashPayments: parseAmount('cashPayments'),
       bankDepositBatch,
-      checkPayments: parseAmount("checkPayments"),
-      creditCardPayments: parseAmount("creditCardPayments"),
-      otherPayments: parseAmount("otherPayments"),
+      checkPayments: parseAmount('checkPayments'),
+      creditCardPayments: parseAmount('creditCardPayments'),
+      otherPayments: parseAmount('otherPayments'),
       notes,
     });
   }
 
-  @Post("sales/expenses")
+  @Post('sales/expenses')
   async saveDailyExpense(
     @Req() req: RequestWithUser,
     @Body() body: Record<string, unknown>,
@@ -247,45 +268,55 @@ export class ReportsController {
       throw new UnauthorizedException();
     }
 
-    const date = typeof body.date === "string" ? body.date.trim() : "";
+    const date = typeof body.date === 'string' ? body.date.trim() : '';
     if (!date) {
-      throw new BadRequestException("date is required (YYYY-MM-DD)");
+      throw new BadRequestException('date is required (YYYY-MM-DD)');
     }
 
     const companyName =
-      typeof body.companyName === "string" ? body.companyName.trim() : "";
+      typeof body.companyName === 'string' ? body.companyName.trim() : '';
     if (!companyName) {
-      throw new BadRequestException("companyName is required.");
+      throw new BadRequestException('companyName is required.');
     }
 
     const invoiceNumber =
-      typeof body.invoiceNumber === "string" ? body.invoiceNumber.trim() : "";
+      typeof body.invoiceNumber === 'string' ? body.invoiceNumber.trim() : '';
     if (!invoiceNumber) {
-      throw new BadRequestException("invoiceNumber is required.");
+      throw new BadRequestException('invoiceNumber is required.');
     }
 
     const paymentRaw =
-      typeof body.paymentMethod === "string"
+      typeof body.paymentMethod === 'string'
         ? body.paymentMethod.trim().toUpperCase()
-        : "";
-    if (!Object.values(ExpensePaymentMethod).includes(paymentRaw as ExpensePaymentMethod)) {
+        : '';
+    if (
+      !Object.values(ExpensePaymentMethod).includes(
+        paymentRaw as ExpensePaymentMethod,
+      )
+    ) {
       throw new BadRequestException(
-        "paymentMethod must be CHECK, DEBIT_CARD, or CASH.",
+        'paymentMethod must be CHECK, DEBIT_CARD, or CASH.',
       );
     }
     const paymentMethod = paymentRaw as ExpensePaymentMethod;
 
     const amountRaw = body.amount;
-    const amount = typeof amountRaw === "number" ? amountRaw : Number(amountRaw);
+    const amount =
+      typeof amountRaw === 'number' ? amountRaw : Number(amountRaw);
     if (!Number.isFinite(amount) || amount < 0) {
-      throw new BadRequestException("amount must be a non-negative number.");
+      throw new BadRequestException('amount must be a non-negative number.');
     }
 
     const checkNumber =
-      typeof body.checkNumber === "string" ? body.checkNumber.trim() : undefined;
+      typeof body.checkNumber === 'string'
+        ? body.checkNumber.trim()
+        : undefined;
     const payToCompany =
-      typeof body.payToCompany === "string" ? body.payToCompany.trim() : undefined;
-    const notes = typeof body.notes === "string" ? body.notes.trim() : undefined;
+      typeof body.payToCompany === 'string'
+        ? body.payToCompany.trim()
+        : undefined;
+    const notes =
+      typeof body.notes === 'string' ? body.notes.trim() : undefined;
 
     return this.reports.createDailyExpense(req.user, {
       date,
@@ -299,11 +330,11 @@ export class ReportsController {
     });
   }
 
-  @Post("sales/expenses/:expenseId/receipt")
-  @UseInterceptors(FileInterceptor("file"))
+  @Post('sales/expenses/:expenseId/receipt')
+  @UseInterceptors(FileInterceptor('file'))
   async uploadExpenseReceipt(
     @Req() req: RequestWithUser,
-    @Param("expenseId") expenseId: string,
+    @Param('expenseId') expenseId: string,
     @UploadedFile()
     file:
       | {
@@ -319,38 +350,41 @@ export class ReportsController {
     }
 
     if (!file?.buffer || !file.mimetype) {
-      throw new BadRequestException("file is required.");
+      throw new BadRequestException('file is required.');
     }
 
     return this.reports.uploadDailyExpenseReceipt(req.user, expenseId, {
-      fileName: file.originalname || "receipt",
+      fileName: file.originalname || 'receipt',
       mimeType: file.mimetype,
       size: file.size || file.buffer.length,
       buffer: file.buffer,
     });
   }
 
-  @Get("sales/expenses/:expenseId/receipt")
+  @Get('sales/expenses/:expenseId/receipt')
   async getExpenseReceipt(
     @Req() req: RequestWithUser,
-    @Param("expenseId") expenseId: string,
+    @Param('expenseId') expenseId: string,
     @Res({ passthrough: true }) response: Response,
   ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
 
-    const receipt = await this.reports.getDailyExpenseReceipt(req.user, expenseId);
-    response.setHeader("Content-Type", receipt.mimeType);
+    const receipt = await this.reports.getDailyExpenseReceipt(
+      req.user,
+      expenseId,
+    );
+    response.setHeader('Content-Type', receipt.mimeType);
     response.setHeader(
-      "Content-Disposition",
+      'Content-Disposition',
       `inline; filename="${sanitizeFilenameForHeader(receipt.fileName)}"`,
     );
-    response.setHeader("Cache-Control", "no-store");
+    response.setHeader('Cache-Control', 'no-store');
     return new StreamableFile(receipt.data);
   }
 }
 
 function sanitizeFilenameForHeader(fileName: string) {
-  return fileName.replace(/["\r\n]/g, "").trim() || "receipt";
+  return fileName.replace(/["\r\n]/g, '').trim() || 'receipt';
 }

@@ -4,26 +4,24 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
-} from "@nestjs/common";
-import { AuthOrDevGuard } from "../auth/auth.guard";
-import type { RequestWithUser } from "../auth/auth.types";
-import { TenancyService } from "../tenancy/tenancy.service";
-import { managerFeaturesToMap } from "../tenancy/manager-features";
+} from '@nestjs/common';
+import { AuthOrDevGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.types';
+import { TenancyService } from '../tenancy/tenancy.service';
+import { managerFeaturesToMap } from '../tenancy/manager-features';
 
-@Controller("access")
+@Controller('access')
 @UseGuards(AuthOrDevGuard)
 export class AccessController {
   constructor(private readonly tenancy: TenancyService) {}
 
-  @Get("me")
+  @Get('me')
   async getAccess(@Req() request: RequestWithUser) {
     if (!request.user) {
       throw new UnauthorizedException();
     }
 
-    const access = await this.tenancy.resolveAdminAccess(
-      request.user,
-    );
+    const access = await this.tenancy.resolveAdminAccess(request.user);
 
     return {
       role: access.membership.role,

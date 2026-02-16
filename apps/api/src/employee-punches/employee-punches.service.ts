@@ -483,7 +483,12 @@ export class EmployeePunchesService {
       data: { consumedAt: resolvedAt },
     });
 
-    await this.notifications.notifyPunch(tenantId, employee, PunchType.IN, resolvedAt);
+    await this.notifications.notifyPunch(
+      tenantId,
+      employee,
+      PunchType.IN,
+      resolvedAt,
+    );
 
     return {
       clockedIn: true,

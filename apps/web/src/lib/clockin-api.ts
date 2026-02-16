@@ -1,5 +1,9 @@
 import { auth0, authConfigured } from "./auth0";
 import { getAdminSession } from "./admin-session";
+import { getEmployeeSession } from "./employee-session";
+
+const normalizeActorId = (value: string) =>
+  `tenant-admin:${value.toLowerCase().replace(/\s+/g, "-")}`;
 
 export async function clockinFetch(
   path: string,
@@ -39,30 +43,38 @@ export async function clockinFetch(
       adminSession = null;
     }
 
-    const adminUsername = adminSession?.username?.trim() || "";
-    const normalizedAdminId = adminUsername
-      ? `tenant-admin:${adminUsername.toLowerCase().replace(/\s+/g, "-")}`
-      : "";
+    let employeeSession = null;
+    try {
+      employeeSession = await getEmployeeSession();
+    } catch {
+      employeeSession = null;
+    }
+
+    const actorName =
+      adminSession?.username?.trim() || employeeSession?.adminUsername?.trim() || "";
+    const tenantAuthOrgId =
+      adminSession?.tenantAuthOrgId?.trim() ||
+      employeeSession?.tenantAuthOrgId?.trim() ||
+      "";
+    const normalizedActorId = actorName ? normalizeActorId(actorName) : "";
 
     if (!headers.has("x-dev-user-id")) {
       headers.set(
         "x-dev-user-id",
-        normalizedAdminId || process.env.DEV_USER_ID || "dev-user",
+        normalizedActorId || process.env.DEV_USER_ID || "dev-user",
       );
     }
 
     if (!headers.has("x-dev-tenant-id")) {
       headers.set(
         "x-dev-tenant-id",
-        adminSession?.tenantAuthOrgId ||
-          process.env.DEV_TENANT_ID ||
-          "dev-tenant",
+        tenantAuthOrgId || process.env.DEV_TENANT_ID || "dev-tenant",
       );
     }
 
     if (!headers.has("x-dev-email")) {
-      const fallbackAdminEmail = adminUsername
-        ? `${adminUsername.toLowerCase().replace(/\s+/g, ".")}@clockin.local`
+      const fallbackAdminEmail = actorName
+        ? `${actorName.toLowerCase().replace(/\s+/g, ".")}@clockin.local`
         : "";
       headers.set(
         "x-dev-email",
@@ -73,7 +85,7 @@ export async function clockinFetch(
     if (!headers.has("x-dev-name")) {
       headers.set(
         "x-dev-name",
-        adminSession?.username || process.env.DEV_USER_NAME || "Dev User",
+        actorName || process.env.DEV_USER_NAME || "Dev User",
       );
     }
   }
