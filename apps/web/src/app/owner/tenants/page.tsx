@@ -6,6 +6,8 @@ type TenantFeatures = {
   requirePin: boolean;
   reportsEnabled: boolean;
   allowManualTimeEdits: boolean;
+  dailySalesReportingEnabled: boolean;
+  multiLocationEnabled: boolean;
 };
 
 type TenantAccount = {
@@ -43,11 +45,29 @@ type TenantDraft = {
 };
 
 type CreateForm = TenantDraft;
+type PendingTenantDelete = TenantAccount | null;
+type ApiErrorPayload = {
+  error?: unknown;
+  message?: unknown;
+};
+type TenantPayloadSource = {
+  name: string;
+  subdomain: string;
+  adminUsername: string;
+  adminPassword: string;
+  ownerEmail: string;
+  ownerName: string;
+  isActive: boolean;
+  timezone: string;
+  features: TenantFeatures;
+};
 
 const defaultFeatures: TenantFeatures = {
   requirePin: true,
   reportsEnabled: true,
   allowManualTimeEdits: true,
+  dailySalesReportingEnabled: false,
+  multiLocationEnabled: false,
 };
 
 const timezoneOptions = [
@@ -85,6 +105,70 @@ const emptyCreateForm = (): CreateForm => ({
   features: { ...defaultFeatures },
 });
 
+const resolveApiError = (payload: ApiErrorPayload, fallback: string) => {
+  const errorText =
+    typeof payload.error === "string" ? payload.error.trim() : "";
+  const messageValue = payload.message;
+  const messageText =
+    typeof messageValue === "string"
+      ? messageValue.trim()
+      : Array.isArray(messageValue)
+        ? (messageValue.find(
+            (entry) => typeof entry === "string" && entry.trim().length > 0,
+          ) as string | undefined)
+        : "";
+
+  if (messageText) {
+    return messageText;
+  }
+
+  if (errorText && errorText.toLowerCase() !== "bad request") {
+    return errorText;
+  }
+
+  if (errorText) {
+    return errorText;
+  }
+
+  return fallback;
+};
+
+const isLegacyMultiLocationError = (payload: ApiErrorPayload) => {
+  const message = resolveApiError(payload, "");
+  return message.includes("features.property multiLocationEnabled should not exist");
+};
+
+const buildTenantPayload = (
+  source: TenantPayloadSource,
+  roundingMinutes: number,
+  options?: { includeMultiLocation?: boolean },
+) => {
+  const includeMultiLocation = options?.includeMultiLocation ?? true;
+  const features: Record<string, boolean> = {
+    requirePin: source.features.requirePin,
+    reportsEnabled: source.features.reportsEnabled,
+    allowManualTimeEdits: source.features.allowManualTimeEdits,
+    dailySalesReportingEnabled: source.features.dailySalesReportingEnabled,
+  };
+
+  if (includeMultiLocation) {
+    features.multiLocationEnabled = source.features.multiLocationEnabled;
+  }
+
+  return {
+    name: source.name.trim(),
+    subdomain: source.subdomain.trim() || undefined,
+    adminUsername: source.adminUsername.trim() || undefined,
+    adminPassword: source.adminPassword.trim() || undefined,
+    ownerEmail: source.ownerEmail.trim() || undefined,
+    ownerName: source.ownerName.trim() || undefined,
+    isActive: source.isActive,
+    timezone: source.timezone,
+    roundingMinutes,
+    features,
+  };
+};
+
 export default function TenantAccountsPage() {
   const [tenants, setTenants] = useState<TenantAccount[]>([]);
   const [drafts, setDrafts] = useState<Record<string, TenantDraft>>({});
@@ -94,8 +178,11 @@ export default function TenantAccountsPage() {
   const [creating, setCreating] = useState(false);
   const [savingTenantId, setSavingTenantId] = useState<string | null>(null);
   const [editingTenantId, setEditingTenantId] = useState<string | null>(null);
+  const [featuresTenantId, setFeaturesTenantId] = useState<string | null>(null);
   const [togglingTenantId, setTogglingTenantId] = useState<string | null>(null);
   const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
+  const [pendingDeleteTenant, setPendingDeleteTenant] =
+    useState<PendingTenantDelete>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const syncDrafts = useCallback((items: TenantAccount[]) => {
@@ -117,7 +204,9 @@ export default function TenantAccountsPage() {
       };
 
       if (!response.ok) {
-        setStatus(data.error || "Unable to load tenant accounts.");
+        setStatus(
+          resolveApiError(data, "Unable to load tenant accounts."),
+        );
         setTenants([]);
         syncDrafts([]);
         return;
@@ -206,26 +295,33 @@ export default function TenantAccountsPage() {
 
     setCreating(true);
     try {
-      const response = await fetch("/api/tenant-accounts", {
+      let usedLegacyFallback = false;
+      let response = await fetch("/api/tenant-accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: createForm.name.trim(),
-          subdomain: createForm.subdomain.trim() || undefined,
-          adminUsername: createForm.adminUsername.trim() || undefined,
-          adminPassword: createForm.adminPassword.trim() || undefined,
-          ownerEmail: createForm.ownerEmail.trim() || undefined,
-          ownerName: createForm.ownerName.trim() || undefined,
-          isActive: createForm.isActive,
-          timezone: createForm.timezone,
-          roundingMinutes,
-          features: createForm.features,
-        }),
+        body: JSON.stringify(buildTenantPayload(createForm, roundingMinutes)),
       });
 
-      const data = (await response.json()) as TenantAccount & { error?: string };
+      let data = (await response.json()) as TenantAccount & ApiErrorPayload;
+
+      if (!response.ok && isLegacyMultiLocationError(data)) {
+        usedLegacyFallback = true;
+        response = await fetch("/api/tenant-accounts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            buildTenantPayload(createForm, roundingMinutes, {
+              includeMultiLocation: false,
+            }),
+          ),
+        });
+        data = (await response.json()) as TenantAccount & ApiErrorPayload;
+      }
+
       if (!response.ok) {
-        setStatus(data.error || "Unable to create tenant account.");
+        setStatus(
+          resolveApiError(data, "Unable to create tenant account."),
+        );
         return;
       }
 
@@ -234,7 +330,11 @@ export default function TenantAccountsPage() {
       syncDrafts(nextTenants);
       setCreateForm(emptyCreateForm());
       setCreateOpen(false);
-      setStatus("Tenant account created.");
+      setStatus(
+        usedLegacyFallback
+          ? "Tenant account created. Multi-location toggle needs API restart/update to be saved."
+          : "Tenant account created.",
+      );
     } catch {
       setStatus("Unable to create tenant account.");
     } finally {
@@ -262,26 +362,33 @@ export default function TenantAccountsPage() {
     setSavingTenantId(tenantId);
     setStatus(null);
     try {
-      const response = await fetch(`/api/tenant-accounts/${tenantId}`, {
+      let usedLegacyFallback = false;
+      let response = await fetch(`/api/tenant-accounts/${tenantId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: draft.name.trim(),
-          subdomain: draft.subdomain.trim() || undefined,
-          adminUsername: draft.adminUsername.trim() || undefined,
-          adminPassword: draft.adminPassword.trim() || undefined,
-          ownerEmail: draft.ownerEmail.trim() || undefined,
-          ownerName: draft.ownerName.trim() || undefined,
-          isActive: draft.isActive,
-          timezone: draft.timezone,
-          roundingMinutes,
-          features: draft.features,
-        }),
+        body: JSON.stringify(buildTenantPayload(draft, roundingMinutes)),
       });
 
-      const data = (await response.json()) as TenantAccount & { error?: string };
+      let data = (await response.json()) as TenantAccount & ApiErrorPayload;
+
+      if (!response.ok && isLegacyMultiLocationError(data)) {
+        usedLegacyFallback = true;
+        response = await fetch(`/api/tenant-accounts/${tenantId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            buildTenantPayload(draft, roundingMinutes, {
+              includeMultiLocation: false,
+            }),
+          ),
+        });
+        data = (await response.json()) as TenantAccount & ApiErrorPayload;
+      }
+
       if (!response.ok) {
-        setStatus(data.error || "Unable to update tenant account.");
+        setStatus(
+          resolveApiError(data, "Unable to update tenant account."),
+        );
         return;
       }
 
@@ -291,7 +398,11 @@ export default function TenantAccountsPage() {
       setTenants(nextTenants);
       syncDrafts(nextTenants);
       setEditingTenantId(null);
-      setStatus("Tenant account updated.");
+      setStatus(
+        usedLegacyFallback
+          ? "Tenant account updated. Multi-location toggle needs API restart/update to be saved."
+          : "Tenant account updated.",
+      );
     } catch {
       setStatus("Unable to update tenant account.");
     } finally {
@@ -310,7 +421,9 @@ export default function TenantAccountsPage() {
       });
       const data = (await response.json()) as TenantAccount & { error?: string };
       if (!response.ok) {
-        setStatus(data.error || "Unable to change tenant status.");
+        setStatus(
+          resolveApiError(data, "Unable to change tenant status."),
+        );
         return;
       }
 
@@ -330,13 +443,6 @@ export default function TenantAccountsPage() {
   };
 
   const handleDelete = async (tenant: TenantAccount) => {
-    const approved = window.confirm(
-      `Delete tenant \"${tenant.name}\"? This action cannot be undone.`,
-    );
-    if (!approved) {
-      return;
-    }
-
     setDeletingTenantId(tenant.id);
     setStatus(null);
     try {
@@ -350,7 +456,9 @@ export default function TenantAccountsPage() {
       };
 
       if (!response.ok || !data.ok) {
-        setStatus(data.error || data.message || "Unable to delete tenant account.");
+        setStatus(
+          resolveApiError(data, "Unable to delete tenant account."),
+        );
         return;
       }
 
@@ -367,6 +475,18 @@ export default function TenantAccountsPage() {
       setDeletingTenantId(null);
     }
   };
+
+  const onConfirmPendingDelete = async () => {
+    if (!pendingDeleteTenant) {
+      return;
+    }
+    await handleDelete(pendingDeleteTenant);
+    setPendingDeleteTenant(null);
+  };
+
+  const pendingDeleteBusy =
+    pendingDeleteTenant !== null &&
+    deletingTenantId === pendingDeleteTenant.id;
 
   return (
     <div className="d-flex flex-column gap-4">
@@ -522,6 +642,38 @@ export default function TenantAccountsPage() {
                 <option value="no">No</option>
               </select>
             </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">Daily Sales Reporting</label>
+              <select
+                className="form-select"
+                value={createForm.features.dailySalesReportingEnabled ? "yes" : "no"}
+                onChange={(event) =>
+                  updateCreateFeatures(
+                    "dailySalesReportingEnabled",
+                    event.target.value === "yes",
+                  )
+                }
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">Multi-Location</label>
+              <select
+                className="form-select"
+                value={createForm.features.multiLocationEnabled ? "yes" : "no"}
+                onChange={(event) =>
+                  updateCreateFeatures(
+                    "multiLocationEnabled",
+                    event.target.value === "yes",
+                  )
+                }
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
             <div className="col-12">
               <button className="btn btn-primary" type="submit" disabled={creating}>
                 {creating ? "Creating..." : "Create Tenant"}
@@ -542,6 +694,8 @@ export default function TenantAccountsPage() {
             {tenants.map((tenant) => {
               const draft = drafts[tenant.id];
               const isEditing = editingTenantId === tenant.id;
+              const isFeatureOpen = featuresTenantId === tenant.id;
+              const featureState = draft?.features || tenant.features;
 
               return (
                 <div key={tenant.id} className="border rounded p-3">
@@ -549,6 +703,33 @@ export default function TenantAccountsPage() {
                     <div>
                       <div className="fw-semibold">{tenant.name}</div>
                       <div className="small text-muted">{tenant.subdomain || tenant.slug}</div>
+                      <div className="d-flex flex-wrap gap-2 mt-2">
+                        <span
+                          className={`badge ${featureState.dailySalesReportingEnabled ? "text-bg-success" : "text-bg-secondary"}`}
+                        >
+                          Daily Sales {featureState.dailySalesReportingEnabled ? "On" : "Off"}
+                        </span>
+                        <span
+                          className={`badge ${featureState.reportsEnabled ? "text-bg-success" : "text-bg-secondary"}`}
+                        >
+                          Reports {featureState.reportsEnabled ? "On" : "Off"}
+                        </span>
+                        <span
+                          className={`badge ${featureState.requirePin ? "text-bg-success" : "text-bg-secondary"}`}
+                        >
+                          Require PIN {featureState.requirePin ? "On" : "Off"}
+                        </span>
+                        <span
+                          className={`badge ${featureState.allowManualTimeEdits ? "text-bg-success" : "text-bg-secondary"}`}
+                        >
+                          Manual Edits {featureState.allowManualTimeEdits ? "On" : "Off"}
+                        </span>
+                        <span
+                          className={`badge ${featureState.multiLocationEnabled ? "text-bg-success" : "text-bg-secondary"}`}
+                        >
+                          Multi-Location {featureState.multiLocationEnabled ? "On" : "Off"}
+                        </span>
+                      </div>
                     </div>
                     <div className="d-flex gap-2 flex-wrap">
                       <span
@@ -567,6 +748,15 @@ export default function TenantAccountsPage() {
                       </button>
                       <button
                         type="button"
+                        className="btn btn-sm btn-outline-info"
+                        onClick={() =>
+                          setFeaturesTenantId((prev) => (prev === tenant.id ? null : tenant.id))
+                        }
+                      >
+                        {isFeatureOpen ? "Close Features" : "Features"}
+                      </button>
+                      <button
+                        type="button"
                         className="btn btn-sm btn-outline-secondary"
                         disabled={togglingTenantId === tenant.id}
                         onClick={() => void handleToggleActive(tenant)}
@@ -577,12 +767,125 @@ export default function TenantAccountsPage() {
                         type="button"
                         className="btn btn-sm btn-outline-danger"
                         disabled={deletingTenantId === tenant.id}
-                        onClick={() => void handleDelete(tenant)}
+                        onClick={() => setPendingDeleteTenant(tenant)}
                       >
                         {deletingTenantId === tenant.id ? "Deleting..." : "Delete"}
                       </button>
                     </div>
                   </div>
+
+                  {isFeatureOpen && draft && (
+                    <div className="row g-3 mt-2 border rounded p-3 bg-body-tertiary">
+                      <div className="col-12">
+                        <div className="fw-semibold">Tenant Feature Controls</div>
+                        <div className="small text-muted">
+                          Enable or disable features for this tenant.
+                        </div>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Daily Sales Reporting</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.dailySalesReportingEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "dailySalesReportingEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Reports Enabled</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.reportsEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "reportsEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Require PIN</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.requirePin ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "requirePin",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Manual Time Edits</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.allowManualTimeEdits ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "allowManualTimeEdits",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Multi-Location</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.multiLocationEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "multiLocationEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 d-flex gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          disabled={savingTenantId === tenant.id}
+                          onClick={() => void handleSave(tenant.id)}
+                        >
+                          {savingTenantId === tenant.id ? "Saving..." : "Save Features"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary"
+                          onClick={() => setFeaturesTenantId(null)}
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {isEditing && draft && (
                     <div className="row g-3 mt-2">
@@ -744,6 +1047,40 @@ export default function TenantAccountsPage() {
                           <option value="no">No</option>
                         </select>
                       </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Daily Sales Reporting</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.dailySalesReportingEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "dailySalesReportingEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Multi-Location</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.multiLocationEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "multiLocationEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
                       <div className="col-12 d-flex gap-2">
                         <button
                           type="button"
@@ -769,6 +1106,46 @@ export default function TenantAccountsPage() {
           </div>
         )}
       </div>
+
+      {pendingDeleteTenant && (
+        <div
+          className="embedded-confirm-backdrop"
+          onClick={() => {
+            if (!pendingDeleteBusy) {
+              setPendingDeleteTenant(null);
+            }
+          }}
+        >
+          <div
+            className="embedded-confirm-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="embedded-confirm-title">Delete Tenant</h2>
+            <p className="embedded-confirm-message">
+              Delete tenant "{pendingDeleteTenant.name}"? This action cannot be
+              undone.
+            </p>
+            <div className="embedded-confirm-actions">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                disabled={pendingDeleteBusy}
+                onClick={() => setPendingDeleteTenant(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={pendingDeleteBusy}
+                onClick={() => void onConfirmPendingDelete()}
+              >
+                {pendingDeleteBusy ? "Deleting..." : "Confirm Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

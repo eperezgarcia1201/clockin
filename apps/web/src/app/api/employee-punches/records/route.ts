@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { clockinFetch } from "../../../../lib/clockin-api";
+import {
+  scopedQueryFromRequest,
+  withQuery,
+} from "../../../../lib/location-scope";
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const query = searchParams.toString();
+    const query = await scopedQueryFromRequest(request);
     const response = await clockinFetch(
-      `/employee-punches/records${query ? `?${query}` : ""}`,
+      withQuery("/employee-punches/records", query),
     );
     const data = await response.json();
     return NextResponse.json(data, { status: response.status });

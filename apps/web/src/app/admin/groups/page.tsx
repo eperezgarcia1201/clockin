@@ -50,7 +50,7 @@ export default function GroupSummary() {
             <tr>
               <th>#</th>
               <th>Group Name</th>
-              <th>Office</th>
+              <th>Location</th>
             </tr>
           </thead>
           <tbody>

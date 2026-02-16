@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { TenancyService } from "../tenancy/tenancy.service";
 import type { AuthUser } from "../auth/auth.types";
@@ -22,12 +22,9 @@ export class EmployeeSchedulesService {
   ) {}
 
   async getSchedule(authUser: AuthUser, employeeId: string) {
-    const { tenant, membership } = await this.tenancy.requireTenantAndUser(authUser);
-    if (!membership || !["OWNER", "ADMIN", "MANAGER"].includes(membership.role)) {
-      throw new UnauthorizedException();
-    }
+    const { tenant } = await this.tenancy.requireFeature(authUser, "schedules");
     const employee = await this.prisma.employee.findFirst({
-      where: { id: employeeId, tenantId: tenant.id },
+      where: { id: employeeId, tenantId: tenant.id, deletedAt: null },
     });
     if (!employee) {
       throw new NotFoundException("Employee not found");
@@ -59,13 +56,10 @@ export class EmployeeSchedulesService {
     employeeId: string,
     dto: UpdateEmployeeScheduleDto,
   ) {
-    const { tenant, membership } = await this.tenancy.requireTenantAndUser(authUser);
-    if (!membership || !["OWNER", "ADMIN", "MANAGER"].includes(membership.role)) {
-      throw new UnauthorizedException();
-    }
+    const { tenant } = await this.tenancy.requireFeature(authUser, "schedules");
 
     const employee = await this.prisma.employee.findFirst({
-      where: { id: employeeId, tenantId: tenant.id },
+      where: { id: employeeId, tenantId: tenant.id, deletedAt: null },
     });
     if (!employee) {
       throw new NotFoundException("Employee not found");

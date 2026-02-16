@@ -10,6 +10,10 @@ import type { Tenant } from '@prisma/client';
 import { compare } from 'bcryptjs';
 import { timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  allManagerFeatures,
+  normalizeManagerFeatures,
+} from '../tenancy/manager-features';
 import type { TenantAdminLoginDto } from './dto/admin-login.dto';
 import type { ResolveTenantDto } from './dto/resolve-tenant.dto';
 
@@ -77,20 +81,34 @@ export class TenantDirectoryService {
     });
 
     const expectedUsername = settings?.adminUsername || DEFAULT_ADMIN_USERNAME;
-    if (!this.safeEqual(username, expectedUsername)) {
+    const tenantAdminValid = await this.isTenantAdminCredentialValid(
+      expectedUsername,
+      settings?.adminPasswordHash,
+      username,
+      password,
+    );
+
+    if (tenantAdminValid) {
+      return {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        subdomain: tenant.slug,
+        authOrgId: tenant.authOrgId,
+        isActive: tenant.isActive,
+        adminUsername: expectedUsername,
+        loginType: 'tenant_admin',
+        managerEmployeeId: null,
+        featurePermissions: allManagerFeatures(),
+      };
+    }
+
+    if (this.safeEqual(username, expectedUsername)) {
       throw new UnauthorizedException('Invalid administrator credentials.');
     }
 
-    const configuredPasswordHash = settings?.adminPasswordHash?.trim() || '';
-    let validPassword = false;
-
-    if (configuredPasswordHash) {
-      validPassword = await compare(password, configuredPasswordHash);
-    } else {
-      validPassword = this.safeEqual(password, this.defaultAdminPassword());
-    }
-
-    if (!validPassword) {
+    const manager = await this.verifyManagerLogin(tenant.id, username, password);
+    if (!manager) {
       throw new UnauthorizedException('Invalid administrator credentials.');
     }
 
@@ -101,7 +119,100 @@ export class TenantDirectoryService {
       subdomain: tenant.slug,
       authOrgId: tenant.authOrgId,
       isActive: tenant.isActive,
-      adminUsername: expectedUsername,
+      adminUsername: manager.username,
+      loginType: 'manager',
+      managerEmployeeId: manager.id,
+      featurePermissions: manager.featurePermissions,
+    };
+  }
+
+  private async isTenantAdminCredentialValid(
+    expectedUsername: string,
+    configuredPasswordHash: string | null | undefined,
+    username: string,
+    password: string,
+  ) {
+    if (!this.safeEqual(username, expectedUsername)) {
+      return false;
+    }
+
+    const passwordHash = configuredPasswordHash?.trim() || '';
+    if (passwordHash) {
+      return compare(password, passwordHash);
+    }
+    return this.safeEqual(password, this.defaultAdminPassword());
+  }
+
+  private async verifyManagerLogin(
+    tenantId: string,
+    username: string,
+    password: string,
+  ) {
+    const manager = await this.prisma.employee.findFirst({
+      where: {
+        tenantId,
+        deletedAt: null,
+        disabled: false,
+        OR: [{ isManager: true }, { isAdmin: true }],
+        AND: [
+          {
+            OR: [
+              { fullName: { equals: username, mode: 'insensitive' } },
+              { displayName: { equals: username, mode: 'insensitive' } },
+              { email: { equals: username, mode: 'insensitive' } },
+            ],
+          },
+        ],
+      },
+      select: {
+        id: true,
+        fullName: true,
+        displayName: true,
+        pinHash: true,
+        isAdmin: true,
+        isManager: true,
+        isTimeAdmin: true,
+        isReports: true,
+        managerPermissions: true,
+      },
+    });
+
+    if (!manager?.pinHash) {
+      return null;
+    }
+
+    const valid = await compare(password, manager.pinHash);
+    if (!valid) {
+      return null;
+    }
+
+    const configured = normalizeManagerFeatures(manager.managerPermissions);
+    const derived = new Set<string>(['dashboard']);
+    if (!manager.isManager && manager.isAdmin) {
+      allManagerFeatures().forEach((feature) => derived.add(feature));
+    }
+    if (manager.isTimeAdmin) {
+      derived.add('schedules');
+      derived.add('timeEdits');
+    }
+    if (manager.isReports) {
+      derived.add('reports');
+      derived.add('tips');
+      derived.add('salesCapture');
+    }
+
+    const configuredWithDashboard = new Set([...configured, 'dashboard']);
+    const featurePermissions =
+      configured.length > 0
+        ? allManagerFeatures().filter((feature) =>
+            configuredWithDashboard.has(feature),
+          )
+        : allManagerFeatures().filter((feature) => derived.has(feature));
+
+    return {
+      id: manager.id,
+      username: manager.displayName || manager.fullName,
+      featurePermissions,
     };
   }
 
@@ -132,13 +243,6 @@ export class TenantDirectoryService {
     const normalized = input.trim();
     if (!normalized) {
       return null;
-    }
-
-    const byAuthOrgId = await this.prisma.tenant.findUnique({
-      where: { authOrgId: normalized },
-    });
-    if (byAuthOrgId) {
-      return byAuthOrgId;
     }
 
     const hostSubdomain = this.extractSubdomain(normalized);
@@ -174,7 +278,18 @@ export class TenantDirectoryService {
       );
     }
 
-    return byName[0] || null;
+    if (byName[0]) {
+      return byName[0];
+    }
+
+    const byAuthOrgId = await this.prisma.tenant.findUnique({
+      where: { authOrgId: normalized },
+    });
+    if (byAuthOrgId) {
+      return byAuthOrgId;
+    }
+
+    return null;
   }
 
   private async findBySlug(slug: string) {

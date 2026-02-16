@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { clockinFetch } from "../../../lib/clockin-api";
+import { scopedQueryFromRequest, withQuery } from "../../../lib/location-scope";
 
 const fallbackGroups = [
   { id: "1", name: "Servers" },
@@ -7,9 +8,10 @@ const fallbackGroups = [
   { id: "3", name: "Managers" },
 ];
 
-export async function GET() {
+export async function GET(request: Request) {
+  const query = await scopedQueryFromRequest(request);
   try {
-    const response = await clockinFetch("/groups");
+    const response = await clockinFetch(withQuery("/groups", query));
     if (response.ok) {
       const data = await response.json();
       return NextResponse.json(data);

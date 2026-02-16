@@ -23,8 +23,8 @@ services:
       TENANT_NAME_CLAIM: org_name
       SEED_DATA: "true"
       SEED_TENANT_AUTH_ID: dev-tenant
-      SEED_TENANT_NAME: ClockIn Demo
-      SEED_TENANT_SLUG: clockin-demo
+      SEED_TENANT_NAME: maya
+      SEED_TENANT_SLUG: maya
       SEED_SUPER_USER_ID: dev-user
       SEED_SUPER_USER_EMAIL: dev@clockin.local
       SEED_SUPER_USER_NAME: Super User

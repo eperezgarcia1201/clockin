@@ -5,10 +5,10 @@ import {
   UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
-import { Role } from "@prisma/client";
 import { AuthOrDevGuard } from "../auth/auth.guard";
 import type { RequestWithUser } from "../auth/auth.types";
 import { TenancyService } from "../tenancy/tenancy.service";
+import { managerFeaturesToMap } from "../tenancy/manager-features";
 
 @Controller("access")
 @UseGuards(AuthOrDevGuard)
@@ -21,17 +21,19 @@ export class AccessController {
       throw new UnauthorizedException();
     }
 
-    const { membership } = await this.tenancy.requireTenantAndUser(
+    const access = await this.tenancy.resolveAdminAccess(
       request.user,
     );
 
-    const adminRoles: Role[] = [Role.OWNER, Role.ADMIN];
-    const isAdmin = adminRoles.includes(membership.role);
-
     return {
-      role: membership.role,
-      status: membership.status,
-      isAdmin,
+      role: access.membership.role,
+      status: access.membership.status,
+      isAdmin: access.featurePermissions.length > 0,
+      actorType: access.actorType,
+      actorName: access.displayName,
+      adminUsername: access.settings.adminUsername,
+      multiLocationEnabled: access.settings.multiLocationEnabled,
+      permissions: managerFeaturesToMap(access.featurePermissions),
     };
   }
 }

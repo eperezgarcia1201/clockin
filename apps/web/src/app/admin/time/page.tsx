@@ -31,6 +31,11 @@ const toLocalInput = (value: string) => {
 export default function TimeAdmin() {
   const searchParams = useSearchParams();
   const initializedRef = useRef(false);
+  const lockedEmployeeId = useMemo(() => {
+    const candidate = searchParams.get("employeeId") || "";
+    return candidate.trim();
+  }, [searchParams]);
+  const lockedFromContext = Boolean(lockedEmployeeId);
   const returnToParam = searchParams.get("returnTo");
   const returnTo =
     returnToParam && returnToParam.startsWith("/")
@@ -48,6 +53,9 @@ export default function TimeAdmin() {
   const [notes, setNotes] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [pendingDeleteRecord, setPendingDeleteRecord] =
+    useState<PunchRecord | null>(null);
+  const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
   const tzOffset = useMemo(() => -new Date().getTimezoneOffset(), []);
 
   const loadRecords = async (
@@ -55,9 +63,10 @@ export default function TimeAdmin() {
     from = filterFrom,
     to = filterTo,
   ) => {
+    const scopedFilterId = lockedEmployeeId || filterId;
     const query = new URLSearchParams();
     query.set("limit", "50");
-    if (filterId) query.set("employeeId", filterId);
+    if (scopedFilterId) query.set("employeeId", scopedFilterId);
     if (from) query.set("from", from);
     if (to) query.set("to", to);
     query.set("tzOffset", String(tzOffset));
@@ -117,8 +126,8 @@ export default function TimeAdmin() {
   }, []);
 
   useEffect(() => {
-    loadRecords(filterEmployeeId);
-  }, [filterEmployeeId, filterFrom, filterTo]);
+    void loadRecords(lockedEmployeeId || filterEmployeeId);
+  }, [filterEmployeeId, filterFrom, filterTo, lockedEmployeeId]);
 
   const resetForm = () => {
     setEmployeeId("");
@@ -187,22 +196,39 @@ export default function TimeAdmin() {
   };
 
   const handleDelete = async (id: string) => {
-    const ok = confirm("Delete this time entry?");
-    if (!ok) return;
-    const response = await fetch(
-      `${apiBase}/employee-punches/records/${id}`,
-      {
-      method: "DELETE",
-      },
-    );
-    if (response.ok) {
-      setStatus("Time entry deleted.");
-      loadRecords(filterEmployeeId);
-    } else {
-      const data = await response.json().catch(() => ({}));
-      setStatus(data?.error || "Unable to delete time entry.");
+    setDeletingRecordId(id);
+    try {
+      const response = await fetch(
+        `${apiBase}/employee-punches/records/${id}`,
+        {
+          method: "DELETE",
+        },
+      );
+      if (response.ok) {
+        setStatus("Time entry deleted.");
+        loadRecords(filterEmployeeId);
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setStatus(data?.error || "Unable to delete time entry.");
+      }
+    } catch {
+      setStatus("Unable to delete time entry.");
+    } finally {
+      setDeletingRecordId(null);
     }
   };
+
+  const onConfirmDeleteRecord = async () => {
+    if (!pendingDeleteRecord) {
+      return;
+    }
+    await handleDelete(pendingDeleteRecord.id);
+    setPendingDeleteRecord(null);
+  };
+
+  const pendingDeleteBusy =
+    pendingDeleteRecord !== null &&
+    deletingRecordId === pendingDeleteRecord.id;
 
   const canSave = useMemo(
     () => Boolean(employeeId && occurredAt),
@@ -235,15 +261,27 @@ export default function TimeAdmin() {
               value={employeeId}
               onChange={(event) => setEmployeeId(event.target.value)}
               required
-              disabled={!allowManual}
+              disabled={!allowManual || lockedFromContext}
             >
+              {lockedFromContext && !employeeId && (
+                <option value={lockedEmployeeId}>Loading selected employee...</option>
+              )}
               <option value="">Select employee</option>
-              {employees.map((employee) => (
+              {employees
+                .filter((employee) =>
+                  lockedFromContext ? employee.id === lockedEmployeeId : true,
+                )
+                .map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.name}
                 </option>
-              ))}
+                ))}
             </select>
+            {lockedFromContext && (
+              <div className="form-text">
+                Employee scope is locked from the previous screen.
+              </div>
+            )}
           </div>
           <div className="col-12 col-md-3">
             <label className="form-label">Type</label>
@@ -315,15 +353,20 @@ export default function TimeAdmin() {
             <label className="form-label mb-0">Filter</label>
             <select
               className="form-select"
-              value={filterEmployeeId}
+              value={lockedEmployeeId || filterEmployeeId}
               onChange={(event) => setFilterEmployeeId(event.target.value)}
+              disabled={lockedFromContext}
             >
-              <option value="">All Employees</option>
-              {employees.map((employee) => (
+              {!lockedFromContext && <option value="">All Employees</option>}
+              {employees
+                .filter((employee) =>
+                  lockedFromContext ? employee.id === lockedEmployeeId : true,
+                )
+                .map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.name}
                 </option>
-              ))}
+                ))}
             </select>
           </div>
         </div>
@@ -366,7 +409,7 @@ export default function TimeAdmin() {
                 <th>Employee</th>
                 <th>Type</th>
                 <th>Date</th>
-                <th>Office</th>
+                <th>Location</th>
                 <th>Group</th>
                 <th>Notes</th>
                 <th />
@@ -394,10 +437,10 @@ export default function TimeAdmin() {
                       </button>
                       <button
                         className="btn btn-sm btn-outline-danger"
-                        onClick={() => handleDelete(record.id)}
-                        disabled={!allowManual}
+                        onClick={() => setPendingDeleteRecord(record)}
+                        disabled={!allowManual || deletingRecordId === record.id}
                       >
-                        Delete
+                        {deletingRecordId === record.id ? "Deleting..." : "Delete"}
                       </button>
                     </div>
                   </td>
@@ -414,6 +457,47 @@ export default function TimeAdmin() {
           </table>
         </div>
       </div>
+
+      {pendingDeleteRecord && (
+        <div
+          className="embedded-confirm-backdrop"
+          onClick={() => {
+            if (!pendingDeleteBusy) {
+              setPendingDeleteRecord(null);
+            }
+          }}
+        >
+          <div
+            className="embedded-confirm-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="embedded-confirm-title">Delete Time Entry</h2>
+            <p className="embedded-confirm-message">
+              Delete {pendingDeleteRecord.type} entry for{" "}
+              {pendingDeleteRecord.employeeName} on{" "}
+              {new Date(pendingDeleteRecord.occurredAt).toLocaleString()}?
+            </p>
+            <div className="embedded-confirm-actions">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                disabled={pendingDeleteBusy}
+                onClick={() => setPendingDeleteRecord(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={pendingDeleteBusy}
+                onClick={() => void onConfirmDeleteRecord()}
+              >
+                {pendingDeleteBusy ? "Deleting..." : "Confirm Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

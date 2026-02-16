@@ -39,8 +39,16 @@ export async function clockinFetch(
       adminSession = null;
     }
 
+    const adminUsername = adminSession?.username?.trim() || "";
+    const normalizedAdminId = adminUsername
+      ? `tenant-admin:${adminUsername.toLowerCase().replace(/\s+/g, "-")}`
+      : "";
+
     if (!headers.has("x-dev-user-id")) {
-      headers.set("x-dev-user-id", process.env.DEV_USER_ID || "dev-user");
+      headers.set(
+        "x-dev-user-id",
+        normalizedAdminId || process.env.DEV_USER_ID || "dev-user",
+      );
     }
 
     if (!headers.has("x-dev-tenant-id")) {
@@ -53,9 +61,12 @@ export async function clockinFetch(
     }
 
     if (!headers.has("x-dev-email")) {
+      const fallbackAdminEmail = adminUsername
+        ? `${adminUsername.toLowerCase().replace(/\s+/g, ".")}@clockin.local`
+        : "";
       headers.set(
         "x-dev-email",
-        process.env.DEV_USER_EMAIL || "dev@clockin.local",
+        fallbackAdminEmail || process.env.DEV_USER_EMAIL || "dev@clockin.local",
       );
     }
 

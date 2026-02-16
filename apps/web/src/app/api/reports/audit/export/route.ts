@@ -1,22 +1,31 @@
 import { clockinFetch } from "../../../../../lib/clockin-api";
 import { excelResponse } from "../../../../../lib/excel-export";
+import { companyMetaRows, getCompanyExportProfile } from "../../../../../lib/company-export";
+import {
+  scopedQueryFromRequest,
+  withQuery,
+} from "../../../../../lib/location-scope";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const query = searchParams.toString();
-  const response = await clockinFetch(
-    `/reports/audit${query ? `?${query}` : ""}`,
-  );
+  const query = await scopedQueryFromRequest(request);
+  const response = await clockinFetch(withQuery("/reports/audit", query));
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     return new Response(JSON.stringify(error), { status: response.status });
   }
   const data = await response.json();
+  const company = await getCompanyExportProfile();
 
   return excelResponse("audit-report.xlsx", (workbook) => {
     const sheet = workbook.addWorksheet("Audit Log");
+    sheet.addRow([company.displayName]);
+    sheet.addRow(["Report", "Audit Log"]);
+    companyMetaRows(company).slice(1).forEach(([label, value]) => {
+      sheet.addRow([label, value]);
+    });
+    sheet.addRow([]);
     sheet.columns = [
       { header: "Employee", key: "employee", width: 26 },
       { header: "Type", key: "type", width: 10 },

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 type Summary = {
   total: number;
@@ -28,8 +28,6 @@ export default function AdminDashboard() {
     reports: 0,
   });
   const [hoursReport, setHoursReport] = useState<HoursReport | null>(null);
-  const [monthOffset, setMonthOffset] = useState(0);
-  const [hydrated, setHydrated] = useState(false);
 
   const chartRows = useMemo(() => {
     const rows =
@@ -47,43 +45,29 @@ export default function AdminDashboard() {
     return Math.max(1, ...values);
   }, [chartRows]);
 
-  const calendar = useMemo(() => {
-    const base = hydrated ? new Date() : new Date(2024, 0, 1);
-    const viewDate = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1);
-    const year = viewDate.getFullYear();
-    const month = viewDate.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const today = hydrated ? new Date() : null;
-    const isCurrentMonth =
-      !!today && today.getFullYear() === year && today.getMonth() === month;
+  const totalHours = useMemo(
+    () =>
+      (hoursReport?.employees || []).reduce(
+        (sum, employee) => sum + (employee.totalHoursDecimal || 0),
+        0,
+      ),
+    [hoursReport],
+  );
 
-    const days: {
-      day: number;
-      isToday: boolean;
-    }[] = [];
-    for (let i = 0; i < firstDay; i += 1) {
-      days.push({ day: 0, isToday: false });
-    }
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      days.push({
-        day,
-        isToday: isCurrentMonth && day === today?.getDate(),
-      });
-    }
-    while (days.length % 7 !== 0) {
-      days.push({ day: 0, isToday: false });
-    }
+  const averageHours = useMemo(() => {
+    const count = hoursReport?.employees?.length || 0;
+    return count > 0 ? totalHours / count : 0;
+  }, [hoursReport, totalHours]);
 
-    return {
-      label: viewDate.toLocaleString("default", { month: "long", year: "numeric" }),
-      days,
-    };
-  }, [hydrated, monthOffset]);
+  const topPerformer = useMemo(() => chartRows[0] || null, [chartRows]);
 
-  useEffect(() => {
-    setHydrated(true);
-  }, []);
+  const overFortyCount = useMemo(
+    () =>
+      (hoursReport?.employees || []).filter(
+        (employee) => employee.totalHoursDecimal >= 40,
+      ).length,
+    [hoursReport],
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -269,45 +253,64 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      <div className="admin-card calendar-card">
-        <div className="calendar-header">
+      <div className="admin-card insights-card">
+        <div className="chart-header">
           <div>
-            <h2>Team Calendar</h2>
-            <p>View the current month at a glance.</p>
-          </div>
-          <div className="calendar-controls">
-            <button
-              className="btn btn-outline-secondary btn-sm"
-              onClick={() => setMonthOffset((prev) => prev - 1)}
-            >
-              <i className="fa-solid fa-chevron-left" aria-hidden="true" />
-            </button>
-            <span className="calendar-label">{calendar.label}</span>
-            <button
-              className="btn btn-outline-secondary btn-sm"
-              onClick={() => setMonthOffset((prev) => prev + 1)}
-            >
-              <i className="fa-solid fa-chevron-right" aria-hidden="true" />
-            </button>
+            <h2>Hours Insights</h2>
+            <p>Quick performance snapshot for the current range.</p>
           </div>
         </div>
-        <div className="calendar-grid">
-          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-            <div key={day} className="calendar-day calendar-day--head">
-              {day}
-            </div>
-          ))}
-          {calendar.days.map((cell, index) => (
-            <div
-              key={`${cell.day}-${index}`}
-              className={`calendar-day${cell.day ? "" : " is-empty"}${
-                cell.isToday ? " is-today" : ""
-              }`}
-            >
-              {cell.day ? cell.day : ""}
-            </div>
-          ))}
+        <div className="insights-grid">
+          <div className="insight-tile">
+            <span>Total Hours</span>
+            <strong>{totalHours.toFixed(2)}</strong>
+            <em>Last 7 days</em>
+          </div>
+          <div className="insight-tile">
+            <span>Average Hours</span>
+            <strong>{averageHours.toFixed(2)}</strong>
+            <em>Per employee</em>
+          </div>
+          <div className="insight-tile">
+            <span>Top Performer</span>
+            <strong>{topPerformer?.name || "N/A"}</strong>
+            <em>{topPerformer ? topPerformer.hoursFormatted : "No data"}</em>
+          </div>
+          <div className="insight-tile">
+            <span>40+ Hours</span>
+            <strong>{overFortyCount}</strong>
+            <em>Potential overtime</em>
+          </div>
         </div>
+        {chartRows.length > 0 && (
+          <div className="insight-rings">
+            {chartRows.map((row) => {
+              const percent = Math.max(
+                0,
+                Math.min(100, Math.round((row.hours / maxHours) * 100)),
+              );
+              return (
+                <div key={`ring-${row.id}`} className="insight-ring-card">
+                  <div
+                    className="insight-ring"
+                    style={
+                      {
+                        "--ring-fill": `${percent * 3.6}deg`,
+                      } as CSSProperties
+                    }
+                  >
+                    <span>{percent}%</span>
+                  </div>
+                  <div className="insight-ring-name">{row.name}</div>
+                  <div className="insight-ring-hours">{row.hoursFormatted}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {chartRows.length === 0 && (
+          <div className="chart-empty">No employee hour data yet.</div>
+        )}
       </div>
     </div>
   );

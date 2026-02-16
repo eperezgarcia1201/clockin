@@ -11,17 +11,23 @@ export class GroupsService {
     private readonly tenancy: TenancyService,
   ) {}
 
-  async list(authUser: AuthUser) {
-    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+  async list(authUser: AuthUser, officeId?: string) {
+    const { tenant } = await this.tenancy.requireFeature(authUser, "groups");
+    const scopedOfficeId = officeId?.trim() || undefined;
 
     return this.prisma.group.findMany({
-      where: { tenantId: tenant.id },
+      where: scopedOfficeId
+        ? {
+            tenantId: tenant.id,
+            OR: [{ officeId: scopedOfficeId }, { officeId: null }],
+          }
+        : { tenantId: tenant.id },
       orderBy: { name: "asc" },
     });
   }
 
   async create(authUser: AuthUser, dto: CreateGroupDto) {
-    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const { tenant } = await this.tenancy.requireFeature(authUser, "groups");
 
     return this.prisma.group.create({
       data: {

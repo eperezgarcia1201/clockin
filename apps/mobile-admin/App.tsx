@@ -12,27 +12,90 @@ import {
 } from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import * as ImagePicker from "expo-image-picker";
+import Constants from "expo-constants";
 
-const apiBase = (process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000/api").replace(
-  /\/$/,
-  "",
-);
+const normalizeApiBase = (value: string) => value.trim().replace(/\/$/, "");
 
-const ADMIN_USERNAME = process.env.EXPO_PUBLIC_ADMIN_USERNAME || "admin";
-const ADMIN_PASSWORD = process.env.EXPO_PUBLIC_ADMIN_PASSWORD || "1234qwer";
+const isLoopbackHost = (host: string) =>
+  host === "localhost" ||
+  host === "0.0.0.0" ||
+  host === "::1" ||
+  host.startsWith("127.");
 
-const devHeaders = {
-  "x-dev-user-id": "dev-user",
-  "x-dev-tenant-id": "dev-tenant",
-  "x-dev-email": "dev@clockin.local",
-  "x-dev-name": "Dev User",
+const parseHostCandidate = (value?: string | null) => {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    if (/^[a-z]+:\/\//i.test(trimmed)) {
+      return new URL(trimmed).hostname || null;
+    }
+    return new URL(`http://${trimmed}`).hostname || null;
+  } catch {
+    return null;
+  }
 };
+
+const pickMetroHosts = () => {
+  const runtimeConfig = Constants as unknown as {
+    expoGoConfig?: { debuggerHost?: string | null };
+    manifest2?: { extra?: { expoClient?: { hostUri?: string | null } } };
+  };
+
+  const hosts = [
+    parseHostCandidate(Constants.expoConfig?.hostUri ?? null),
+    parseHostCandidate(runtimeConfig.expoGoConfig?.debuggerHost ?? null),
+    parseHostCandidate(runtimeConfig.manifest2?.extra?.expoClient?.hostUri ?? null),
+    parseHostCandidate(Constants.linkingUri ?? null),
+  ];
+
+  return Array.from(new Set(hosts.filter((host): host is string => Boolean(host))));
+};
+
+const apiBaseCandidates = (() => {
+  const values: string[] = [];
+  const runningOnSimulator = !Device.isDevice;
+
+  const metroHosts = pickMetroHosts();
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
+
+  if (fromEnv) {
+    const fromEnvHost = parseHostCandidate(fromEnv);
+    if (runningOnSimulator || !fromEnvHost || !isLoopbackHost(fromEnvHost)) {
+      values.push(fromEnv);
+    }
+  }
+
+  metroHosts.forEach((host) => {
+    if (!runningOnSimulator && isLoopbackHost(host)) {
+      return;
+    }
+    values.push(`http://${host}:4000/api`);
+  });
+
+  if (runningOnSimulator) {
+    values.push("http://localhost:4000/api");
+    values.push("http://127.0.0.1:4000/api");
+  }
+
+  return Array.from(new Set(values.map(normalizeApiBase).filter(Boolean)));
+})();
+
+const DEFAULT_TENANT =
+  process.env.EXPO_PUBLIC_TENANT_SLUG || "dev-tenant";
 
 type Screen =
   | "dashboard"
   | "users"
   | "offices"
   | "groups"
+  | "capture"
   | "reports"
   | "alerts"
   | "schedules";
@@ -49,6 +112,7 @@ type Employee = {
   name: string;
   email?: string;
   active: boolean;
+  officeId?: string | null;
   isAdmin?: boolean;
   isTimeAdmin?: boolean;
   isReports?: boolean;
@@ -57,29 +121,245 @@ type Employee = {
 
 type Office = { id: string; name: string };
 
-type Group = { id: string; name: string };
+type Group = { id: string; name: string; officeId?: string | null };
+
+type AccessPermissions = {
+  dashboard: boolean;
+  users: boolean;
+  locations: boolean;
+  manageMultiLocation: boolean;
+  groups: boolean;
+  statuses: boolean;
+  schedules: boolean;
+  reports: boolean;
+  tips: boolean;
+  salesCapture: boolean;
+  notifications: boolean;
+  settings: boolean;
+  timeEdits: boolean;
+};
 
 type NotificationRow = {
   id: string;
   message: string;
   createdAt: string;
+  readAt?: string | null;
   employeeName?: string | null;
   type: string;
+  metadata?: Record<string, unknown> | null;
+};
+
+type ExpensePaymentMethod = "CHECK" | "DEBIT_CARD" | "CASH";
+type ReceiptAttachment = {
+  uri: string;
+  mimeType: string;
+  fileName: string;
 };
 
 type ReportType = "daily" | "hours" | "payroll" | "audit" | "tips";
-
-const tabs: { key: Screen; label: string }[] = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "users", label: "Users" },
-  { key: "offices", label: "Offices" },
-  { key: "groups", label: "Groups" },
-  { key: "schedules", label: "Schedules" },
-  { key: "reports", label: "Reports" },
-  { key: "alerts", label: "Alerts" },
+const reportTypeOrder: ReportType[] = [
+  "daily",
+  "hours",
+  "payroll",
+  "audit",
+  "tips",
 ];
 
+type Lang = "en" | "es";
+type CaptureMode = "sales" | "expense";
+
+const tabs: Screen[] = [
+  "dashboard",
+  "users",
+  "offices",
+  "groups",
+  "schedules",
+  "capture",
+  "reports",
+  "alerts",
+];
+
+const tabLabels: Record<Lang, Record<Screen, string>> = {
+  en: {
+    dashboard: "Dashboard",
+    users: "Users",
+    offices: "Locations",
+    groups: "Groups",
+    schedules: "Schedules",
+    capture: "Daily Input",
+    reports: "Reports",
+    alerts: "Alerts",
+  },
+  es: {
+    dashboard: "Tablero",
+    users: "Usuarios",
+    offices: "Ubicaciones",
+    groups: "Grupos",
+    schedules: "Horarios",
+    capture: "Carga Diaria",
+    reports: "Reportes",
+    alerts: "Alertas",
+  },
+};
+
+const copy: Record<
+  Lang,
+  {
+    subtitle: string;
+    language: string;
+    dark: string;
+    light: string;
+    logout: string;
+    switchLocation: string;
+    tenant: string;
+    activeLocation: string;
+    allLocations: string;
+    noLocationAssigned: string;
+    loginTitle: string;
+    username: string;
+    password: string;
+    signIn: string;
+    signingIn: string;
+    pushHelp: string;
+    tenantPlaceholder: string;
+    captureTitle: string;
+    captureSubtitle: string;
+    salesToggle: string;
+    expenseToggle: string;
+    salesTitle: string;
+    expenseTitle: string;
+    salesDate: string;
+    foodSales: string;
+    liquorSales: string;
+    cashPayments: string;
+    bankBatch: string;
+    notesOptional: string;
+    saveDailySales: string;
+    saveDailyExpense: string;
+    saving: string;
+    expenseDate: string;
+    invoiceNumber: string;
+    companyName: string;
+    paymentMethod: string;
+    checkTotal: string;
+    debitTotal: string;
+    cashTotal: string;
+    checkNumber: string;
+    payToCompany: string;
+    receiptPhoto: string;
+    openingCamera: string;
+    retakePhoto: string;
+    takePhoto: string;
+    removePhoto: string;
+    attached: string;
+    noPhoto: string;
+  }
+> = {
+  en: {
+    subtitle: "Native admin console",
+    language: "Language",
+    dark: "Dark",
+    light: "Light",
+    logout: "Logout",
+    switchLocation: "Switch Location",
+    tenant: "Tenant",
+    activeLocation: "Location",
+    allLocations: "All Locations",
+    noLocationAssigned: "No location assigned",
+    loginTitle: "Administrator Access",
+    username: "Username",
+    password: "Password",
+    signIn: "Sign In",
+    signingIn: "Signing In...",
+    pushHelp: "Push alerts are enabled once you sign in.",
+    tenantPlaceholder: "tenant name",
+    captureTitle: "Daily Data Capture",
+    captureSubtitle: "Submit daily sales and daily expense entries.",
+    salesToggle: "Daily Sales",
+    expenseToggle: "Daily Expense",
+    salesTitle: "Daily Sales Entry",
+    expenseTitle: "Daily Expense Entry",
+    salesDate: "Report Date (MM/DD/YYYY)",
+    foodSales: "Food Sales",
+    liquorSales: "Liquor Sales",
+    cashPayments: "Cash Payments",
+    bankBatch: "Bank Deposit Batch",
+    notesOptional: "Notes (optional)",
+    saveDailySales: "Save Daily Sales",
+    saveDailyExpense: "Save Daily Expense",
+    saving: "Saving...",
+    expenseDate: "Expense Date (MM/DD/YYYY)",
+    invoiceNumber: "Invoice Number",
+    companyName: "Company Name",
+    paymentMethod: "Payment Method",
+    checkTotal: "Check Total",
+    debitTotal: "Debit Card Total",
+    cashTotal: "Cash Total",
+    checkNumber: "Check Number",
+    payToCompany: "Company Check Is Going To",
+    receiptPhoto: "Receipt Photo (optional)",
+    openingCamera: "Opening camera...",
+    retakePhoto: "Retake Receipt Photo",
+    takePhoto: "Take Receipt Photo",
+    removePhoto: "Remove Photo",
+    attached: "Attached:",
+    noPhoto: "No receipt photo attached.",
+  },
+  es: {
+    subtitle: "Consola administrativa",
+    language: "Idioma",
+    dark: "Oscuro",
+    light: "Claro",
+    logout: "Salir",
+    switchLocation: "Cambiar Ubicacion",
+    tenant: "Inquilino",
+    activeLocation: "Ubicacion",
+    allLocations: "Todas las ubicaciones",
+    noLocationAssigned: "Sin ubicacion asignada",
+    loginTitle: "Acceso de Administrador",
+    username: "Usuario",
+    password: "Contraseña",
+    signIn: "Ingresar",
+    signingIn: "Ingresando...",
+    pushHelp: "Las alertas push se activan al iniciar sesión.",
+    tenantPlaceholder: "tenant name",
+    captureTitle: "Captura Diaria de Datos",
+    captureSubtitle: "Registra las ventas y gastos diarios.",
+    salesToggle: "Ventas Diarias",
+    expenseToggle: "Gasto Diario",
+    salesTitle: "Registro de Ventas Diarias",
+    expenseTitle: "Registro de Gasto Diario",
+    salesDate: "Fecha de reporte (MM/DD/YYYY)",
+    foodSales: "Ventas de Comida",
+    liquorSales: "Ventas de Licor",
+    cashPayments: "Pagos en Efectivo",
+    bankBatch: "Lote de Depósito Bancario",
+    notesOptional: "Notas (opcional)",
+    saveDailySales: "Guardar Ventas Diarias",
+    saveDailyExpense: "Guardar Gasto Diario",
+    saving: "Guardando...",
+    expenseDate: "Fecha del gasto (MM/DD/YYYY)",
+    invoiceNumber: "Número de Factura",
+    companyName: "Nombre de la Empresa",
+    paymentMethod: "Método de Pago",
+    checkTotal: "Total en Cheque",
+    debitTotal: "Total Tarjeta Débito",
+    cashTotal: "Total en Efectivo",
+    checkNumber: "Número de Cheque",
+    payToCompany: "Empresa a la que va el cheque",
+    receiptPhoto: "Foto de recibo (opcional)",
+    openingCamera: "Abriendo cámara...",
+    retakePhoto: "Tomar Foto de Nuevo",
+    takePhoto: "Tomar Foto de Recibo",
+    removePhoto: "Quitar Foto",
+    attached: "Adjunto:",
+    noPhoto: "No hay foto de recibo adjunta.",
+  },
+};
+
 type ThemeMode = "dark" | "light";
+type Meridiem = "AM" | "PM";
+type ScheduleTimeKey = "startTime" | "endTime";
 
 type ScheduleDay = {
   weekday: number;
@@ -138,6 +418,43 @@ const emptyEditUserForm = (): EditUserForm => ({
   disabled: false,
 });
 
+const defaultAccessPermissions = (): AccessPermissions => ({
+  dashboard: true,
+  users: true,
+  locations: true,
+  manageMultiLocation: false,
+  groups: true,
+  statuses: true,
+  schedules: true,
+  reports: true,
+  tips: true,
+  salesCapture: true,
+  notifications: true,
+  settings: true,
+  timeEdits: true,
+});
+
+const permissionsFromFeaturePermissions = (
+  featurePermissions?: unknown,
+): AccessPermissions | null => {
+  if (!Array.isArray(featurePermissions)) {
+    return null;
+  }
+  const normalized = new Set<string>(
+    featurePermissions
+      .map((value) => (typeof value === "string" ? value.trim() : ""))
+      .filter(Boolean),
+  );
+  const base = defaultAccessPermissions();
+  (Object.keys(base) as (keyof AccessPermissions)[]).forEach((key) => {
+    base[key] = normalized.has(key);
+  });
+  if (normalized.size > 0 && !base.dashboard) {
+    base.dashboard = true;
+  }
+  return base;
+};
+
 const normalizeTime = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return "";
@@ -158,19 +475,158 @@ const sanitizeTime = (value: string) => {
   return /^\d{2}:\d{2}$/.test(normalized) ? normalized : "";
 };
 
-const formatDate = (value: Date) => {
-  const year = value.getFullYear();
-  const month = `${value.getMonth() + 1}`.padStart(2, "0");
-  const day = `${value.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+const parseScheduleTimeParts = (value: string) => {
+  const fallback = "09:00";
+  const normalized = sanitizeTime(value || "") || fallback;
+  const [rawHours, rawMinutes] = normalized.split(":");
+  const safeHours = Number(rawHours);
+  const safeMinutes = Number(rawMinutes);
+  const hours24 = Number.isFinite(safeHours) ? safeHours : 9;
+  const minutes = Number.isFinite(safeMinutes) ? safeMinutes : 0;
+  const meridiem: Meridiem = hours24 >= 12 ? "PM" : "AM";
+  const hour12 = ((hours24 + 11) % 12) + 1;
+  return {
+    hour: hour12,
+    minute: minutes,
+    meridiem,
+  };
+};
+
+const toTwentyFourHourTime = (parts: {
+  hour: number;
+  minute: number;
+  meridiem: Meridiem;
+}) => {
+  const safeHour = Math.min(12, Math.max(1, Math.trunc(parts.hour)));
+  const safeMinute = Math.min(59, Math.max(0, Math.trunc(parts.minute)));
+  const hourBase = safeHour % 12;
+  const hours24 = parts.meridiem === "PM" ? hourBase + 12 : hourBase;
+  return `${String(hours24).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
+};
+
+const formatScheduleTimeLabel = (value: string) => {
+  const parts = parseScheduleTimeParts(value);
+  return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} ${parts.meridiem}`;
+};
+
+const padDatePart = (value: number) => `${value}`.padStart(2, "0");
+
+const formatUsDate = (value: Date) =>
+  `${padDatePart(value.getMonth() + 1)}/${padDatePart(
+    value.getDate(),
+  )}/${value.getFullYear()}`;
+
+const parseDateInputToIso = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  let year = 0;
+  let month = 0;
+  let day = 0;
+
+  const usMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (usMatch) {
+    month = Number(usMatch[1]);
+    day = Number(usMatch[2]);
+    year = Number(usMatch[3]);
+  } else {
+    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+    if (!isoMatch) return null;
+    year = Number(isoMatch[1]);
+    month = Number(isoMatch[2]);
+    day = Number(isoMatch[3]);
+  }
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
+    return null;
+  }
+
+  const parsed = new Date(year, month - 1, day);
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return `${year}-${padDatePart(month)}-${padDatePart(day)}`;
+};
+
+const formatDisplayDate = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return value;
+  return `${match[2]}/${match[3]}/${match[1]}`;
+};
+
+const parseMoneyInput = (value: string) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Number(parsed.toFixed(2));
+};
+
+const formatMoney = (value: number) => `$${Number(value || 0).toFixed(2)}`;
+
+const expensePaymentMethodLabel = (value: ExpensePaymentMethod) => {
+  if (value === "CHECK") return "Check";
+  if (value === "DEBIT_CARD") return "Debit Card";
+  return "Cash";
+};
+
+const parseScheduleOverrideNotification = (notice: NotificationRow) => {
+  if (notice.type !== "SCHEDULE_OVERRIDE_REQUEST") {
+    return null;
+  }
+  if (
+    !notice.metadata ||
+    typeof notice.metadata !== "object" ||
+    Array.isArray(notice.metadata)
+  ) {
+    return null;
+  }
+  const requestId = notice.metadata.scheduleOverrideRequestId;
+  if (typeof requestId !== "string" || !requestId.trim()) {
+    return null;
+  }
+  const status = notice.metadata.status;
+  const reasonMessage = notice.metadata.reasonMessage;
+  const workDate = notice.metadata.workDate;
+  const attemptedAt = notice.metadata.attemptedAt;
+  const metadataEmployeeName = notice.metadata.employeeName;
+  return {
+    requestId,
+    status: typeof status === "string" ? status.toUpperCase() : "PENDING",
+    reasonMessage: typeof reasonMessage === "string" ? reasonMessage : "",
+    workDate: typeof workDate === "string" ? workDate : "",
+    attemptedAt: typeof attemptedAt === "string" ? attemptedAt : "",
+    employeeName:
+      typeof metadataEmployeeName === "string"
+        ? metadataEmployeeName
+        : notice.employeeName || "",
+  };
 };
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
+  const [tenantInput, setTenantInput] = useState("");
+  const [activeTenant, setActiveTenant] = useState("");
+  const [activeTenantLabel, setActiveTenantLabel] = useState("");
+  const [activeAdminUsername, setActiveAdminUsername] = useState("");
+  const [language, setLanguage] = useState<Lang>("en");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginStatus, setLoginStatus] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [screen, setScreen] = useState<Screen>("dashboard");
+  const [permissions, setPermissions] = useState<AccessPermissions>(
+    defaultAccessPermissions(),
+  );
+  const [multiLocationEnabled, setMultiLocationEnabled] = useState(false);
+  const [activeLocationId, setActiveLocationId] = useState("");
 
   const [summary, setSummary] = useState<Summary>({
     total: 0,
@@ -182,9 +638,13 @@ export default function App() {
   const [offices, setOffices] = useState<Office[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
-  const [activeNow, setActiveNow] = useState<{ id: string; name: string; status: string }[]>(
-    [],
-  );
+  const [alertsStatus, setAlertsStatus] = useState<string | null>(null);
+  const [scheduleOverrideLoadingId, setScheduleOverrideLoadingId] = useState<
+    string | null
+  >(null);
+  const [activeNow, setActiveNow] = useState<
+    { id: string; name: string; status: string }[]
+  >([]);
   const [punchStatus, setPunchStatus] = useState<string | null>(null);
   const [punchLoadingId, setPunchLoadingId] = useState<string | null>(null);
 
@@ -197,7 +657,8 @@ export default function App() {
   const [newUserIsServer, setNewUserIsServer] = useState(false);
   const [userStatus, setUserStatus] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const [editUserForm, setEditUserForm] = useState<EditUserForm>(emptyEditUserForm());
+  const [editUserForm, setEditUserForm] =
+    useState<EditUserForm>(emptyEditUserForm());
   const [editUserStatus, setEditUserStatus] = useState<string | null>(null);
   const [editUserLoading, setEditUserLoading] = useState(false);
   const [editUserSaving, setEditUserSaving] = useState(false);
@@ -209,10 +670,13 @@ export default function App() {
   const [groupStatus, setGroupStatus] = useState<string | null>(null);
 
   const [scheduleEmployeeId, setScheduleEmployeeId] = useState("");
-  const [scheduleDays, setScheduleDays] = useState<ScheduleDay[]>(defaultScheduleDays());
+  const [scheduleEmployeePickerOpen, setScheduleEmployeePickerOpen] =
+    useState(false);
+  const [scheduleEmployeeSearch, setScheduleEmployeeSearch] = useState("");
+  const [scheduleDays, setScheduleDays] = useState<ScheduleDay[]>(
+    defaultScheduleDays(),
+  );
   const [scheduleStatus, setScheduleStatus] = useState<string | null>(null);
-
-  const [calendarOffset, setCalendarOffset] = useState(0);
 
   const [reportType, setReportType] = useState<ReportType>("daily");
   const [reportEmployeeId, setReportEmployeeId] = useState("");
@@ -220,42 +684,219 @@ export default function App() {
     const now = new Date();
     const start = new Date(now);
     start.setDate(now.getDate() - 6);
-    return formatDate(start);
+    return formatUsDate(start);
   });
-  const [toDate, setToDate] = useState(() => formatDate(new Date()));
+  const [toDate, setToDate] = useState(() => formatUsDate(new Date()));
   const [reportRows, setReportRows] = useState<any[]>([]);
   const [reportStatus, setReportStatus] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [salesDate, setSalesDate] = useState(() => formatUsDate(new Date()));
+  const [salesFood, setSalesFood] = useState("0");
+  const [salesLiquor, setSalesLiquor] = useState("0");
+  const [salesCash, setSalesCash] = useState("0");
+  const [salesBatch, setSalesBatch] = useState("");
+  const [salesNotes, setSalesNotes] = useState("");
+  const [salesSaveLoading, setSalesSaveLoading] = useState(false);
+  const [salesExpenseCompany, setSalesExpenseCompany] = useState("");
+  const [salesExpenseInvoice, setSalesExpenseInvoice] = useState("");
+  const [salesExpenseMethod, setSalesExpenseMethod] =
+    useState<ExpensePaymentMethod>("CHECK");
+  const [salesExpenseAmount, setSalesExpenseAmount] = useState("0");
+  const [salesExpenseCheckNumber, setSalesExpenseCheckNumber] = useState("");
+  const [salesExpensePayToCompany, setSalesExpensePayToCompany] = useState("");
+  const [salesExpenseNotes, setSalesExpenseNotes] = useState("");
+  const [salesExpenseReceipt, setSalesExpenseReceipt] =
+    useState<ReceiptAttachment | null>(null);
+  const [salesExpenseReceiptLoading, setSalesExpenseReceiptLoading] =
+    useState(false);
+  const [salesExpenseSaveLoading, setSalesExpenseSaveLoading] = useState(false);
+  const [salesActionStatus, setSalesActionStatus] = useState<string | null>(
+    null,
+  );
+  const [captureMode, setCaptureMode] = useState<CaptureMode>("sales");
   const [theme, setTheme] = useState<ThemeMode>("dark");
+  const [resolvedApiBase, setResolvedApiBase] = useState<string | null>(null);
+  const [dataSyncError, setDataSyncError] = useState<string | null>(null);
+  const canCreateLocations = permissions.locations;
+  const canManageMultiLocation =
+    multiLocationEnabled && permissions.manageMultiLocation;
+  const scopedLocationId = canManageMultiLocation ? activeLocationId.trim() : "";
 
-  const fetchJson = useCallback(async (path: string, options?: RequestInit) => {
-    const response = await fetch(`${apiBase}${path}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...devHeaders,
-        ...(options?.headers || {}),
-      },
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data?.message || data?.error || "Request failed");
-    }
-    return response.json();
+  const appendOfficeScope = useCallback(
+    (path: string) => {
+      if (!scopedLocationId) {
+        return path;
+      }
+      const joiner = path.includes("?") ? "&" : "?";
+      return `${path}${joiner}officeId=${encodeURIComponent(scopedLocationId)}`;
+    },
+    [scopedLocationId],
+  );
+
+  const clearAdminSession = useCallback(() => {
+    setLoggedIn(false);
+    setPermissions(defaultAccessPermissions());
+    setMultiLocationEnabled(false);
+    setActiveLocationId("");
+    setActiveTenant("");
+    setActiveTenantLabel("");
+    setActiveAdminUsername("");
+    setTenantInput("");
+    setUsername("");
+    setPassword("");
+    setScreen("dashboard");
   }, []);
+
+  const fetchJson = useCallback(
+    async (path: string, options?: RequestInit) => {
+      const orderedBases = Array.from(
+        new Set([resolvedApiBase, ...apiBaseCandidates].filter(Boolean)),
+      ) as string[];
+      let lastError: Error | null = null;
+
+      for (const apiBase of orderedBases) {
+        try {
+          const headers = new Headers(options?.headers);
+          const tenantHeader =
+            (loggedIn ? activeTenant : tenantInput).trim() || DEFAULT_TENANT;
+          const activeLoginName = (
+            (loggedIn ? activeAdminUsername : username) || ""
+          ).trim();
+          const normalizedLoginName = activeLoginName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/(^-|-$)+/g, "");
+          const devHeaders = {
+            "x-dev-user-id": normalizedLoginName
+              ? `tenant-admin:${normalizedLoginName}`
+              : "dev-user",
+            "x-dev-email": normalizedLoginName
+              ? `${normalizedLoginName}@clockin.local`
+              : "dev@clockin.local",
+            "x-dev-name": activeLoginName || "Dev User",
+            "x-dev-tenant-id": tenantHeader,
+          };
+          Object.entries(devHeaders).forEach(([key, value]) => {
+            if (!headers.has(key)) {
+              headers.set(key, value);
+            }
+          });
+          const body = options?.body;
+          const isFormData =
+            typeof FormData !== "undefined" && body instanceof FormData;
+          if (!isFormData && !headers.has("Content-Type")) {
+            headers.set("Content-Type", "application/json");
+          }
+
+          const response = await fetch(`${apiBase}${path}`, {
+            ...options,
+            headers,
+          });
+
+          if (!response.ok) {
+            const raw = await response.text().catch(() => "");
+            let message = "Request failed";
+            if (raw) {
+              try {
+                const data = JSON.parse(raw);
+                message = data?.message || data?.error || raw;
+              } catch {
+                message = raw;
+              }
+            }
+            lastError = new Error(`${message} (${response.status})`);
+            continue;
+          }
+
+          if (resolvedApiBase !== apiBase) {
+            setResolvedApiBase(apiBase);
+          }
+
+          const raw = await response.text();
+          if (!raw) {
+            return {};
+          }
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return {};
+          }
+        } catch (error) {
+          if (error instanceof Error) {
+            lastError = error;
+            if (
+              /network request failed|fetch failed|load failed/i.test(
+                error.message,
+              )
+            ) {
+              continue;
+            }
+          }
+          if (error instanceof TypeError) {
+            lastError = error;
+            continue;
+          }
+        }
+      }
+
+      throw (
+        lastError ||
+        new Error(
+          `Unable to reach ClockIn API. Tried: ${orderedBases.join(", ")}`,
+        )
+      );
+    },
+    [
+      activeAdminUsername,
+      activeTenant,
+      loggedIn,
+      resolvedApiBase,
+      tenantInput,
+      username,
+    ],
+  );
 
   useEffect(() => {
     registerForPush();
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const probeApi = async () => {
+      try {
+        await fetchJson("/health");
+        if (!cancelled) {
+          setDataSyncError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setDataSyncError(
+            error instanceof Error
+              ? error.message
+              : "Unable to reach ClockIn API.",
+          );
+        }
+      }
+    };
+
+    probeApi();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchJson]);
+
+  useEffect(() => {
     if (!loggedIn) return;
+    loadAccessProfile();
     loadSummary();
     loadEmployees();
     loadOffices();
     loadGroups();
     loadActiveNow();
-  }, [loggedIn]);
+    loadNotifications();
+  }, [loggedIn, scopedLocationId]);
 
   useEffect(() => {
     if (!loggedIn) return;
@@ -270,6 +911,40 @@ export default function App() {
       loadSchedule(scheduleEmployeeId);
     }
   }, [loggedIn, screen, scheduleEmployeeId]);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    if (screen === "dashboard") {
+      loadActiveNow();
+      loadNotifications();
+      loadSummary();
+      return;
+    }
+    if (screen === "users") {
+      loadEmployees();
+      loadActiveNow();
+      loadSummary();
+    }
+    if (screen === "groups") {
+      loadGroups();
+    }
+  }, [loggedIn, screen, scopedLocationId]);
+
+  useEffect(() => {
+    if (salesExpenseMethod !== "CHECK") {
+      setSalesExpenseCheckNumber("");
+      setSalesExpensePayToCompany("");
+    }
+  }, [salesExpenseMethod]);
+
+  useEffect(() => {
+    if (!loggedIn || !canManageMultiLocation) {
+      return;
+    }
+    if (!activeLocationId && offices[0]?.id) {
+      setActiveLocationId(offices[0].id);
+    }
+  }, [activeLocationId, canManageMultiLocation, loggedIn, offices]);
 
   const registerForPush = async () => {
     if (!Device.isDevice) return;
@@ -287,32 +962,139 @@ export default function App() {
     });
   };
 
-  const handleLogin = () => {
-    if (!username || !password) {
-      setLoginStatus("Enter username and password.");
+  const handleLogin = async () => {
+    if (!tenantInput.trim() || !username || !password) {
+      setLoginStatus("Enter tenant, username, and password.");
       return;
     }
-    if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    setLoginLoading(true);
+    setLoginStatus(null);
+    try {
+      const orderedBases = Array.from(
+        new Set([resolvedApiBase, ...apiBaseCandidates].filter(Boolean)),
+      ) as string[];
+      let lastError: Error | null = null;
+      let verified:
+        | {
+            name?: string;
+            slug?: string;
+            authOrgId?: string;
+            featurePermissions?: string[];
+            error?: string;
+            message?: string;
+          }
+        | null = null;
+      let matchedBase: string | null = null;
+
+      for (const apiBase of orderedBases) {
+        try {
+          const response = await fetch(`${apiBase}/tenant-directory/admin-login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              tenant: tenantInput.trim(),
+              username: username.trim(),
+              password,
+            }),
+          });
+          const data = (await response.json().catch(() => ({}))) as {
+            name?: string;
+            slug?: string;
+            authOrgId?: string;
+            featurePermissions?: string[];
+            error?: string;
+            message?: string;
+          };
+
+          if (!response.ok || !data.authOrgId) {
+            lastError = new Error(
+              data.message || data.error || "Invalid credentials.",
+            );
+            continue;
+          }
+
+          verified = data;
+          matchedBase = apiBase;
+          break;
+        } catch (error) {
+          if (error instanceof Error) {
+            lastError = error;
+          } else {
+            lastError = new Error("Unable to reach ClockIn API.");
+          }
+        }
+      }
+
+      if (!verified?.authOrgId) {
+        throw lastError || new Error("Invalid credentials.");
+      }
+
+      if (matchedBase && resolvedApiBase !== matchedBase) {
+        setResolvedApiBase(matchedBase);
+      }
+      setPermissions(
+        permissionsFromFeaturePermissions(verified.featurePermissions) ||
+          defaultAccessPermissions(),
+      );
+      setMultiLocationEnabled(false);
+      setActiveLocationId("");
+      setActiveTenant(verified.authOrgId.trim());
+      setActiveTenantLabel(
+        (verified.name || verified.slug || tenantInput).trim(),
+      );
+      setActiveAdminUsername(username.trim());
       setLoggedIn(true);
       setLoginStatus(null);
       setScreen("dashboard");
-      return;
+    } catch (error) {
+      setLoginStatus(
+        error instanceof Error ? error.message : "Invalid credentials.",
+      );
+    } finally {
+      setLoginLoading(false);
     }
-    setLoginStatus("Invalid credentials.");
   };
+
+  const loadAccessProfile = useCallback(async () => {
+    try {
+      const data = (await fetchJson("/access/me")) as {
+        multiLocationEnabled?: boolean;
+        permissions?: Partial<AccessPermissions>;
+      };
+      setMultiLocationEnabled(Boolean(data.multiLocationEnabled));
+      setPermissions((prev) => ({ ...prev, ...(data.permissions || {}) }));
+      if (!data.multiLocationEnabled || !data.permissions?.manageMultiLocation) {
+        setActiveLocationId("");
+      }
+      setDataSyncError(null);
+    } catch (error) {
+      setDataSyncError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load access permissions.",
+      );
+    }
+  }, [fetchJson]);
 
   const loadSummary = async () => {
     try {
-      const data = (await fetchJson("/employees/summary")) as Summary;
+      const data = (await fetchJson(
+        appendOfficeScope("/employees/summary"),
+      )) as Summary;
       setSummary(data);
-    } catch {
-      // ignore
+      setDataSyncError(null);
+    } catch (error) {
+      setDataSyncError(
+        error instanceof Error ? error.message : "Unable to load summary data.",
+      );
     }
   };
 
   const loadEmployees = async () => {
     try {
-      const data = (await fetchJson("/employees")) as { employees: Employee[] };
+      const data = (await fetchJson(
+        appendOfficeScope("/employees"),
+      )) as { employees: Employee[] };
       setEmployees(data.employees || []);
       if (!scheduleEmployeeId && data.employees?.[0]) {
         setScheduleEmployeeId(data.employees[0].id);
@@ -323,19 +1105,43 @@ export default function App() {
       ) {
         setReportEmployeeId("");
       }
-      if (editingUserId && !data.employees?.some((employee) => employee.id === editingUserId)) {
+      if (
+        scheduleEmployeeId &&
+        !data.employees?.some((employee) => employee.id === scheduleEmployeeId)
+      ) {
+        setScheduleEmployeeId(data.employees?.[0]?.id || "");
+      }
+      if (
+        editingUserId &&
+        !data.employees?.some((employee) => employee.id === editingUserId)
+      ) {
         setEditingUserId(null);
         setEditUserForm(emptyEditUserForm());
       }
-    } catch {
-      // ignore
+      setDataSyncError(null);
+    } catch (error) {
+      setDataSyncError(
+        error instanceof Error ? error.message : "Unable to load users.",
+      );
     }
   };
 
   const loadOffices = async () => {
     try {
       const data = (await fetchJson("/offices")) as { offices: Office[] };
-      setOffices(data.offices || []);
+      const nextOffices = data.offices || [];
+      setOffices(nextOffices);
+      if (
+        canManageMultiLocation &&
+        nextOffices.length > 0 &&
+        (!activeLocationId ||
+          !nextOffices.some((office) => office.id === activeLocationId))
+      ) {
+        setActiveLocationId(nextOffices[0].id);
+      }
+      if (nextOffices.length === 0) {
+        setActiveLocationId("");
+      }
     } catch {
       // ignore
     }
@@ -343,7 +1149,9 @@ export default function App() {
 
   const loadGroups = async () => {
     try {
-      const data = (await fetchJson("/groups")) as { groups: Group[] };
+      const data = (await fetchJson(
+        appendOfficeScope("/groups"),
+      )) as { groups: Group[] };
       setGroups(data.groups || []);
     } catch {
       // ignore
@@ -361,20 +1169,62 @@ export default function App() {
     }
   };
 
+  const handleScheduleOverrideDecision = async (
+    requestId: string,
+    approve: boolean,
+  ) => {
+    setAlertsStatus(null);
+    setScheduleOverrideLoadingId(requestId);
+    try {
+      const data = (await fetchJson(
+        `/employee-punches/schedule-overrides/${requestId}/${approve ? "approve" : "reject"}`,
+        { method: "PATCH" },
+      )) as {
+        autoClockIn?: { clockedIn?: boolean; alreadyActive?: boolean };
+      };
+      if (!approve) {
+        setAlertsStatus("Clock-in override rejected.");
+      } else if (data.autoClockIn?.clockedIn) {
+        setAlertsStatus("Clock-in override approved. Employee clocked in automatically.");
+      } else if (data.autoClockIn?.alreadyActive) {
+        setAlertsStatus("Clock-in override approved. Employee is already clocked in.");
+      } else {
+        setAlertsStatus("Clock-in override approved.");
+      }
+      await loadNotifications();
+      await loadActiveNow();
+    } catch (error) {
+      setAlertsStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to update schedule override request.",
+      );
+    } finally {
+      setScheduleOverrideLoadingId(null);
+    }
+  };
+
   const loadActiveNow = async () => {
     try {
-      const data = (await fetchJson("/employee-punches/recent")) as {
+      const data = (await fetchJson(
+        appendOfficeScope("/employee-punches/recent"),
+      )) as {
         rows: { id: string; name: string; status: string | null }[];
       };
       setActiveNow(
-        (data.rows || []).map((row) => ({
-          id: row.id,
-          name: row.name,
-          status: row.status || "OUT",
-        })),
+        (data.rows || [])
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            status: (row.status || "OUT").toUpperCase(),
+          }))
+          .filter((row) => ["IN", "BREAK", "LUNCH"].includes(row.status)),
       );
-    } catch {
-      // ignore
+      setDataSyncError(null);
+    } catch (error) {
+      setDataSyncError(
+        error instanceof Error ? error.message : "Unable to load active users.",
+      );
     }
   };
 
@@ -392,6 +1242,7 @@ export default function App() {
           displayName: newUserName.trim(),
           email: newUserEmail.trim() || undefined,
           pin: newUserPin.trim() || undefined,
+          officeId: scopedLocationId || undefined,
           isAdmin: newUserIsAdmin,
           isTimeAdmin: newUserIsTimeAdmin,
           isReports: newUserIsReports,
@@ -409,7 +1260,9 @@ export default function App() {
       loadEmployees();
       loadSummary();
     } catch (error) {
-      setUserStatus(error instanceof Error ? error.message : "Unable to create user.");
+      setUserStatus(
+        error instanceof Error ? error.message : "Unable to create user.",
+      );
     }
   };
 
@@ -427,7 +1280,11 @@ export default function App() {
       loadSummary();
       loadActiveNow();
     } catch (error) {
-      setUserStatus(error instanceof Error ? error.message : "Unable to update user status.");
+      setUserStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to update user status.",
+      );
     }
   };
 
@@ -455,7 +1312,8 @@ export default function App() {
         email: data.email || "",
         pin: "",
         hourlyRate:
-          typeof data.hourlyRate === "number" && Number.isFinite(data.hourlyRate)
+          typeof data.hourlyRate === "number" &&
+          Number.isFinite(data.hourlyRate)
             ? String(data.hourlyRate)
             : "",
         officeId: data.officeId || "",
@@ -468,7 +1326,9 @@ export default function App() {
       });
       setEditUserStatus("Loaded user for editing.");
     } catch (error) {
-      setEditUserStatus(error instanceof Error ? error.message : "Unable to load user.");
+      setEditUserStatus(
+        error instanceof Error ? error.message : "Unable to load user.",
+      );
     } finally {
       setEditUserLoading(false);
     }
@@ -541,7 +1401,9 @@ export default function App() {
       loadSummary();
       loadActiveNow();
     } catch (error) {
-      setEditUserStatus(error instanceof Error ? error.message : "Unable to update user.");
+      setEditUserStatus(
+        error instanceof Error ? error.message : "Unable to update user.",
+      );
     } finally {
       setEditUserSaving(false);
     }
@@ -550,19 +1412,29 @@ export default function App() {
   const handleCreateOffice = async () => {
     setOfficeStatus(null);
     if (!newOfficeName.trim()) {
-      setOfficeStatus("Enter an office name.");
+      setOfficeStatus("Enter a location name.");
       return;
     }
     try {
-      await fetchJson("/offices", {
+      const created = (await fetchJson("/offices", {
         method: "POST",
         body: JSON.stringify({ name: newOfficeName.trim() }),
-      });
+      })) as Office;
       setNewOfficeName("");
-      setOfficeStatus("Office created.");
+      if (created?.id) {
+        setActiveLocationId(created.id);
+      }
+      setOfficeStatus("Location created. Switched to new location panel.");
+      setScreen("dashboard");
       loadOffices();
+      loadSummary();
+      loadEmployees();
+      loadGroups();
+      loadActiveNow();
     } catch (error) {
-      setOfficeStatus(error instanceof Error ? error.message : "Unable to create office.");
+      setOfficeStatus(
+        error instanceof Error ? error.message : "Unable to create location.",
+      );
     }
   };
 
@@ -575,24 +1447,43 @@ export default function App() {
     try {
       await fetchJson("/groups", {
         method: "POST",
-        body: JSON.stringify({ name: newGroupName.trim() }),
+        body: JSON.stringify({
+          name: newGroupName.trim(),
+          officeId: scopedLocationId || undefined,
+        }),
       });
       setNewGroupName("");
       setGroupStatus("Group created.");
       loadGroups();
     } catch (error) {
-      setGroupStatus(error instanceof Error ? error.message : "Unable to create group.");
+      setGroupStatus(
+        error instanceof Error ? error.message : "Unable to create group.",
+      );
     }
   };
 
   const runReport = async () => {
     setReportStatus(null);
     setReportLoading(true);
-    const tzOffset = new Date().getTimezoneOffset();
     try {
+      if (!fromDate.trim() || !toDate.trim()) {
+        setReportStatus("From and To dates are required.");
+        return;
+      }
+      const fromIso = parseDateInputToIso(fromDate);
+      const toIso = parseDateInputToIso(toDate);
+      if (!fromIso || !toIso) {
+        setReportStatus("Use MM/DD/YYYY dates.");
+        return;
+      }
+      if (fromIso > toIso) {
+        setReportStatus('"From" date must be before or equal to "To" date.');
+        return;
+      }
+      const tzOffset = new Date().getTimezoneOffset();
       const query = new URLSearchParams({
-        from: fromDate,
-        to: toDate,
+        from: fromIso,
+        to: toIso,
         round: "0",
         tzOffset: String(tzOffset),
       });
@@ -608,42 +1499,209 @@ export default function App() {
         setReportStatus(`Generated ${(data.records || []).length} audit rows.`);
       } else {
         setReportRows(data.employees || []);
-        setReportStatus(`Generated ${(data.employees || []).length} employee report rows.`);
+        setReportStatus(
+          `Generated ${(data.employees || []).length} employee report rows.`,
+        );
       }
     } catch (error) {
-      setReportStatus(error instanceof Error ? error.message : "Report failed.");
+      setReportStatus(
+        error instanceof Error ? error.message : "Report failed.",
+      );
     } finally {
       setReportLoading(false);
     }
   };
 
-  const calendar = useMemo(() => {
-    const base = new Date();
-    const viewDate = new Date(base.getFullYear(), base.getMonth() + calendarOffset, 1);
-    const year = viewDate.getFullYear();
-    const month = viewDate.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const today = new Date();
-    const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
-    const days: { day: number; isToday: boolean }[] = [];
-    for (let i = 0; i < firstDay; i += 1) {
-      days.push({ day: 0, isToday: false });
+  const saveSalesReport = async () => {
+    setSalesActionStatus(null);
+    const date = parseDateInputToIso(salesDate);
+    if (!date) {
+      setSalesActionStatus("Report date is required in MM/DD/YYYY format.");
+      return;
     }
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      days.push({
-        day,
-        isToday: isCurrentMonth && day === today.getDate(),
+    const foodSales = parseMoneyInput(salesFood);
+    const liquorSales = parseMoneyInput(salesLiquor);
+    const cashPayments = parseMoneyInput(salesCash);
+    if (foodSales === null || liquorSales === null || cashPayments === null) {
+      setSalesActionStatus(
+        "Food sales, liquor sales, and cash payments must be non-negative numbers.",
+      );
+      return;
+    }
+
+    setSalesSaveLoading(true);
+    try {
+      await fetchJson("/reports/sales", {
+        method: "POST",
+        body: JSON.stringify({
+          date,
+          foodSales,
+          liquorSales,
+          cashPayments,
+          bankDepositBatch: salesBatch.trim() || undefined,
+          checkPayments: 0,
+          creditCardPayments: 0,
+          otherPayments: 0,
+          notes: salesNotes.trim() || undefined,
+        }),
       });
+      setSalesActionStatus("Daily sales report saved.");
+    } catch (error) {
+      setSalesActionStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to save daily sales report.",
+      );
+    } finally {
+      setSalesSaveLoading(false);
     }
-    while (days.length % 7 !== 0) {
-      days.push({ day: 0, isToday: false });
+  };
+
+  const captureSalesExpenseReceipt = async () => {
+    setSalesActionStatus(null);
+    setSalesExpenseReceiptLoading(true);
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setSalesActionStatus(
+          "Camera permission is required for receipt photos.",
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.7,
+      });
+      if (result.canceled || !result.assets.length) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const fallbackMimeType = asset.uri.toLowerCase().endsWith(".png")
+        ? "image/png"
+        : "image/jpeg";
+      const mimeType = asset.mimeType || fallbackMimeType;
+      const extension = mimeType.includes("png") ? "png" : "jpg";
+      const fileName =
+        asset.fileName?.trim() || `expense-receipt-${Date.now()}.${extension}`;
+
+      setSalesExpenseReceipt({
+        uri: asset.uri,
+        mimeType,
+        fileName,
+      });
+      setSalesActionStatus("Receipt photo attached.");
+    } catch (error) {
+      setSalesActionStatus(
+        error instanceof Error ? error.message : "Unable to open the camera.",
+      );
+    } finally {
+      setSalesExpenseReceiptLoading(false);
     }
-    return {
-      label: viewDate.toLocaleString("default", { month: "long", year: "numeric" }),
-      days,
-    };
-  }, [calendarOffset]);
+  };
+
+  const saveSalesExpense = async () => {
+    setSalesActionStatus(null);
+    const date = parseDateInputToIso(todayExpenseDate);
+    if (!date) {
+      setSalesActionStatus("Unable to resolve today date.");
+      return;
+    }
+    if (!salesExpenseCompany.trim()) {
+      setSalesActionStatus("Company name is required.");
+      return;
+    }
+    if (!salesExpenseInvoice.trim()) {
+      setSalesActionStatus("Invoice number is required.");
+      return;
+    }
+    const amount = parseMoneyInput(salesExpenseAmount);
+    if (amount === null) {
+      setSalesActionStatus("Expense amount must be a non-negative number.");
+      return;
+    }
+    if (salesExpenseMethod === "CHECK") {
+      if (!salesExpenseCheckNumber.trim()) {
+        setSalesActionStatus("Check number is required for check expenses.");
+        return;
+      }
+      if (!salesExpensePayToCompany.trim()) {
+        setSalesActionStatus("Pay-to company is required for check expenses.");
+        return;
+      }
+    }
+
+    setSalesExpenseSaveLoading(true);
+    try {
+      const created = (await fetchJson("/reports/sales/expenses", {
+        method: "POST",
+        body: JSON.stringify({
+          date,
+          companyName: salesExpenseCompany.trim(),
+          invoiceNumber: salesExpenseInvoice.trim(),
+          paymentMethod: salesExpenseMethod,
+          amount,
+          checkNumber:
+            salesExpenseMethod === "CHECK"
+              ? salesExpenseCheckNumber.trim()
+              : undefined,
+          payToCompany:
+            salesExpenseMethod === "CHECK"
+              ? salesExpensePayToCompany.trim()
+              : undefined,
+          notes: salesExpenseNotes.trim() || undefined,
+        }),
+      })) as { expense?: { id?: string } };
+
+      if (salesExpenseReceipt?.uri) {
+        const expenseId = created.expense?.id;
+        if (!expenseId) {
+          throw new Error("Expense saved, but receipt upload could not start.");
+        }
+        const form = new FormData();
+        form.append("file", {
+          uri: salesExpenseReceipt.uri,
+          name: salesExpenseReceipt.fileName,
+          type: salesExpenseReceipt.mimeType,
+        } as any);
+        await fetchJson(`/reports/sales/expenses/${expenseId}/receipt`, {
+          method: "POST",
+          body: form,
+        });
+      }
+
+      setSalesActionStatus(
+        salesExpenseReceipt
+          ? "Daily expense and receipt saved."
+          : "Daily expense saved.",
+      );
+      setSalesExpenseCompany("");
+      setSalesExpenseInvoice("");
+      setSalesExpenseAmount("0");
+      setSalesExpenseCheckNumber("");
+      setSalesExpensePayToCompany("");
+      setSalesExpenseNotes("");
+      setSalesExpenseMethod("CHECK");
+      setSalesExpenseReceipt(null);
+    } catch (error) {
+      setSalesActionStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to save daily expense.",
+      );
+    } finally {
+      setSalesExpenseSaveLoading(false);
+    }
+  };
+
+  const employeePunchStatus = useMemo(() => {
+    const statusById = new Map<string, string>();
+    activeNow.forEach((row) => {
+      statusById.set(row.id, row.status.toUpperCase());
+    });
+    return statusById;
+  }, [activeNow]);
 
   const loadSchedule = async (employeeId: string) => {
     try {
@@ -685,6 +1743,61 @@ export default function App() {
     );
   };
 
+  const adjustScheduleTime = (
+    weekday: number,
+    key: ScheduleTimeKey,
+    part: "hour" | "minute" | "meridiem",
+    direction: 1 | -1 = 1,
+  ) => {
+    setScheduleDays((prev) =>
+      prev.map((day) => {
+        if (day.weekday !== weekday) {
+          return day;
+        }
+        const current = parseScheduleTimeParts(day[key] || "");
+        if (part === "hour") {
+          const nextHour = current.hour + direction;
+          current.hour = nextHour > 12 ? 1 : nextHour < 1 ? 12 : nextHour;
+        } else if (part === "minute") {
+          const nextMinute = current.minute + direction * 5;
+          if (nextMinute >= 60) {
+            current.minute = 0;
+          } else if (nextMinute < 0) {
+            current.minute = 55;
+          } else {
+            current.minute = nextMinute;
+          }
+        } else {
+          current.meridiem = current.meridiem === "AM" ? "PM" : "AM";
+        }
+
+        return { ...day, [key]: toTwentyFourHourTime(current) };
+      }),
+    );
+  };
+
+  const setScheduleMeridiem = (
+    weekday: number,
+    key: ScheduleTimeKey,
+    meridiem: Meridiem,
+  ) => {
+    setScheduleDays((prev) =>
+      prev.map((day) => {
+        if (day.weekday !== weekday) {
+          return day;
+        }
+        const current = parseScheduleTimeParts(day[key] || "");
+        if (current.meridiem === meridiem) {
+          return day;
+        }
+        return {
+          ...day,
+          [key]: toTwentyFourHourTime({ ...current, meridiem }),
+        };
+      }),
+    );
+  };
+
   const saveSchedule = async () => {
     if (!scheduleEmployeeId) {
       setScheduleStatus("Select an employee first.");
@@ -700,7 +1813,9 @@ export default function App() {
           ...(sanitizeTime(day.startTime)
             ? { startTime: sanitizeTime(day.startTime) }
             : {}),
-          ...(sanitizeTime(day.endTime) ? { endTime: sanitizeTime(day.endTime) } : {}),
+          ...(sanitizeTime(day.endTime)
+            ? { endTime: sanitizeTime(day.endTime) }
+            : {}),
         }));
       await fetchJson(`/employee-schedules/${scheduleEmployeeId}`, {
         method: "PUT",
@@ -708,7 +1823,9 @@ export default function App() {
       });
       setScheduleStatus("Schedule saved.");
     } catch (error) {
-      setScheduleStatus(error instanceof Error ? error.message : "Unable to save schedule.");
+      setScheduleStatus(
+        error instanceof Error ? error.message : "Unable to save schedule.",
+      );
     }
   };
 
@@ -725,24 +1842,121 @@ export default function App() {
           notes: type === "OUT" ? "Admin clock-out" : "Admin clock-in",
         }),
       });
-      setPunchStatus(type === "OUT" ? "Employee clocked out." : "Employee clocked in.");
+      setPunchStatus(
+        type === "OUT" ? "Employee clocked out." : "Employee clocked in.",
+      );
       await loadActiveNow();
       await loadNotifications();
     } catch (error) {
       setPunchStatus(
-        error instanceof Error ? error.message : "Unable to clock out employee.",
+        error instanceof Error
+          ? error.message
+          : "Unable to clock out employee.",
       );
     } finally {
       setPunchLoadingId(null);
     }
   };
 
+  const text = copy[language] ?? copy.en;
+  const todayExpenseDate = formatUsDate(new Date());
+  const activeLocationLabel = useMemo(() => {
+    if (!scopedLocationId) {
+      return text.allLocations;
+    }
+    const office = offices.find((item) => item.id === scopedLocationId);
+    return office?.name || text.noLocationAssigned;
+  }, [offices, scopedLocationId, text.allLocations, text.noLocationAssigned]);
+  const selectedScheduleEmployee = useMemo(
+    () => employees.find((employee) => employee.id === scheduleEmployeeId) || null,
+    [employees, scheduleEmployeeId],
+  );
+  const filteredScheduleEmployees = useMemo(() => {
+    const lookup = scheduleEmployeeSearch.trim().toLowerCase();
+    if (!lookup) {
+      return employees;
+    }
+    return employees.filter((employee) =>
+      employee.name.toLowerCase().includes(lookup),
+    );
+  }, [employees, scheduleEmployeeSearch]);
+  const pendingScheduleOverrides = useMemo(
+    () =>
+      notifications
+        .map((notice) => {
+          const parsed = parseScheduleOverrideNotification(notice);
+          if (!parsed || parsed.status !== "PENDING") {
+            return null;
+          }
+          return {
+            requestId: parsed.requestId,
+            employeeName: parsed.employeeName || notice.employeeName || "Employee",
+            message: notice.message,
+            reasonMessage: parsed.reasonMessage,
+            attemptedAt: parsed.attemptedAt,
+            workDate: parsed.workDate,
+          };
+        })
+        .filter((row): row is {
+          requestId: string;
+          employeeName: string;
+          message: string;
+          reasonMessage: string;
+          attemptedAt: string;
+          workDate: string;
+        } => Boolean(row)),
+    [notifications],
+  );
+  const canAccessTab = useCallback(
+    (tab: Screen) => {
+      if (tab === "dashboard") return permissions.dashboard;
+      if (tab === "users") return permissions.users;
+      if (tab === "offices")
+        return permissions.locations || permissions.manageMultiLocation;
+      if (tab === "groups") return permissions.groups;
+      if (tab === "schedules") return permissions.schedules;
+      if (tab === "capture") return permissions.salesCapture;
+      if (tab === "reports") return permissions.reports;
+      if (tab === "alerts") return permissions.notifications;
+      return true;
+    },
+    [permissions],
+  );
+  const visibleTabs = useMemo(
+    () => tabs.filter((tab) => canAccessTab(tab)),
+    [canAccessTab],
+  );
+
+  useEffect(() => {
+    if (!loggedIn) {
+      return;
+    }
+    if (visibleTabs.length === 0) {
+      return;
+    }
+    if (!visibleTabs.includes(screen)) {
+      setScreen(visibleTabs[0]);
+    }
+  }, [loggedIn, screen, visibleTabs]);
+
   const renderLogin = () => (
     <View style={[styles.card, isLight && styles.cardLight]}>
       <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
-        Administrator Access
+        {text.loginTitle}
       </Text>
-      <Text style={[styles.label, isLight && styles.labelLight]}>Username</Text>
+      <Text style={[styles.label, isLight && styles.labelLight]}>
+        {text.tenant}
+      </Text>
+      <TextInput
+        style={[styles.input, isLight && styles.inputLight]}
+        placeholder={text.tenantPlaceholder}
+        value={tenantInput}
+        onChangeText={setTenantInput}
+        autoCapitalize="none"
+      />
+      <Text style={[styles.label, isLight && styles.labelLight]}>
+        {text.username}
+      </Text>
       <TextInput
         style={[styles.input, isLight && styles.inputLight]}
         placeholder="admin"
@@ -750,7 +1964,9 @@ export default function App() {
         onChangeText={setUsername}
         autoCapitalize="none"
       />
-      <Text style={[styles.label, isLight && styles.labelLight]}>Password</Text>
+      <Text style={[styles.label, isLight && styles.labelLight]}>
+        {text.password}
+      </Text>
       <TextInput
         style={[styles.input, isLight && styles.inputLight]}
         placeholder="••••••"
@@ -763,14 +1979,28 @@ export default function App() {
           {loginStatus}
         </Text>
       )}
-      <TouchableOpacity style={[styles.button, styles.primary]} onPress={handleLogin}>
+      <TouchableOpacity
+        style={[styles.button, styles.primary]}
+        onPress={handleLogin}
+        disabled={loginLoading}
+      >
         <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
-          Sign In
+          {loginLoading ? text.signingIn : text.signIn}
         </Text>
       </TouchableOpacity>
       <Text style={[styles.helperText, isLight && styles.helperTextLight]}>
-        Push alerts are enabled once you sign in.
+        {text.pushHelp}
       </Text>
+      {dataSyncError && (
+        <Text
+          style={[
+            styles.statusText,
+            { color: isLight ? "#b91c1c" : "#fca5a5" },
+          ]}
+        >
+          API sync: {dataSyncError}
+        </Text>
+      )}
     </View>
   );
 
@@ -786,12 +2016,19 @@ export default function App() {
             style={[styles.summaryTile, isLight && styles.summaryTileLight]}
           >
             <View style={styles.summaryHeader}>
-              <Text style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}>
+              <Text
+                style={[
+                  styles.summaryLabel,
+                  isLight && styles.summaryLabelLight,
+                ]}
+              >
                 TOTAL USERS
               </Text>
               <View style={[styles.summaryIcon, styles.summaryIconUsers]} />
             </View>
-            <Text style={[styles.summaryValue, isLight && styles.summaryValueLight]}>
+            <Text
+              style={[styles.summaryValue, isLight && styles.summaryValueLight]}
+            >
               {summary.total}
             </Text>
           </LinearGradient>
@@ -800,12 +2037,19 @@ export default function App() {
             style={[styles.summaryTile, isLight && styles.summaryTileLight]}
           >
             <View style={styles.summaryHeader}>
-              <Text style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}>
+              <Text
+                style={[
+                  styles.summaryLabel,
+                  isLight && styles.summaryLabelLight,
+                ]}
+              >
                 SYS ADMINS
               </Text>
               <View style={[styles.summaryIcon, styles.summaryIconShield]} />
             </View>
-            <Text style={[styles.summaryValue, isLight && styles.summaryValueLight]}>
+            <Text
+              style={[styles.summaryValue, isLight && styles.summaryValueLight]}
+            >
               {summary.admins}
             </Text>
           </LinearGradient>
@@ -814,12 +2058,19 @@ export default function App() {
             style={[styles.summaryTile, isLight && styles.summaryTileLight]}
           >
             <View style={styles.summaryHeader}>
-              <Text style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}>
+              <Text
+                style={[
+                  styles.summaryLabel,
+                  isLight && styles.summaryLabelLight,
+                ]}
+              >
                 TIME ADMINS
               </Text>
               <View style={[styles.summaryIcon, styles.summaryIconTime]} />
             </View>
-            <Text style={[styles.summaryValue, isLight && styles.summaryValueLight]}>
+            <Text
+              style={[styles.summaryValue, isLight && styles.summaryValueLight]}
+            >
               {summary.timeAdmins}
             </Text>
           </LinearGradient>
@@ -828,12 +2079,19 @@ export default function App() {
             style={[styles.summaryTile, isLight && styles.summaryTileLight]}
           >
             <View style={styles.summaryHeader}>
-              <Text style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}>
+              <Text
+                style={[
+                  styles.summaryLabel,
+                  isLight && styles.summaryLabelLight,
+                ]}
+              >
                 REPORTS
               </Text>
               <View style={[styles.summaryIcon, styles.summaryIconReports]} />
             </View>
-            <Text style={[styles.summaryValue, isLight && styles.summaryValueLight]}>
+            <Text
+              style={[styles.summaryValue, isLight && styles.summaryValueLight]}
+            >
               {summary.reports}
             </Text>
           </LinearGradient>
@@ -853,70 +2111,183 @@ export default function App() {
             const actionLabel = isActive ? "Clock Out" : "Clock In";
             const actionType = isActive ? "OUT" : "IN";
             return (
-            <View key={row.id} style={[styles.workingCard, isLight && styles.workingCardLight]}>
-              <View style={styles.workingRow}>
-                <View style={styles.workingLeft}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>
-                      {row.name
-                        .split(" ")
-                        .map((part) => part[0])
-                        .slice(0, 2)
-                        .join("")
-                        .toUpperCase()}
+              <View
+                key={row.id}
+                style={[styles.workingCard, isLight && styles.workingCardLight]}
+              >
+                <View style={styles.workingRow}>
+                  <View style={styles.workingLeft}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {row.name
+                          .split(" ")
+                          .map((part) => part[0])
+                          .slice(0, 2)
+                          .join("")
+                          .toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[styles.listName, isLight && styles.listNameLight]}
+                    >
+                      {row.name}
                     </Text>
                   </View>
-                  <Text style={[styles.listName, isLight && styles.listNameLight]}>
-                    {row.name}
-                  </Text>
-                </View>
-                <View style={styles.listActions}>
-                  <View
-                    style={[
-                      styles.statusPill,
-                      !isActive && styles.statusPillOut,
-                    ]}
-                  >
-                    <View style={[styles.statusDot, !isActive && styles.statusDotOut]} />
-                    <Text
+                  <View style={styles.listActions}>
+                    <View
                       style={[
-                        styles.statusPillText,
-                        !isActive && styles.statusPillTextOut,
+                        styles.statusPill,
+                        !isActive && styles.statusPillOut,
                       ]}
                     >
-                      {status}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[
-                      isActive ? styles.inlineButton : styles.inlineButtonIn,
-                      isLight &&
-                        (isActive ? styles.inlineButtonLight : styles.inlineButtonInLight),
-                      punchLoadingId === row.id && styles.inlineButtonDisabled,
-                    ]}
-                    onPress={() => handleForcePunch(row.id, actionType)}
-                    disabled={punchLoadingId === row.id}
-                  >
-                    <Text
+                      <View
+                        style={[
+                          styles.statusDot,
+                          !isActive && styles.statusDotOut,
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.statusPillText,
+                          !isActive && styles.statusPillTextOut,
+                        ]}
+                      >
+                        {status}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
                       style={[
-                        isActive ? styles.inlineButtonText : styles.inlineButtonTextIn,
+                        isActive ? styles.inlineButton : styles.inlineButtonIn,
                         isLight &&
                           (isActive
-                            ? styles.inlineButtonTextLight
-                            : styles.inlineButtonTextInLight),
+                            ? styles.inlineButtonLight
+                            : styles.inlineButtonInLight),
+                        punchLoadingId === row.id &&
+                          styles.inlineButtonDisabled,
+                      ]}
+                      onPress={() => handleForcePunch(row.id, actionType)}
+                      disabled={punchLoadingId === row.id}
+                    >
+                      <Text
+                        style={[
+                          isActive
+                            ? styles.inlineButtonText
+                            : styles.inlineButtonTextIn,
+                          isLight &&
+                            (isActive
+                              ? styles.inlineButtonTextLight
+                              : styles.inlineButtonTextInLight),
+                        ]}
+                      >
+                        {punchLoadingId === row.id ? "Working..." : actionLabel}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            );
+          })
+        )}
+        <View style={[styles.divider, isLight && styles.dividerLight]} />
+        <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
+          Pending Clock-In Approvals
+        </Text>
+        {pendingScheduleOverrides.length === 0 ? (
+          <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+            No pending approval requests.
+          </Text>
+        ) : (
+          pendingScheduleOverrides.map((request) => {
+            const isBusy = scheduleOverrideLoadingId === request.requestId;
+            return (
+              <View
+                key={request.requestId}
+                style={[styles.workingCard, isLight && styles.workingCardLight]}
+              >
+                <View style={styles.reportRowMain}>
+                  <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                    {request.employeeName}
+                  </Text>
+                  <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                    {request.message}
+                  </Text>
+                  {request.reasonMessage ? (
+                    <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                      {request.reasonMessage}
+                    </Text>
+                  ) : null}
+                  {request.workDate ? (
+                    <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                      Work date: {formatDisplayDate(request.workDate)}
+                    </Text>
+                  ) : null}
+                  {request.attemptedAt ? (
+                    <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                      Attempted: {new Date(request.attemptedAt).toLocaleString()}
+                    </Text>
+                  ) : null}
+                </View>
+                <View style={[styles.rowActions, { marginTop: 10 }]}>
+                  <TouchableOpacity
+                    style={[
+                      styles.secondaryButton,
+                      styles.actionButtonCompact,
+                      isLight && styles.secondaryButtonLight,
+                      isBusy && styles.inlineButtonDisabled,
+                    ]}
+                    disabled={isBusy}
+                    onPress={() =>
+                      handleScheduleOverrideDecision(request.requestId, true)
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.secondaryButtonText,
+                        isLight && styles.secondaryButtonTextLight,
                       ]}
                     >
-                      {punchLoadingId === row.id ? "Working..." : actionLabel}
+                      {isBusy ? "Working..." : "Approve"}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.secondaryButton,
+                      styles.actionButtonCompact,
+                      styles.secondaryButtonDanger,
+                      isBusy && styles.inlineButtonDisabled,
+                    ]}
+                    disabled={isBusy}
+                    onPress={() =>
+                      handleScheduleOverrideDecision(request.requestId, false)
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.secondaryButtonText,
+                        styles.secondaryButtonDangerText,
+                      ]}
+                    >
+                      Reject
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
-            </View>
-          )})
+            );
+          })
         )}
         {punchStatus && (
           <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
             {punchStatus}
+          </Text>
+        )}
+        {dataSyncError && (
+          <Text
+            style={[
+              styles.statusText,
+              { color: isLight ? "#b91c1c" : "#fca5a5" },
+            ]}
+          >
+            API sync: {dataSyncError}
           </Text>
         )}
         <Text style={[styles.footerNote, isLight && styles.footerNoteLight]}>
@@ -924,82 +2295,68 @@ export default function App() {
         </Text>
       </View>
 
-      <View style={[styles.card, isLight && styles.cardLight]}>
-        <View style={styles.calendarHeader}>
-          <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
-            Calendar
-          </Text>
-          <View style={styles.calendarControls}>
-            <TouchableOpacity
-              style={[styles.calendarButton, isLight && styles.calendarButtonLight]}
-              onPress={() => setCalendarOffset((prev) => prev - 1)}
-            >
-              <Text
-                style={[
-                  styles.calendarButtonText,
-                  isLight && styles.calendarButtonTextLight,
-                ]}
-              >
-                ◀
-              </Text>
-            </TouchableOpacity>
-            <Text style={[styles.calendarLabel, isLight && styles.calendarLabelLight]}>
-              {calendar.label}
-            </Text>
-            <TouchableOpacity
-              style={[styles.calendarButton, isLight && styles.calendarButtonLight]}
-              onPress={() => setCalendarOffset((prev) => prev + 1)}
-            >
-              <Text
-                style={[
-                  styles.calendarButtonText,
-                  isLight && styles.calendarButtonTextLight,
-                ]}
-              >
-                ▶
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-        <View style={styles.calendarGrid}>
-          {["S", "M", "T", "W", "T", "F", "S"].map((day, index) => (
-            <Text key={`${day}-${index}`} style={styles.calendarDayHead}>
-              {day}
-            </Text>
-          ))}
-          {calendar.days.map((cell, index) => (
-            <View
-              key={`${cell.day}-${index}`}
-              style={[
-                styles.calendarCell,
-                cell.day === 0 && styles.calendarCellEmpty,
-                cell.isToday && styles.calendarCellToday,
-                isLight && styles.calendarCellLight,
-                cell.isToday && isLight && styles.calendarCellTodayLight,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.calendarCellText,
-                  isLight && styles.calendarCellTextLight,
-                  cell.day === 0 && styles.calendarCellTextEmpty,
-                  cell.isToday && styles.calendarCellTextToday,
-                  cell.isToday && isLight && styles.calendarCellTextTodayLight,
-                ]}
-              >
-                {cell.day ? cell.day : ""}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </View>
     </>
   );
 
   const renderUsers = () => (
     <View style={[styles.card, isLight && styles.cardLight]}>
-      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Users</Text>
-      <Text style={[styles.label, isLight && styles.labelLight]}>Create New User</Text>
+      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
+        Users
+      </Text>
+      <View style={styles.rowActions}>
+        <Text style={[styles.label, isLight && styles.labelLight]}>
+          Current Users: {employees.length}
+        </Text>
+        <TouchableOpacity
+          style={[
+            styles.secondaryButton,
+            isLight && styles.secondaryButtonLight,
+            styles.actionButtonCompact,
+          ]}
+          onPress={() => {
+            loadEmployees();
+            loadActiveNow();
+            loadSummary();
+          }}
+        >
+          <Text
+            style={[
+              styles.secondaryButtonText,
+              isLight && styles.secondaryButtonTextLight,
+            ]}
+          >
+            Refresh
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {employees.length === 0 ? (
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          No users loaded yet. Tap Refresh.
+        </Text>
+      ) : (
+        <View style={[styles.userQuickList, isLight && styles.userQuickListLight]}>
+          {employees.slice(0, 8).map((employee) => {
+            const status = employee.active ? "Active" : "Disabled";
+            return (
+              <Text
+                key={`quick-${employee.id}`}
+                style={[styles.listMeta, isLight && styles.listMetaLight]}
+              >
+                {employee.name} · {status}
+              </Text>
+            );
+          })}
+        </View>
+      )}
+      {dataSyncError ? (
+        <Text style={[styles.statusText, { color: isLight ? "#b91c1c" : "#fca5a5" }]}>
+          API sync: {dataSyncError}
+        </Text>
+      ) : null}
+      <View style={[styles.divider, isLight && styles.dividerLight]} />
+      <Text style={[styles.label, isLight && styles.labelLight]}>
+        Create New User
+      </Text>
       <TextInput
         style={[styles.input, isLight && styles.inputLight]}
         placeholder="Full name"
@@ -1104,14 +2461,19 @@ export default function App() {
           {userStatus}
         </Text>
       )}
-      <TouchableOpacity style={[styles.button, styles.primary]} onPress={handleCreateUser}>
+      <TouchableOpacity
+        style={[styles.button, styles.primary]}
+        onPress={handleCreateUser}
+      >
         <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
           Create User
         </Text>
       </TouchableOpacity>
 
       <View style={[styles.divider, isLight && styles.dividerLight]} />
-      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Edit User</Text>
+      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
+        Edit User
+      </Text>
       {editUserLoading && (
         <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
           Loading user...
@@ -1123,7 +2485,9 @@ export default function App() {
         </Text>
       ) : (
         <>
-          <Text style={[styles.label, isLight && styles.labelLight]}>Full Name</Text>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            Full Name
+          </Text>
           <TextInput
             style={[styles.input, isLight && styles.inputLight]}
             value={editUserForm.fullName}
@@ -1132,7 +2496,9 @@ export default function App() {
             }
             placeholder="Full name"
           />
-          <Text style={[styles.label, isLight && styles.labelLight]}>Display Name</Text>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            Display Name
+          </Text>
           <TextInput
             style={[styles.input, isLight && styles.inputLight]}
             value={editUserForm.displayName}
@@ -1141,7 +2507,9 @@ export default function App() {
             }
             placeholder="Display name"
           />
-          <Text style={[styles.label, isLight && styles.labelLight]}>Email</Text>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            Email
+          </Text>
           <TextInput
             style={[styles.input, isLight && styles.inputLight]}
             value={editUserForm.email}
@@ -1151,7 +2519,9 @@ export default function App() {
             autoCapitalize="none"
             placeholder="Email"
           />
-          <Text style={[styles.label, isLight && styles.labelLight]}>Reset PIN (optional)</Text>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            Reset PIN (optional)
+          </Text>
           <TextInput
             style={[styles.input, isLight && styles.inputLight]}
             value={editUserForm.pin}
@@ -1162,7 +2532,9 @@ export default function App() {
             maxLength={4}
             placeholder="4-digit PIN"
           />
-          <Text style={[styles.label, isLight && styles.labelLight]}>Hourly Rate</Text>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            Hourly Rate
+          </Text>
           <TextInput
             style={[styles.input, isLight && styles.inputLight]}
             value={editUserForm.hourlyRate}
@@ -1173,7 +2545,9 @@ export default function App() {
             placeholder="15.00"
           />
 
-          <Text style={[styles.label, isLight && styles.labelLight]}>Office</Text>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            Location
+          </Text>
           <View style={styles.toggleRow}>
             <TouchableOpacity
               style={[
@@ -1182,16 +2556,20 @@ export default function App() {
                 !editUserForm.officeId && styles.toggleActive,
                 !editUserForm.officeId && isLight && styles.toggleActiveLight,
               ]}
-              onPress={() => setEditUserForm((prev) => ({ ...prev, officeId: "" }))}
+              onPress={() =>
+                setEditUserForm((prev) => ({ ...prev, officeId: "" }))
+              }
             >
               <Text
                 style={[
                   styles.toggleText,
                   isLight && styles.toggleTextLight,
-                  !editUserForm.officeId && isLight && styles.toggleTextLightActive,
+                  !editUserForm.officeId &&
+                    isLight &&
+                    styles.toggleTextLightActive,
                 ]}
               >
-                No Office
+                No Location
               </Text>
             </TouchableOpacity>
             {offices.map((office) => (
@@ -1201,7 +2579,9 @@ export default function App() {
                   styles.togglePill,
                   isLight && styles.togglePillLight,
                   editUserForm.officeId === office.id && styles.toggleActive,
-                  editUserForm.officeId === office.id && isLight && styles.toggleActiveLight,
+                  editUserForm.officeId === office.id &&
+                    isLight &&
+                    styles.toggleActiveLight,
                 ]}
                 onPress={() =>
                   setEditUserForm((prev) => ({ ...prev, officeId: office.id }))
@@ -1222,7 +2602,9 @@ export default function App() {
             ))}
           </View>
 
-          <Text style={[styles.label, isLight && styles.labelLight]}>Group</Text>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            Group
+          </Text>
           <View style={styles.toggleRow}>
             <TouchableOpacity
               style={[
@@ -1231,13 +2613,17 @@ export default function App() {
                 !editUserForm.groupId && styles.toggleActive,
                 !editUserForm.groupId && isLight && styles.toggleActiveLight,
               ]}
-              onPress={() => setEditUserForm((prev) => ({ ...prev, groupId: "" }))}
+              onPress={() =>
+                setEditUserForm((prev) => ({ ...prev, groupId: "" }))
+              }
             >
               <Text
                 style={[
                   styles.toggleText,
                   isLight && styles.toggleTextLight,
-                  !editUserForm.groupId && isLight && styles.toggleTextLightActive,
+                  !editUserForm.groupId &&
+                    isLight &&
+                    styles.toggleTextLightActive,
                 ]}
               >
                 No Group
@@ -1250,7 +2636,9 @@ export default function App() {
                   styles.togglePill,
                   isLight && styles.togglePillLight,
                   editUserForm.groupId === group.id && styles.toggleActive,
-                  editUserForm.groupId === group.id && isLight && styles.toggleActiveLight,
+                  editUserForm.groupId === group.id &&
+                    isLight &&
+                    styles.toggleActiveLight,
                 ]}
                 onPress={() =>
                   setEditUserForm((prev) => ({ ...prev, groupId: group.id }))
@@ -1287,7 +2675,9 @@ export default function App() {
                 style={[
                   styles.toggleText,
                   isLight && styles.toggleTextLight,
-                  editUserForm.isAdmin && isLight && styles.toggleTextLightActive,
+                  editUserForm.isAdmin &&
+                    isLight &&
+                    styles.toggleTextLightActive,
                 ]}
               >
                 Sys Admin
@@ -1311,7 +2701,9 @@ export default function App() {
                 style={[
                   styles.toggleText,
                   isLight && styles.toggleTextLight,
-                  editUserForm.isTimeAdmin && isLight && styles.toggleTextLightActive,
+                  editUserForm.isTimeAdmin &&
+                    isLight &&
+                    styles.toggleTextLightActive,
                 ]}
               >
                 Time Admin
@@ -1335,7 +2727,9 @@ export default function App() {
                 style={[
                   styles.toggleText,
                   isLight && styles.toggleTextLight,
-                  editUserForm.isReports && isLight && styles.toggleTextLightActive,
+                  editUserForm.isReports &&
+                    isLight &&
+                    styles.toggleTextLightActive,
                 ]}
               >
                 Reports
@@ -1359,7 +2753,9 @@ export default function App() {
                 style={[
                   styles.toggleText,
                   isLight && styles.toggleTextLight,
-                  editUserForm.isServer && isLight && styles.toggleTextLightActive,
+                  editUserForm.isServer &&
+                    isLight &&
+                    styles.toggleTextLightActive,
                 ]}
               >
                 Server
@@ -1372,7 +2768,10 @@ export default function App() {
                 editUserForm.disabled && styles.toggleDanger,
               ]}
               onPress={() =>
-                setEditUserForm((prev) => ({ ...prev, disabled: !prev.disabled }))
+                setEditUserForm((prev) => ({
+                  ...prev,
+                  disabled: !prev.disabled,
+                }))
               }
             >
               <Text
@@ -1387,7 +2786,9 @@ export default function App() {
             </TouchableOpacity>
           </View>
           {editUserStatus && (
-            <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+            <Text
+              style={[styles.statusText, isLight && styles.statusTextLight]}
+            >
               {editUserStatus}
             </Text>
           )}
@@ -1397,7 +2798,8 @@ export default function App() {
                 styles.secondaryButton,
                 isLight && styles.secondaryButtonLight,
                 styles.actionButtonCompact,
-                (editUserLoading || editUserSaving) && styles.inlineButtonDisabled,
+                (editUserLoading || editUserSaving) &&
+                  styles.inlineButtonDisabled,
               ]}
               onPress={cancelEditUser}
               disabled={editUserLoading || editUserSaving}
@@ -1416,12 +2818,15 @@ export default function App() {
                 styles.button,
                 styles.primary,
                 styles.actionButtonPrimary,
-                (editUserLoading || editUserSaving) && styles.inlineButtonDisabled,
+                (editUserLoading || editUserSaving) &&
+                  styles.inlineButtonDisabled,
               ]}
               onPress={saveUserEdits}
               disabled={editUserLoading || editUserSaving}
             >
-              <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+              <Text
+                style={[styles.primaryText, isLight && styles.primaryTextLight]}
+              >
                 {editUserSaving ? "Saving..." : "Save Changes"}
               </Text>
             </TouchableOpacity>
@@ -1443,87 +2848,235 @@ export default function App() {
         contentContainerStyle={styles.userListContent}
         nestedScrollEnabled
       >
-        {employees.map((employee) => (
-          <View key={employee.id} style={styles.listRow}>
-            <View>
-              <Text style={[styles.listName, isLight && styles.listNameLight]}>
-                {employee.name}
-              </Text>
-              <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-                {employee.email || "No email"} • {employee.active ? "Active" : "Disabled"}
-              </Text>
-            </View>
-            <View style={styles.rowActions}>
-              <TouchableOpacity
-                style={[styles.secondaryButton, isLight && styles.secondaryButtonLight, styles.actionButtonCompact]}
-                onPress={() => loadUserForEdit(employee.id)}
-              >
+        {employees.map((employee) => {
+          const currentPunchStatus =
+            employeePunchStatus.get(employee.id) || "OUT";
+          const canClockOut = ["IN", "BREAK", "LUNCH"].includes(
+            currentPunchStatus,
+          );
+
+          return (
+            <View key={employee.id} style={styles.listRow}>
+              <View>
                 <Text
-                  style={[
-                    styles.secondaryButtonText,
-                    isLight && styles.secondaryButtonTextLight,
-                  ]}
+                  style={[styles.listName, isLight && styles.listNameLight]}
                 >
-                  Edit
+                  {employee.name}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.secondaryButton,
-                  isLight && styles.secondaryButtonLight,
-                  styles.actionButtonCompact,
-                  employee.active && styles.secondaryButtonDanger,
-                ]}
-                onPress={() => handleSetUserDisabled(employee.id, employee.active)}
-              >
                 <Text
-                  style={[
-                    styles.secondaryButtonText,
-                    isLight && styles.secondaryButtonTextLight,
-                    employee.active && styles.secondaryButtonDangerText,
-                  ]}
+                  style={[styles.listMeta, isLight && styles.listMetaLight]}
                 >
-                  {employee.active ? "Disable" : "Enable"}
+                  {employee.email || "No email"} •{" "}
+                  {employee.active ? "Active" : "Disabled"} • Punch:{" "}
+                  {currentPunchStatus}
                 </Text>
-              </TouchableOpacity>
+              </View>
+              <View style={styles.rowActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.secondaryButton,
+                    isLight && styles.secondaryButtonLight,
+                    styles.actionButtonCompact,
+                  ]}
+                  onPress={() => loadUserForEdit(employee.id)}
+                >
+                  <Text
+                    style={[
+                      styles.secondaryButtonText,
+                      isLight && styles.secondaryButtonTextLight,
+                    ]}
+                  >
+                    Edit
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.secondaryButton,
+                    isLight && styles.secondaryButtonLight,
+                    styles.actionButtonCompact,
+                    employee.active && styles.secondaryButtonDanger,
+                  ]}
+                  onPress={() =>
+                    handleSetUserDisabled(employee.id, employee.active)
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.secondaryButtonText,
+                      isLight && styles.secondaryButtonTextLight,
+                      employee.active && styles.secondaryButtonDangerText,
+                    ]}
+                  >
+                    {employee.active ? "Disable" : "Enable"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.secondaryButton,
+                    isLight && styles.secondaryButtonLight,
+                    styles.actionButtonCompact,
+                    canClockOut && styles.secondaryButtonDanger,
+                    (punchLoadingId === employee.id || !canClockOut) &&
+                      styles.inlineButtonDisabled,
+                  ]}
+                  onPress={() => handleForcePunch(employee.id, "OUT")}
+                  disabled={punchLoadingId === employee.id || !canClockOut}
+                >
+                  <Text
+                    style={[
+                      styles.secondaryButtonText,
+                      isLight && styles.secondaryButtonTextLight,
+                      canClockOut && styles.secondaryButtonDangerText,
+                    ]}
+                  >
+                    {punchLoadingId === employee.id
+                      ? "Working..."
+                      : canClockOut
+                        ? "Clock Out"
+                        : "Not Clocked In"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
       </ScrollView>
     </View>
   );
 
   const renderOffices = () => (
     <View style={[styles.card, isLight && styles.cardLight]}>
-      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Offices</Text>
-      <TextInput
-        style={[styles.input, isLight && styles.inputLight]}
-        placeholder="New office name"
-        value={newOfficeName}
-        onChangeText={setNewOfficeName}
-      />
+      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
+        Locations
+      </Text>
+      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+        {text.activeLocation}: {activeLocationLabel}
+      </Text>
+      {canManageMultiLocation ? (
+        <View style={styles.toggleRow}>
+          <TouchableOpacity
+            style={[
+              styles.togglePill,
+              isLight && styles.togglePillLight,
+              !scopedLocationId && styles.toggleActive,
+              !scopedLocationId && isLight && styles.toggleActiveLight,
+            ]}
+            onPress={() => setActiveLocationId("")}
+          >
+            <Text
+              style={[
+                styles.toggleText,
+                isLight && styles.toggleTextLight,
+                !scopedLocationId && isLight && styles.toggleTextLightActive,
+              ]}
+            >
+              {text.allLocations}
+            </Text>
+          </TouchableOpacity>
+          {offices.map((office) => (
+            <TouchableOpacity
+              key={`scope-${office.id}`}
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                scopedLocationId === office.id && styles.toggleActive,
+                scopedLocationId === office.id &&
+                  isLight &&
+                  styles.toggleActiveLight,
+              ]}
+              onPress={() => setActiveLocationId(office.id)}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  scopedLocationId === office.id &&
+                    isLight &&
+                    styles.toggleTextLightActive,
+                ]}
+              >
+                {office.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+      {canCreateLocations ? (
+        <>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            placeholder="New location name"
+            value={newOfficeName}
+            onChangeText={setNewOfficeName}
+          />
+          <TouchableOpacity
+            style={[styles.button, styles.primary]}
+            onPress={handleCreateOffice}
+          >
+            <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+              Create Location
+            </Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          Location creation is disabled for this manager.
+        </Text>
+      )}
       {officeStatus && (
         <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
           {officeStatus}
         </Text>
       )}
-      <TouchableOpacity style={[styles.button, styles.primary]} onPress={handleCreateOffice}>
-        <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
-          Create Office
-        </Text>
-      </TouchableOpacity>
       <View style={[styles.divider, isLight && styles.dividerLight]} />
-      {offices.map((office) => (
-        <Text key={office.id} style={[styles.listName, isLight && styles.listNameLight]}>
-          {office.name}
+      {offices.length === 0 ? (
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          No locations created yet.
         </Text>
-      ))}
+      ) : (
+        offices.map((office) => (
+          <View key={office.id} style={styles.listRow}>
+            <View>
+              <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                {office.name}
+              </Text>
+              <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                {scopedLocationId === office.id
+                  ? "Current location panel"
+                  : "Tap switch to open this location panel"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.secondaryButton,
+                isLight && styles.secondaryButtonLight,
+                styles.actionButtonCompact,
+              ]}
+              onPress={() => {
+                setActiveLocationId(office.id);
+                setScreen("dashboard");
+              }}
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  isLight && styles.secondaryButtonTextLight,
+                ]}
+              >
+                {scopedLocationId === office.id ? "Current" : "Switch"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ))
+      )}
     </View>
   );
 
   const renderGroups = () => (
     <View style={[styles.card, isLight && styles.cardLight]}>
-      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Groups</Text>
+      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
+        Groups
+      </Text>
       <TextInput
         style={[styles.input, isLight && styles.inputLight]}
         placeholder="New group name"
@@ -1535,17 +3088,362 @@ export default function App() {
           {groupStatus}
         </Text>
       )}
-      <TouchableOpacity style={[styles.button, styles.primary]} onPress={handleCreateGroup}>
+      <TouchableOpacity
+        style={[styles.button, styles.primary]}
+        onPress={handleCreateGroup}
+      >
         <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
           Create Group
         </Text>
       </TouchableOpacity>
       <View style={[styles.divider, isLight && styles.dividerLight]} />
       {groups.map((group) => (
-        <Text key={group.id} style={[styles.listName, isLight && styles.listNameLight]}>
+        <Text
+          key={group.id}
+          style={[styles.listName, isLight && styles.listNameLight]}
+        >
           {group.name}
         </Text>
       ))}
+    </View>
+  );
+
+  const renderCapture = () => (
+    <View style={[styles.card, isLight && styles.cardLight]}>
+      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
+        {text.captureTitle}
+      </Text>
+      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+        {text.captureSubtitle}
+      </Text>
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            captureMode === "sales" && styles.toggleActive,
+            captureMode === "sales" && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() => setCaptureMode("sales")}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              captureMode === "sales" &&
+                isLight &&
+                styles.toggleTextLightActive,
+            ]}
+          >
+            {text.salesToggle}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            captureMode === "expense" && styles.toggleActive,
+            captureMode === "expense" && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() => setCaptureMode("expense")}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              captureMode === "expense" &&
+                isLight &&
+                styles.toggleTextLightActive,
+            ]}
+          >
+            {text.expenseToggle}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={[styles.divider, isLight && styles.dividerLight]} />
+      {captureMode === "sales" ? (
+        <>
+          <Text
+            style={[
+              styles.cardTitle,
+              styles.reportSectionTitle,
+              isLight && styles.cardTitleLight,
+            ]}
+          >
+            {text.salesTitle}
+          </Text>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.salesDate}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesDate}
+            onChangeText={setSalesDate}
+            placeholder="MM/DD/YYYY"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.foodSales}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesFood}
+            onChangeText={setSalesFood}
+            keyboardType="decimal-pad"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.liquorSales}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesLiquor}
+            onChangeText={setSalesLiquor}
+            keyboardType="decimal-pad"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.cashPayments}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesCash}
+            onChangeText={setSalesCash}
+            keyboardType="decimal-pad"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.bankBatch}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesBatch}
+            onChangeText={setSalesBatch}
+            placeholder="Batch reference"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.notesOptional}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesNotes}
+            onChangeText={setSalesNotes}
+            placeholder="Manager notes"
+          />
+          <TouchableOpacity
+            style={[
+              styles.secondaryButton,
+              isLight && styles.secondaryButtonLight,
+              styles.actionButtonCompact,
+              salesSaveLoading && styles.inlineButtonDisabled,
+            ]}
+            onPress={saveSalesReport}
+            disabled={salesSaveLoading}
+          >
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                isLight && styles.secondaryButtonTextLight,
+              ]}
+            >
+              {salesSaveLoading ? text.saving : text.saveDailySales}
+            </Text>
+          </TouchableOpacity>
+        </>
+      ) : (
+        <>
+          <Text
+            style={[
+              styles.cardTitle,
+              styles.reportSectionTitle,
+              isLight && styles.cardTitleLight,
+            ]}
+          >
+            {text.expenseTitle}
+          </Text>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.expenseDate}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={todayExpenseDate}
+            editable={false}
+            selectTextOnFocus={false}
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.invoiceNumber}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesExpenseInvoice}
+            onChangeText={setSalesExpenseInvoice}
+            placeholder="INV-001"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.companyName}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesExpenseCompany}
+            onChangeText={setSalesExpenseCompany}
+            placeholder="Vendor name"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.paymentMethod}
+          </Text>
+          <View style={styles.toggleRow}>
+            {(["CHECK", "DEBIT_CARD", "CASH"] as ExpensePaymentMethod[]).map(
+              (method) => (
+                <TouchableOpacity
+                  key={`expense-method-${method}`}
+                  style={[
+                    styles.togglePill,
+                    isLight && styles.togglePillLight,
+                    salesExpenseMethod === method && styles.toggleActive,
+                    salesExpenseMethod === method &&
+                      isLight &&
+                      styles.toggleActiveLight,
+                  ]}
+                  onPress={() => setSalesExpenseMethod(method)}
+                >
+                  <Text
+                    style={[
+                      styles.toggleText,
+                      isLight && styles.toggleTextLight,
+                      salesExpenseMethod === method &&
+                        isLight &&
+                        styles.toggleTextLightActive,
+                    ]}
+                  >
+                    {expensePaymentMethodLabel(method)}
+                  </Text>
+                </TouchableOpacity>
+              ),
+            )}
+          </View>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {salesExpenseMethod === "CHECK"
+              ? text.checkTotal
+              : salesExpenseMethod === "DEBIT_CARD"
+                ? text.debitTotal
+                : text.cashTotal}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesExpenseAmount}
+            onChangeText={setSalesExpenseAmount}
+            keyboardType="decimal-pad"
+          />
+          {salesExpenseMethod === "CHECK" && (
+            <>
+              <Text style={[styles.label, isLight && styles.labelLight]}>
+                {text.checkNumber}
+              </Text>
+              <TextInput
+                style={[styles.input, isLight && styles.inputLight]}
+                value={salesExpenseCheckNumber}
+                onChangeText={setSalesExpenseCheckNumber}
+                placeholder="CHK-1002"
+              />
+              <Text style={[styles.label, isLight && styles.labelLight]}>
+                {text.payToCompany}
+              </Text>
+              <TextInput
+                style={[styles.input, isLight && styles.inputLight]}
+                value={salesExpensePayToCompany}
+                onChangeText={setSalesExpensePayToCompany}
+                placeholder="Company receiving payment"
+              />
+            </>
+          )}
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.notesOptional}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            value={salesExpenseNotes}
+            onChangeText={setSalesExpenseNotes}
+            placeholder="Expense notes"
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {text.receiptPhoto}
+          </Text>
+          <View style={styles.rowActions}>
+            <TouchableOpacity
+              style={[
+                styles.secondaryButton,
+                isLight && styles.secondaryButtonLight,
+                styles.actionButtonCompact,
+                salesExpenseReceiptLoading && styles.inlineButtonDisabled,
+              ]}
+              onPress={captureSalesExpenseReceipt}
+              disabled={salesExpenseReceiptLoading}
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  isLight && styles.secondaryButtonTextLight,
+                ]}
+              >
+                {salesExpenseReceiptLoading
+                  ? text.openingCamera
+                  : salesExpenseReceipt
+                    ? text.retakePhoto
+                    : text.takePhoto}
+              </Text>
+            </TouchableOpacity>
+            {salesExpenseReceipt ? (
+              <TouchableOpacity
+                style={[
+                  styles.secondaryButton,
+                  styles.secondaryButtonDanger,
+                  styles.actionButtonCompact,
+                ]}
+                onPress={() => setSalesExpenseReceipt(null)}
+              >
+                <Text
+                  style={[
+                    styles.secondaryButtonText,
+                    styles.secondaryButtonDangerText,
+                  ]}
+                >
+                  {text.removePhoto}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          {salesExpenseReceipt ? (
+            <Text style={[styles.helperText, isLight && styles.helperTextLight]}>
+              {text.attached} {salesExpenseReceipt.fileName}
+            </Text>
+          ) : (
+            <Text style={[styles.helperText, isLight && styles.helperTextLight]}>
+              {text.noPhoto}
+            </Text>
+          )}
+          <TouchableOpacity
+            style={[
+              styles.secondaryButton,
+              isLight && styles.secondaryButtonLight,
+              styles.actionButtonCompact,
+              salesExpenseSaveLoading && styles.inlineButtonDisabled,
+            ]}
+            onPress={saveSalesExpense}
+            disabled={salesExpenseSaveLoading}
+          >
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                isLight && styles.secondaryButtonTextLight,
+              ]}
+            >
+              {salesExpenseSaveLoading ? text.saving : text.saveDailyExpense}
+            </Text>
+          </TouchableOpacity>
+        </>
+      )}
+      {salesActionStatus && (
+        <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+          {salesActionStatus}
+        </Text>
+      )}
     </View>
   );
 
@@ -1555,7 +3453,7 @@ export default function App() {
         Run Reports
       </Text>
       <View style={styles.toggleRow}>
-        {(["daily", "hours", "payroll", "audit", "tips"] as ReportType[]).map((type) => (
+        {reportTypeOrder.map((type) => (
           <TouchableOpacity
             key={type}
             style={[
@@ -1578,19 +3476,28 @@ export default function App() {
           </TouchableOpacity>
         ))}
       </View>
-      <Text style={[styles.label, isLight && styles.labelLight]}>From (YYYY-MM-DD)</Text>
+      <Text style={[styles.label, isLight && styles.labelLight]}>
+        From (MM/DD/YYYY)
+      </Text>
       <TextInput
         style={[styles.input, isLight && styles.inputLight]}
         value={fromDate}
         onChangeText={setFromDate}
+        placeholder="MM/DD/YYYY"
       />
-      <Text style={[styles.label, isLight && styles.labelLight]}>To (YYYY-MM-DD)</Text>
+      <Text style={[styles.label, isLight && styles.labelLight]}>
+        To (MM/DD/YYYY)
+      </Text>
       <TextInput
         style={[styles.input, isLight && styles.inputLight]}
         value={toDate}
         onChangeText={setToDate}
+        placeholder="MM/DD/YYYY"
       />
-      <Text style={[styles.label, isLight && styles.labelLight]}>Employee Filter</Text>
+
+      <Text style={[styles.label, isLight && styles.labelLight]}>
+        Employee Filter
+      </Text>
       <View style={styles.toggleRow}>
         <TouchableOpacity
           style={[
@@ -1618,7 +3525,9 @@ export default function App() {
               styles.togglePill,
               isLight && styles.togglePillLight,
               reportEmployeeId === employee.id && styles.toggleActive,
-              reportEmployeeId === employee.id && isLight && styles.toggleActiveLight,
+              reportEmployeeId === employee.id &&
+                isLight &&
+                styles.toggleActiveLight,
             ]}
             onPress={() => setReportEmployeeId(employee.id)}
           >
@@ -1626,7 +3535,9 @@ export default function App() {
               style={[
                 styles.toggleText,
                 isLight && styles.toggleTextLight,
-                reportEmployeeId === employee.id && isLight && styles.toggleTextLightActive,
+                reportEmployeeId === employee.id &&
+                  isLight &&
+                  styles.toggleTextLightActive,
               ]}
             >
               {employee.name}
@@ -1634,13 +3545,18 @@ export default function App() {
           </TouchableOpacity>
         ))}
       </View>
+
       {reportStatus && (
         <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
           {reportStatus}
         </Text>
       )}
       <TouchableOpacity
-        style={[styles.button, styles.primary, reportLoading && styles.inlineButtonDisabled]}
+        style={[
+          styles.button,
+          styles.primary,
+          reportLoading && styles.inlineButtonDisabled,
+        ]}
         onPress={runReport}
         disabled={reportLoading}
       >
@@ -1677,7 +3593,10 @@ export default function App() {
                 {row.name}
               </Text>
               <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-                CC ${row.totalCreditCardTips?.toFixed?.(2) ?? row.totalCreditCardTips} • Cash ${row.totalCashTips?.toFixed?.(2) ?? row.totalCashTips}
+                CC $
+                {row.totalCreditCardTips?.toFixed?.(2) ??
+                  row.totalCreditCardTips}{" "}
+                • Cash ${row.totalCashTips?.toFixed?.(2) ?? row.totalCashTips}
               </Text>
             </View>
             <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
@@ -1707,9 +3626,12 @@ export default function App() {
 
   const renderAlerts = () => (
     <View style={[styles.card, isLight && styles.cardLight]}>
-      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Alerts</Text>
+      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
+        Alerts
+      </Text>
       <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-        Push notifications include punches, 6-hour no-break alerts, and 7-day tip summaries.
+        Push notifications include punches, schedule override requests, 6-hour
+        no-break alerts, and 7-day tip summaries.
       </Text>
       <TouchableOpacity
         style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
@@ -1724,25 +3646,116 @@ export default function App() {
           Refresh Alerts
         </Text>
       </TouchableOpacity>
+      {alertsStatus && (
+        <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+          {alertsStatus}
+        </Text>
+      )}
       <View style={[styles.divider, isLight && styles.dividerLight]} />
       {notifications.length === 0 ? (
         <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
           No alerts yet.
         </Text>
       ) : (
-        notifications.map((notice) => (
-          <View key={notice.id} style={styles.listRow}>
-            <View>
-              <Text style={[styles.listName, isLight && styles.listNameLight]}>
-                {notice.message}
-              </Text>
-              <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-                {notice.employeeName ? `${notice.employeeName} • ` : ""}
-                {new Date(notice.createdAt).toLocaleString()}
-              </Text>
+        notifications.map((notice) => {
+          const scheduleOverride = parseScheduleOverrideNotification(notice);
+          const canApproveOverride = scheduleOverride?.status === "PENDING";
+          const isBusy =
+            Boolean(scheduleOverride?.requestId) &&
+            scheduleOverrideLoadingId === scheduleOverride.requestId;
+
+          return (
+            <View key={notice.id} style={styles.listRow}>
+              <View style={styles.reportRowMain}>
+                <Text
+                  style={[styles.listName, isLight && styles.listNameLight]}
+                >
+                  {notice.message}
+                </Text>
+                <Text
+                  style={[styles.listMeta, isLight && styles.listMetaLight]}
+                >
+                  {notice.employeeName ? `${notice.employeeName} • ` : ""}
+                  {new Date(notice.createdAt).toLocaleString()}
+                </Text>
+                {scheduleOverride?.reasonMessage ? (
+                  <Text
+                    style={[styles.listMeta, isLight && styles.listMetaLight]}
+                  >
+                    {scheduleOverride.reasonMessage}
+                  </Text>
+                ) : null}
+                {scheduleOverride?.workDate ? (
+                  <Text
+                    style={[styles.listMeta, isLight && styles.listMetaLight]}
+                  >
+                    Work date: {formatDisplayDate(scheduleOverride.workDate)}
+                  </Text>
+                ) : null}
+                {scheduleOverride?.status &&
+                scheduleOverride.status !== "PENDING" ? (
+                  <Text
+                    style={[styles.listMeta, isLight && styles.listMetaLight]}
+                  >
+                    Status: {scheduleOverride.status}
+                  </Text>
+                ) : null}
+                {canApproveOverride && scheduleOverride ? (
+                  <View style={styles.rowActions}>
+                    <TouchableOpacity
+                      style={[
+                        styles.secondaryButton,
+                        styles.actionButtonCompact,
+                        isLight && styles.secondaryButtonLight,
+                        isBusy && styles.inlineButtonDisabled,
+                      ]}
+                      disabled={isBusy}
+                      onPress={() =>
+                        handleScheduleOverrideDecision(
+                          scheduleOverride.requestId,
+                          true,
+                        )
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.secondaryButtonText,
+                          isLight && styles.secondaryButtonTextLight,
+                        ]}
+                      >
+                        {isBusy ? "Working..." : "Approve"}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.secondaryButton,
+                        styles.actionButtonCompact,
+                        styles.secondaryButtonDanger,
+                        isBusy && styles.inlineButtonDisabled,
+                      ]}
+                      disabled={isBusy}
+                      onPress={() =>
+                        handleScheduleOverrideDecision(
+                          scheduleOverride.requestId,
+                          false,
+                        )
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.secondaryButtonText,
+                          styles.secondaryButtonDangerText,
+                        ]}
+                      >
+                        Reject
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+              </View>
             </View>
-          </View>
-        ))
+          );
+        })
       )}
     </View>
   );
@@ -1753,88 +3766,315 @@ export default function App() {
         Schedules
       </Text>
       <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-        Enable days an employee is allowed to clock in. Optional start/end times can
-        restrict clock-ins to a window.
+        Schedule for {selectedScheduleEmployee?.name || "employee"}
+      </Text>
+      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+        Enable days an employee is allowed to clock in. Optional start/end times
+        can restrict clock-ins to a window.
       </Text>
       <Text style={[styles.label, isLight && styles.labelLight]}>Employee</Text>
-      <View style={styles.toggleRow}>
-        {employees.map((employee) => (
-          <TouchableOpacity
-            key={employee.id}
+      <TouchableOpacity
+        style={[
+          styles.scheduleEmployeePicker,
+          isLight && styles.scheduleEmployeePickerLight,
+        ]}
+        disabled={employees.length === 0}
+        onPress={() =>
+          setScheduleEmployeePickerOpen((previous) => !previous)
+        }
+      >
+        <Text
+          style={[
+            styles.scheduleEmployeePickerText,
+            isLight && styles.scheduleEmployeePickerTextLight,
+          ]}
+        >
+          {selectedScheduleEmployee?.name || "Select employee"}
+        </Text>
+        <Text
+          style={[
+            styles.scheduleEmployeePickerArrow,
+            isLight && styles.scheduleEmployeePickerTextLight,
+          ]}
+        >
+          {scheduleEmployeePickerOpen ? "▲" : "▼"}
+        </Text>
+      </TouchableOpacity>
+      {scheduleEmployeePickerOpen && (
+        <View
+          style={[
+            styles.scheduleEmployeeMenu,
+            isLight && styles.scheduleEmployeeMenuLight,
+          ]}
+        >
+          <TextInput
             style={[
-              styles.togglePill,
-              isLight && styles.togglePillLight,
-              scheduleEmployeeId === employee.id && styles.toggleActive,
-              scheduleEmployeeId === employee.id && isLight && styles.toggleActiveLight,
+              styles.scheduleEmployeeSearchInput,
+              isLight && styles.scheduleEmployeeSearchInputLight,
             ]}
-            onPress={() => setScheduleEmployeeId(employee.id)}
+            placeholder="Search employee..."
+            placeholderTextColor={isLight ? "#64748b" : "#94a3b8"}
+            value={scheduleEmployeeSearch}
+            onChangeText={setScheduleEmployeeSearch}
+          />
+          <ScrollView
+            style={styles.scheduleEmployeeList}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
           >
-            <Text
-              style={[
-                styles.toggleText,
-                isLight && styles.toggleTextLight,
-                scheduleEmployeeId === employee.id && isLight && styles.toggleTextLightActive,
-              ]}
-            >
-              {employee.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {scheduleDays.map((day) => (
-        <View key={day.weekday} style={styles.scheduleRow}>
-          <TouchableOpacity
-            style={[
-              styles.scheduleToggle,
-              isLight && styles.scheduleToggleLight,
-              day.enabled && styles.scheduleToggleActive,
-            ]}
-            onPress={() => updateScheduleDay(day.weekday, "enabled", !day.enabled)}
-          >
-            <Text
-              style={[
-                styles.scheduleToggleText,
-                isLight && styles.scheduleToggleTextLight,
-                day.enabled && styles.scheduleToggleTextActive,
-              ]}
-            >
-              {day.label}
-            </Text>
-          </TouchableOpacity>
-          <View style={styles.scheduleTimes}>
-            <TextInput
-              style={[
-                styles.scheduleInput,
-                isLight && styles.inputLight,
-                !day.enabled && styles.scheduleInputDisabled,
-              ]}
-              editable={day.enabled}
-              value={day.startTime}
-              onChangeText={(value) => updateScheduleDay(day.weekday, "startTime", value)}
-              placeholder="09:00"
-            />
-            <Text style={[styles.scheduleDash, isLight && styles.listMetaLight]}>–</Text>
-            <TextInput
-              style={[
-                styles.scheduleInput,
-                isLight && styles.inputLight,
-                !day.enabled && styles.scheduleInputDisabled,
-              ]}
-              editable={day.enabled}
-              value={day.endTime}
-              onChangeText={(value) => updateScheduleDay(day.weekday, "endTime", value)}
-              placeholder="17:00"
-            />
-          </View>
+            {filteredScheduleEmployees.length === 0 ? (
+              <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                No employees found.
+              </Text>
+            ) : (
+              filteredScheduleEmployees.map((employee) => (
+                <TouchableOpacity
+                  key={employee.id}
+                  style={[
+                    styles.scheduleEmployeeItem,
+                    isLight && styles.scheduleEmployeeItemLight,
+                    scheduleEmployeeId === employee.id &&
+                      styles.scheduleEmployeeItemActive,
+                    scheduleEmployeeId === employee.id &&
+                      isLight &&
+                      styles.scheduleEmployeeItemActiveLight,
+                  ]}
+                  onPress={() => {
+                    setScheduleEmployeeId(employee.id);
+                    setScheduleEmployeePickerOpen(false);
+                    setScheduleEmployeeSearch("");
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.scheduleEmployeeItemText,
+                      isLight && styles.scheduleEmployeeItemTextLight,
+                      scheduleEmployeeId === employee.id &&
+                        styles.scheduleEmployeeItemTextActive,
+                    ]}
+                  >
+                    {employee.name}
+                  </Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
         </View>
-      ))}
+      )}
+
+      {scheduleDays.map((day) => {
+        const startParts = parseScheduleTimeParts(day.startTime || "09:00");
+        const endParts = parseScheduleTimeParts(day.endTime || "17:00");
+        return (
+          <View key={day.weekday} style={styles.scheduleRow}>
+            <TouchableOpacity
+              style={[
+                styles.scheduleToggle,
+                isLight && styles.scheduleToggleLight,
+                day.enabled && styles.scheduleToggleActive,
+              ]}
+              onPress={() =>
+                updateScheduleDay(day.weekday, "enabled", !day.enabled)
+              }
+            >
+              <Text
+                style={[
+                  styles.scheduleToggleText,
+                  isLight && styles.scheduleToggleTextLight,
+                  day.enabled && styles.scheduleToggleTextActive,
+                ]}
+              >
+                {day.label}
+              </Text>
+            </TouchableOpacity>
+            <View style={styles.scheduleTimes}>
+              <View
+                style={[
+                  styles.scheduleTimeCard,
+                  isLight && styles.scheduleTimeCardLight,
+                  !day.enabled && styles.scheduleInputDisabled,
+                ]}
+              >
+                <Text
+                  style={[styles.scheduleTimeLabel, isLight && styles.listMetaLight]}
+                >
+                  Start
+                </Text>
+                <Text
+                  style={[styles.scheduleTimeValue, isLight && styles.listNameLight]}
+                >
+                  {formatScheduleTimeLabel(day.startTime || "09:00")}
+                </Text>
+                <View style={styles.scheduleControlRow}>
+                  <TouchableOpacity
+                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    disabled={!day.enabled}
+                    onPress={() =>
+                      adjustScheduleTime(day.weekday, "startTime", "hour", -1)
+                    }
+                  >
+                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>-H</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    disabled={!day.enabled}
+                    onPress={() =>
+                      adjustScheduleTime(day.weekday, "startTime", "hour", 1)
+                    }
+                  >
+                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>+H</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    disabled={!day.enabled}
+                    onPress={() =>
+                      adjustScheduleTime(day.weekday, "startTime", "minute", -1)
+                    }
+                  >
+                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>-M</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    disabled={!day.enabled}
+                    onPress={() =>
+                      adjustScheduleTime(day.weekday, "startTime", "minute", 1)
+                    }
+                  >
+                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>+M</Text>
+                  </TouchableOpacity>
+                  <View style={styles.scheduleMeridiemGroup}>
+                    {(["AM", "PM"] as const).map((option) => (
+                      <TouchableOpacity
+                        key={`start-${day.weekday}-${option}`}
+                        style={[
+                          styles.scheduleMeridiemButton,
+                          isLight && styles.scheduleMeridiemButtonLight,
+                          startParts.meridiem === option &&
+                            styles.scheduleMeridiemButtonActive,
+                          startParts.meridiem === option &&
+                            isLight &&
+                            styles.scheduleMeridiemButtonActiveLight,
+                        ]}
+                        disabled={!day.enabled}
+                        onPress={() =>
+                          setScheduleMeridiem(day.weekday, "startTime", option)
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.scheduleMeridiemText,
+                            isLight && styles.scheduleMeridiemTextLight,
+                            startParts.meridiem === option &&
+                              styles.scheduleMeridiemTextActive,
+                          ]}
+                        >
+                          {option}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </View>
+              <View
+                style={[
+                  styles.scheduleTimeCard,
+                  isLight && styles.scheduleTimeCardLight,
+                  !day.enabled && styles.scheduleInputDisabled,
+                ]}
+              >
+                <Text
+                  style={[styles.scheduleTimeLabel, isLight && styles.listMetaLight]}
+                >
+                  End
+                </Text>
+                <Text
+                  style={[styles.scheduleTimeValue, isLight && styles.listNameLight]}
+                >
+                  {formatScheduleTimeLabel(day.endTime || "17:00")}
+                </Text>
+                <View style={styles.scheduleControlRow}>
+                  <TouchableOpacity
+                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    disabled={!day.enabled}
+                    onPress={() =>
+                      adjustScheduleTime(day.weekday, "endTime", "hour", -1)
+                    }
+                  >
+                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>-H</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    disabled={!day.enabled}
+                    onPress={() =>
+                      adjustScheduleTime(day.weekday, "endTime", "hour", 1)
+                    }
+                  >
+                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>+H</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    disabled={!day.enabled}
+                    onPress={() =>
+                      adjustScheduleTime(day.weekday, "endTime", "minute", -1)
+                    }
+                  >
+                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>-M</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    disabled={!day.enabled}
+                    onPress={() =>
+                      adjustScheduleTime(day.weekday, "endTime", "minute", 1)
+                    }
+                  >
+                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>+M</Text>
+                  </TouchableOpacity>
+                  <View style={styles.scheduleMeridiemGroup}>
+                    {(["AM", "PM"] as const).map((option) => (
+                      <TouchableOpacity
+                        key={`end-${day.weekday}-${option}`}
+                        style={[
+                          styles.scheduleMeridiemButton,
+                          isLight && styles.scheduleMeridiemButtonLight,
+                          endParts.meridiem === option &&
+                            styles.scheduleMeridiemButtonActive,
+                          endParts.meridiem === option &&
+                            isLight &&
+                            styles.scheduleMeridiemButtonActiveLight,
+                        ]}
+                        disabled={!day.enabled}
+                        onPress={() =>
+                          setScheduleMeridiem(day.weekday, "endTime", option)
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.scheduleMeridiemText,
+                            isLight && styles.scheduleMeridiemTextLight,
+                            endParts.meridiem === option &&
+                              styles.scheduleMeridiemTextActive,
+                          ]}
+                        >
+                          {option}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+        );
+      })}
       {scheduleStatus && (
         <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
           {scheduleStatus}
         </Text>
       )}
-      <TouchableOpacity style={[styles.button, styles.primary]} onPress={saveSchedule}>
+      <TouchableOpacity
+        style={[styles.button, styles.primary]}
+        onPress={saveSchedule}
+      >
         <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
           Save Schedule
         </Text>
@@ -1853,6 +4093,8 @@ export default function App() {
         return renderOffices();
       case "groups":
         return renderGroups();
+      case "capture":
+        return renderCapture();
       case "reports":
         return renderReports();
       case "alerts":
@@ -1885,73 +4127,177 @@ export default function App() {
                 ClockIn Admin
               </Text>
               <Text style={[styles.subtitle, isLight && styles.subtitleLight]}>
-                Native admin console
+                {text.subtitle}
               </Text>
             </View>
-            <TouchableOpacity
-              style={[styles.themeToggle, isLight && styles.themeToggleLight]}
-              onPress={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-            >
-              <Text
+            <View style={styles.headerActions}>
+              <View
                 style={[
-                  styles.themeToggleText,
-                  isLight && styles.themeToggleTextLight,
+                  styles.languageSelector,
+                  isLight && styles.languageSelectorLight,
                 ]}
-              >
-                {theme === "dark" ? "Light" : "Dark"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {loggedIn && (
-            <View style={[styles.tabShell, isLight && styles.tabShellLight]}>
-              {tabs.map((tab) => (
-                <TouchableOpacity
-                  key={tab.key}
-                  style={[
-                    styles.tab,
-                    isLight && styles.tabLight,
-                    screen === tab.key && (isLight ? styles.tabActiveLight : styles.tabActive),
-                  ]}
-                  onPress={() => setScreen(tab.key)}
-                >
-                  <Text
-                    style={[
-                      styles.tabText,
-                      isLight && styles.tabTextLight,
-                      screen === tab.key && isLight && styles.tabTextLightActive,
-                    ]}
-                  >
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                style={[
-                  styles.tab,
-                  styles.tabDanger,
-                  isLight && styles.tabDangerLight,
-                ]}
-                onPress={() => {
-                  setLoggedIn(false);
-                  setUsername("");
-                  setPassword("");
-                }}
               >
                 <Text
                   style={[
-                    styles.tabText,
-                    isLight && styles.tabTextLight,
-                    isLight && styles.tabTextLightDanger,
+                    styles.languageLabel,
+                    isLight && styles.languageLabelLight,
                   ]}
                 >
-                  Logout
+                  {text.language}
+                </Text>
+                {(["en", "es"] as Lang[]).map((langOption) => (
+                  <TouchableOpacity
+                    key={langOption}
+                    style={[
+                      styles.languageOption,
+                      isLight && styles.languageOptionLight,
+                      language === langOption &&
+                        (isLight
+                          ? styles.languageOptionActiveLight
+                          : styles.languageOptionActive),
+                    ]}
+                    onPress={() => setLanguage(langOption)}
+                  >
+                    <Text
+                      style={[
+                        styles.languageOptionText,
+                        isLight && styles.languageOptionTextLight,
+                        language === langOption &&
+                          styles.languageOptionTextActive,
+                      ]}
+                    >
+                      {langOption.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={[styles.themeToggle, isLight && styles.themeToggleLight]}
+                onPress={() =>
+                  setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+                }
+              >
+                <Text
+                  style={[
+                    styles.themeToggleText,
+                    isLight && styles.themeToggleTextLight,
+                  ]}
+                >
+                  {theme === "dark" ? text.light : text.dark}
                 </Text>
               </TouchableOpacity>
+              {loggedIn && (
+                <TouchableOpacity
+                  style={[
+                    styles.themeToggle,
+                    styles.headerLogoutButton,
+                    isLight && styles.headerLogoutButtonLight,
+                  ]}
+                  onPress={clearAdminSession}
+                >
+                  <Text
+                    style={[
+                      styles.themeToggleText,
+                      styles.headerLogoutText,
+                      isLight && styles.headerLogoutTextLight,
+                    ]}
+                  >
+                    {text.logout}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
-          )}
+          </View>
 
-          {renderContent()}
+      {loggedIn && (
+        <View style={[styles.tabShell, isLight && styles.tabShellLight]}>
+          <View style={styles.tenantPill}>
+              <Text
+                style={[
+                  styles.tenantPillText,
+                  isLight && styles.tenantPillTextLight,
+                ]}
+              >
+              {text.tenant}: {activeTenantLabel || activeTenant}
+              </Text>
+            </View>
+          {canManageMultiLocation ? (
+            <View style={styles.tenantPill}>
+              <Text
+                style={[
+                  styles.tenantPillText,
+                  isLight && styles.tenantPillTextLight,
+                ]}
+              >
+                {text.activeLocation}: {activeLocationLabel}
+              </Text>
+            </View>
+          ) : null}
+          {visibleTabs.map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              style={[
+                styles.tab,
+                isLight && styles.tabLight,
+                screen === tab &&
+                  (isLight ? styles.tabActiveLight : styles.tabActive),
+              ]}
+              onPress={() => setScreen(tab)}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  isLight && styles.tabTextLight,
+                  screen === tab && isLight && styles.tabTextLightActive,
+                ]}
+              >
+                {tabLabels[language][tab]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          {canManageMultiLocation ? (
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                styles.tabLocationSwitch,
+                isLight && styles.tabLocationSwitchLight,
+              ]}
+              onPress={() => setScreen("offices")}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  isLight && styles.tabTextLight,
+                  isLight && styles.tabTextLightActive,
+                ]}
+              >
+                {text.switchLocation}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[
+                styles.tab,
+                styles.tabDanger,
+                isLight && styles.tabDangerLight,
+              ]}
+              onPress={clearAdminSession}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  isLight && styles.tabTextLight,
+                  isLight && styles.tabTextLightDanger,
+                ]}
+              >
+                {text.logout}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {renderContent()}
         </ScrollView>
         <StatusBar style={theme === "dark" ? "light" : "dark"} />
       </SafeAreaView>
@@ -1979,18 +4325,60 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 16, fontWeight: "700", color: "#f8fafc" },
   title: { fontSize: 24, fontWeight: "700", color: "#eef2ff" },
   subtitle: { color: "rgba(226, 232, 240, 0.7)", marginTop: 4, fontSize: 13 },
-  themeToggle: {
+  headerActions: {
     marginLeft: "auto",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  languageSelector: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  languageSelectorLight: { backgroundColor: "#e2e8f0" },
+  languageLabel: {
+    color: "#f9f4ea",
+    fontWeight: "600",
+    fontSize: 11,
+  },
+  languageLabelLight: { color: "#0f172a" },
+  languageOption: {
+    borderRadius: 999,
+    backgroundColor: "rgba(148, 163, 184, 0.35)",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  languageOptionLight: { backgroundColor: "#cbd5e1" },
+  languageOptionActive: { backgroundColor: "#2f5bff" },
+  languageOptionActiveLight: { backgroundColor: "#2563eb" },
+  languageOptionText: {
+    color: "#f8fafc",
+    fontWeight: "700",
+    fontSize: 11,
+    letterSpacing: 0.4,
+  },
+  languageOptionTextLight: { color: "#0f172a" },
+  languageOptionTextActive: { color: "#f8fafc" },
+  themeToggle: {
     backgroundColor: "rgba(255, 255, 255, 0.12)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
   },
+  headerLogoutButton: { backgroundColor: "rgba(239, 68, 68, 0.7)" },
+  headerLogoutButtonLight: { backgroundColor: "#ef4444" },
   themeToggleText: {
     color: "#f9f4ea",
     fontWeight: "600",
     fontSize: 12,
   },
+  headerLogoutText: { color: "#ffffff" },
+  headerLogoutTextLight: { color: "#ffffff" },
   tabRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2001,10 +4389,26 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     padding: 6,
     flexDirection: "row",
+    alignItems: "center",
     flexWrap: "wrap",
     gap: 8,
   },
   tabShellLight: { backgroundColor: "#e2e8f0" },
+  tenantPill: {
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 6,
+  },
+  tenantPillText: {
+    color: "#dbeafe",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  tenantPillTextLight: { color: "#1e3a8a" },
   tab: {
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 999,
@@ -2012,6 +4416,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   tabActive: { backgroundColor: "#2f5bff" },
+  tabLocationSwitch: { backgroundColor: "#2563eb" },
+  tabLocationSwitchLight: { backgroundColor: "#2563eb" },
   tabDanger: { backgroundColor: "rgba(239, 68, 68, 0.7)" },
   tabText: { color: "#f9f4ea", fontWeight: "600", fontSize: 12 },
   titleLight: { color: "#0f172a" },
@@ -2035,7 +4441,12 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 12 },
   },
-  cardTitle: { fontSize: 18, fontWeight: "700", color: "#e2e8f0", marginBottom: 12 },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#e2e8f0",
+    marginBottom: 12,
+  },
   cardLight: {
     backgroundColor: "#ffffff",
     borderColor: "rgba(15, 23, 42, 0.08)",
@@ -2137,11 +4548,21 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     color: "#cbd5f5",
   },
-  summaryValue: { fontSize: 20, fontWeight: "700", color: "#e2e8f0", marginTop: 6 },
+  summaryValue: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#e2e8f0",
+    marginTop: 6,
+  },
   summaryTileLight: { backgroundColor: "#f8fafc" },
   summaryLabelLight: { color: "#64748b" },
   summaryValueLight: { color: "#0f172a" },
-  toggleRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
+  toggleRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 8,
+  },
   togglePill: {
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -2168,8 +4589,156 @@ const styles = StyleSheet.create({
   listMeta: { fontSize: 12, color: "#94a3b8" },
   listNameLight: { color: "#0f172a" },
   listMetaLight: { color: "#64748b" },
+  userQuickList: {
+    gap: 4,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.2)",
+    backgroundColor: "rgba(15, 23, 42, 0.25)",
+    marginBottom: 8,
+  },
+  userQuickListLight: {
+    borderColor: "rgba(15, 23, 42, 0.12)",
+    backgroundColor: "#f8fafc",
+  },
   userList: { maxHeight: 260, marginTop: 8 },
   userListContent: { paddingBottom: 8 },
+  reportSectionTitle: { marginTop: 14, fontSize: 16, marginBottom: 8 },
+  reportTotalsGrid: {
+    marginTop: 8,
+    marginBottom: 8,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.38)",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.2)",
+    padding: 10,
+  },
+  reportTotalsGridLight: {
+    backgroundColor: "#f8fafc",
+    borderColor: "rgba(15, 23, 42, 0.12)",
+  },
+  reportTotalsTile: {
+    minWidth: 120,
+    flexGrow: 1,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+  },
+  reportTotalsLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: "#94a3b8",
+  },
+  reportTotalsValue: {
+    marginTop: 4,
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#e2e8f0",
+  },
+  reportRowMain: {
+    flex: 1,
+    paddingRight: 8,
+    gap: 2,
+  },
+  scheduleEmployeePicker: {
+    marginTop: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.24)",
+    backgroundColor: "rgba(15, 23, 42, 0.38)",
+    minHeight: 42,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  scheduleEmployeePickerLight: {
+    borderColor: "rgba(15, 23, 42, 0.14)",
+    backgroundColor: "#f8fafc",
+  },
+  scheduleEmployeePickerText: {
+    color: "#e2e8f0",
+    fontSize: 14,
+    fontWeight: "600",
+    flex: 1,
+  },
+  scheduleEmployeePickerTextLight: {
+    color: "#0f172a",
+  },
+  scheduleEmployeePickerArrow: {
+    color: "#94a3b8",
+    fontSize: 12,
+    fontWeight: "700",
+    marginLeft: 10,
+  },
+  scheduleEmployeeMenu: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.22)",
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    padding: 10,
+    gap: 8,
+  },
+  scheduleEmployeeMenuLight: {
+    borderColor: "rgba(15, 23, 42, 0.14)",
+    backgroundColor: "#ffffff",
+  },
+  scheduleEmployeeSearchInput: {
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.24)",
+    backgroundColor: "rgba(148, 163, 184, 0.12)",
+    color: "#e2e8f0",
+    paddingHorizontal: 10,
+  },
+  scheduleEmployeeSearchInputLight: {
+    borderColor: "rgba(15, 23, 42, 0.14)",
+    backgroundColor: "#f8fafc",
+    color: "#0f172a",
+  },
+  scheduleEmployeeList: {
+    maxHeight: 190,
+  },
+  scheduleEmployeeItem: {
+    minHeight: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.18)",
+    backgroundColor: "rgba(148, 163, 184, 0.1)",
+    paddingHorizontal: 10,
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  scheduleEmployeeItemLight: {
+    borderColor: "rgba(15, 23, 42, 0.12)",
+    backgroundColor: "#f8fafc",
+  },
+  scheduleEmployeeItemActive: {
+    borderColor: "rgba(59, 130, 246, 0.45)",
+    backgroundColor: "rgba(47, 91, 255, 0.3)",
+  },
+  scheduleEmployeeItemActiveLight: {
+    borderColor: "rgba(37, 99, 235, 0.35)",
+    backgroundColor: "#dbeafe",
+  },
+  scheduleEmployeeItemText: {
+    color: "#e2e8f0",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  scheduleEmployeeItemTextLight: {
+    color: "#0f172a",
+  },
+  scheduleEmployeeItemTextActive: {
+    color: "#f8fafc",
+  },
   scheduleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2189,7 +4758,97 @@ const styles = StyleSheet.create({
   scheduleToggleText: { color: "#e2e8f0", fontWeight: "600", fontSize: 12 },
   scheduleToggleTextLight: { color: "#0f172a" },
   scheduleToggleTextActive: { color: "#f8fafc" },
-  scheduleTimes: { flexDirection: "row", alignItems: "center", gap: 6, flex: 1 },
+  scheduleTimes: {
+    gap: 8,
+    flex: 1,
+  },
+  scheduleTimeCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.22)",
+    backgroundColor: "rgba(15, 23, 42, 0.42)",
+    padding: 8,
+    gap: 6,
+  },
+  scheduleTimeCardLight: {
+    borderColor: "rgba(15, 23, 42, 0.14)",
+    backgroundColor: "#f8fafc",
+  },
+  scheduleTimeLabel: {
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    color: "#94a3b8",
+  },
+  scheduleTimeValue: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#e2e8f0",
+  },
+  scheduleControlRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  scheduleStepButton: {
+    minWidth: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.25)",
+    backgroundColor: "rgba(148, 163, 184, 0.18)",
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    alignItems: "center",
+  },
+  scheduleStepButtonLight: {
+    borderColor: "rgba(15, 23, 42, 0.18)",
+    backgroundColor: "#e2e8f0",
+  },
+  scheduleStepButtonText: {
+    color: "#e2e8f0",
+    fontWeight: "700",
+    fontSize: 11,
+  },
+  scheduleStepButtonTextLight: {
+    color: "#0f172a",
+  },
+  scheduleMeridiemButton: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.45)",
+    backgroundColor: "rgba(99, 102, 241, 0.22)",
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
+  scheduleMeridiemGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  scheduleMeridiemButtonActive: {
+    borderColor: "rgba(59, 130, 246, 0.65)",
+    backgroundColor: "rgba(59, 130, 246, 0.35)",
+  },
+  scheduleMeridiemButtonLight: {
+    borderColor: "rgba(37, 99, 235, 0.34)",
+    backgroundColor: "#dbeafe",
+  },
+  scheduleMeridiemButtonActiveLight: {
+    borderColor: "rgba(30, 64, 175, 0.6)",
+    backgroundColor: "#2563eb",
+  },
+  scheduleMeridiemText: {
+    color: "#e2e8f0",
+    fontWeight: "700",
+    fontSize: 11,
+  },
+  scheduleMeridiemTextLight: {
+    color: "#1e3a8a",
+  },
+  scheduleMeridiemTextActive: {
+    color: "#f8fafc",
+  },
   scheduleInput: {
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 10,
@@ -2245,8 +4904,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  calendarCellLight: { backgroundColor: "#f1f5f9", borderColor: "rgba(15, 23, 42, 0.12)" },
-  calendarCellEmpty: { backgroundColor: "transparent", borderColor: "transparent" },
+  calendarCellLight: {
+    backgroundColor: "#f1f5f9",
+    borderColor: "rgba(15, 23, 42, 0.12)",
+  },
+  calendarCellEmpty: {
+    backgroundColor: "transparent",
+    borderColor: "transparent",
+  },
   calendarCellToday: {
     backgroundColor: "#2f5bff",
     borderColor: "transparent",
@@ -2274,7 +4939,11 @@ const styles = StyleSheet.create({
   inlineButtonLight: { backgroundColor: "#dc2626" },
   inlineButtonTextLight: { color: "#ffffff" },
   inlineButtonDisabled: { opacity: 0.6 },
-  divider: { height: 1, backgroundColor: "rgba(0,0,0,0.08)", marginVertical: 12 },
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(0,0,0,0.08)",
+    marginVertical: 12,
+  },
   dividerLight: { backgroundColor: "rgba(15, 23, 42, 0.12)" },
   workingCard: {
     backgroundColor: "rgba(15, 23, 42, 0.5)",

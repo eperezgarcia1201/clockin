@@ -1,6 +1,8 @@
 import {
+  IsArray,
   IsBoolean,
   IsEmail,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -10,6 +12,7 @@ import {
   Min,
 } from "class-validator";
 import { Type } from "class-transformer";
+import { MANAGER_FEATURE_KEYS } from "../../tenancy/manager-features";
 
 export class UpdateEmployeeDto {
   @IsOptional()
@@ -46,6 +49,16 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsString()
   groupId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isManager?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @IsIn(MANAGER_FEATURE_KEYS, { each: true })
+  managerPermissions?: string[];
 
   @IsOptional()
   @IsBoolean()

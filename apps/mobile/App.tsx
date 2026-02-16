@@ -1,7 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Device from "expo-device";
+import Constants from "expo-constants";
 import {
   SafeAreaView,
   ScrollView,
@@ -12,10 +14,76 @@ import {
   View,
 } from "react-native";
 
-const apiBase = (process.env.EXPO_PUBLIC_API_URL || "http://localhost:4000/api").replace(
-  /\/$/,
-  "",
-);
+const normalizeApiBase = (value: string) => value.trim().replace(/\/$/, "");
+
+const isLoopbackHost = (host: string) =>
+  host === "localhost" ||
+  host === "0.0.0.0" ||
+  host === "::1" ||
+  host.startsWith("127.");
+
+const parseHostCandidate = (value?: string | null) => {
+  if (!value) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    if (/^[a-z]+:\/\//i.test(trimmed)) {
+      return new URL(trimmed).hostname || null;
+    }
+    return new URL(`http://${trimmed}`).hostname || null;
+  } catch {
+    return null;
+  }
+};
+
+const pickMetroHosts = () => {
+  const runtimeConfig = Constants as unknown as {
+    expoGoConfig?: { debuggerHost?: string | null };
+    manifest2?: { extra?: { expoClient?: { hostUri?: string | null } } };
+  };
+
+  const hosts = [
+    parseHostCandidate(Constants.expoConfig?.hostUri ?? null),
+    parseHostCandidate(runtimeConfig.expoGoConfig?.debuggerHost ?? null),
+    parseHostCandidate(runtimeConfig.manifest2?.extra?.expoClient?.hostUri ?? null),
+    parseHostCandidate(Constants.linkingUri ?? null),
+  ];
+
+  return Array.from(new Set(hosts.filter((host): host is string => Boolean(host))));
+};
+
+const apiBaseCandidates = (() => {
+  const values: string[] = [];
+  const runningOnSimulator = !Device.isDevice;
+  const metroHosts = pickMetroHosts();
+  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
+
+  if (fromEnv) {
+    const fromEnvHost = parseHostCandidate(fromEnv);
+    if (runningOnSimulator || !fromEnvHost || !isLoopbackHost(fromEnvHost)) {
+      values.push(fromEnv);
+    }
+  }
+
+  metroHosts.forEach((host) => {
+    if (!runningOnSimulator && isLoopbackHost(host)) {
+      return;
+    }
+    values.push(`http://${host}:4000/api`);
+  });
+
+  if (runningOnSimulator) {
+    values.push("http://localhost:4000/api");
+    values.push("http://127.0.0.1:4000/api");
+  }
+
+  return Array.from(new Set(values.map(normalizeApiBase).filter(Boolean)));
+})();
 
 type Employee = {
   id: string;
@@ -32,10 +100,134 @@ type TenantContext = {
   authOrgId: string;
 };
 
+type ActiveShift = {
+  tenantAuthOrgId: string;
+  employeeId: string;
+  employeeName: string;
+  isServer: boolean;
+  startedAt: string;
+  pin?: string;
+};
+
+type Language = "en" | "es";
+
 const actions = ["IN", "OUT", "BREAK", "LUNCH"] as const;
 const TENANT_STORAGE_KEY = "clockin.mobile.tenant";
+const ACTIVE_SHIFT_STORAGE_KEY = "clockin.mobile.activeShift";
+const LANGUAGE_STORAGE_KEY = "clockin.mobile.language";
+
+const i18n = {
+  en: {
+    appSubtitle: "Workforce Time Tracking",
+    loading: "Loading",
+    checkingSavedTenant: "Checking saved tenant...",
+    welcome: "Welcome",
+    enterTenantBeforeClockIn: "Enter your tenant name before clocking in.",
+    tenantName: "Tenant Name",
+    continue: "Continue",
+    checking: "Checking...",
+    tenant: "Tenant",
+    clockStation: "Clock Station",
+    systemOnline: "System Online",
+    tipsDueAtOut: "Tips Due at OUT",
+    username: "Username",
+    enterFullName: "Enter full name",
+    noExactMatchYet: "No exact match yet.",
+    verified: "Verified",
+    pin: "PIN",
+    action: "Action",
+    tipSubmissionRequired: "Tip Submission Required",
+    cashTips: "Cash Tips ($)",
+    creditCardTips: "Credit Card Tips ($)",
+    tapToSubmitTips: "Tap to Submit Tips",
+    savingTips: "Saving Tips...",
+    confirmPunch: "Confirm Punch ->",
+    saving: "Saving...",
+    thisDevice: "This Device",
+    poweredBy: "Powered by Websys Workforce",
+    tenantNotConfigured: "Tenant not configured.",
+    enterUsernameFirst: "Enter a username first.",
+    employeeNotFoundUseFullName: "Employee not found. Use the full name.",
+    noActiveShiftUser: "No active shift user found. Enter username and punch IN first.",
+    submitTipsBeforeOut: "Submit cash and credit card tips before clocking out.",
+    tapSubmitTipsFirst: "Tap \"Tap to Submit Tips\" first, then confirm clock out.",
+    punchRecorded: "Punch recorded.",
+    punchFailed: "Punch failed.",
+    selectValidEmployee: "Select a valid employee first.",
+    tipsOnlyForServers: "Tips can only be submitted for server users.",
+    tipsMustBeValid: "Tips must be valid non-negative numbers.",
+    tipsSaved: "Tips saved for today.",
+    unableToSaveTips: "Unable to save tips.",
+    enterTenantNameOrSlug: "Enter your tenant name or slug.",
+    unableToValidateTenant: "Unable to validate tenant right now.",
+    tenantNotFound: "Tenant not found. Check with your manager.",
+    autoPin: "Auto",
+    language: "Language",
+    actions: {
+      IN: "IN",
+      OUT: "OUT",
+      BREAK: "BREAK",
+      LUNCH: "LUNCH",
+    },
+  },
+  es: {
+    appSubtitle: "Control de tiempo laboral",
+    loading: "Cargando",
+    checkingSavedTenant: "Verificando tenant guardado...",
+    welcome: "Bienvenido",
+    enterTenantBeforeClockIn: "Ingresa el nombre de tu tenant antes de marcar entrada.",
+    tenantName: "Nombre del tenant",
+    continue: "Continuar",
+    checking: "Verificando...",
+    tenant: "Tenant",
+    clockStation: "Estacion de reloj",
+    systemOnline: "Sistema en linea",
+    tipsDueAtOut: "Propinas al SALIR",
+    username: "Usuario",
+    enterFullName: "Ingresa nombre completo",
+    noExactMatchYet: "Aun no hay coincidencia exacta.",
+    verified: "Verificado",
+    pin: "PIN",
+    action: "Accion",
+    tipSubmissionRequired: "Se requiere enviar propinas",
+    cashTips: "Propinas en efectivo ($)",
+    creditCardTips: "Propinas de tarjeta ($)",
+    tapToSubmitTips: "Toca para enviar propinas",
+    savingTips: "Guardando propinas...",
+    confirmPunch: "Confirmar marcacion ->",
+    saving: "Guardando...",
+    thisDevice: "Este dispositivo",
+    poweredBy: "Desarrollado por Websys Workforce",
+    tenantNotConfigured: "Tenant no configurado.",
+    enterUsernameFirst: "Primero ingresa un usuario.",
+    employeeNotFoundUseFullName: "Empleado no encontrado. Usa el nombre completo.",
+    noActiveShiftUser: "No hay turno activo. Ingresa usuario y marca ENTRADA primero.",
+    submitTipsBeforeOut: "Debes enviar propinas en efectivo y tarjeta antes de salir.",
+    tapSubmitTipsFirst: "Toca \"Toca para enviar propinas\" y luego confirma salida.",
+    punchRecorded: "Marcacion registrada.",
+    punchFailed: "Fallo la marcacion.",
+    selectValidEmployee: "Selecciona un empleado valido primero.",
+    tipsOnlyForServers: "Solo usuarios meseros pueden enviar propinas.",
+    tipsMustBeValid: "Las propinas deben ser numeros validos no negativos.",
+    tipsSaved: "Propinas guardadas para hoy.",
+    unableToSaveTips: "No se pudieron guardar las propinas.",
+    enterTenantNameOrSlug: "Ingresa el nombre o slug del tenant.",
+    unableToValidateTenant: "No se puede validar el tenant ahora.",
+    tenantNotFound: "Tenant no encontrado. Verifica con tu gerente.",
+    autoPin: "Auto",
+    language: "Idioma",
+    actions: {
+      IN: "ENTRADA",
+      OUT: "SALIDA",
+      BREAK: "DESCANSO",
+      LUNCH: "ALMUERZO",
+    },
+  },
+} as const;
 
 export default function App() {
+  const scrollRef = useRef<ScrollView | null>(null);
+  const [language, setLanguage] = useState<Language>("en");
   const [tenant, setTenant] = useState<TenantContext | null>(null);
   const [tenantInput, setTenantInput] = useState("");
   const [tenantStatus, setTenantStatus] = useState<string | null>(null);
@@ -50,8 +242,14 @@ export default function App() {
   const [punchType, setPunchType] = useState<(typeof actions)[number]>("IN");
   const [status, setStatus] = useState<string | null>(null);
   const [tipsStatus, setTipsStatus] = useState<string | null>(null);
+  const [tipsAlert, setTipsAlert] = useState(false);
+  const [serverTipsRequired, setServerTipsRequired] = useState(false);
+  const [tipsSubmittedKey, setTipsSubmittedKey] = useState<string | null>(null);
+  const [tipsReminderEmployeeId, setTipsReminderEmployeeId] = useState<string | null>(null);
+  const [activeShift, setActiveShift] = useState<ActiveShift | null>(null);
   const [loading, setLoading] = useState(false);
   const [savingTips, setSavingTips] = useState(false);
+  const [resolvedApiBase, setResolvedApiBase] = useState<string | null>(null);
   const [lastPunch, setLastPunch] = useState<{
     name: string;
     type: string;
@@ -77,30 +275,98 @@ export default function App() {
     return null;
   }, [employeeName, activeEmployees]);
 
+  const sessionEmployee = useMemo(() => {
+    if (!tenant || !activeShift) {
+      return null;
+    }
+    if (activeShift.tenantAuthOrgId !== tenant.authOrgId) {
+      return null;
+    }
+    const current = employees.find((emp) => emp.id === activeShift.employeeId);
+    if (current) {
+      return current;
+    }
+    return {
+      id: activeShift.employeeId,
+      name: activeShift.employeeName,
+      active: true,
+      isServer: activeShift.isServer,
+    } as Employee;
+  }, [tenant, activeShift, employees]);
+
+  const selectedEmployee =
+    punchType !== "IN" && sessionEmployee ? sessionEmployee : matchedEmployee;
+
+  const getTodayKey = (employeeId: string) => {
+    const today = new Date().toISOString().slice(0, 10);
+    return `${employeeId}:${today}`;
+  };
+
+  const requiresTipsForOut = Boolean(selectedEmployee?.isServer || serverTipsRequired);
+  const hasSubmittedTips =
+    selectedEmployee !== null && tipsSubmittedKey === getTodayKey(selectedEmployee.id);
+  const showTipInputs = punchType === "OUT" && requiresTipsForOut;
+  const showTipReminderTag =
+    selectedEmployee?.isServer &&
+    (tipsReminderEmployeeId === selectedEmployee.id || serverTipsRequired);
+  const needsManualPinForSession = Boolean(sessionEmployee) && !activeShift?.pin;
+  const t = i18n[language];
+
   const fetchJson = useCallback(
     async (path: string, options?: RequestInit) => {
       if (!tenant) {
         throw new Error("Tenant not configured.");
       }
 
-      const response = await fetch(`${apiBase}${path}`, {
-        ...options,
-        headers: {
-          "Content-Type": "application/json",
-          "x-dev-user-id": "dev-user",
-          "x-dev-tenant-id": tenant.authOrgId,
-          "x-dev-email": "dev@clockin.local",
-          "x-dev-name": "Employee App",
-          ...(options?.headers || {}),
-        },
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data?.message || data?.error || "Request failed");
+      const orderedBases = Array.from(
+        new Set([resolvedApiBase, ...apiBaseCandidates].filter(Boolean)),
+      ) as string[];
+      let lastError: Error | null = null;
+
+      for (const apiBase of orderedBases) {
+        try {
+          const response = await fetch(`${apiBase}${path}`, {
+            ...options,
+            headers: {
+              "Content-Type": "application/json",
+              "x-dev-user-id": "dev-user",
+              "x-dev-tenant-id": tenant.authOrgId,
+              "x-dev-email": "dev@clockin.local",
+              "x-dev-name": "Employee App",
+              ...(options?.headers || {}),
+            },
+          });
+
+          if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            lastError = new Error(
+              data?.message || data?.error || "Request failed",
+            );
+            continue;
+          }
+
+          if (resolvedApiBase !== apiBase) {
+            setResolvedApiBase(apiBase);
+          }
+          return response.json();
+        } catch (error) {
+          if (error instanceof Error) {
+            lastError = error;
+            if (/network request failed|fetch failed|load failed/i.test(error.message)) {
+              continue;
+            }
+          } else if (error instanceof TypeError) {
+            lastError = error;
+            continue;
+          }
+        }
       }
-      return response.json();
+
+      const tried = orderedBases.join(", ");
+      const message = lastError?.message || "Unable to reach ClockIn API.";
+      throw new Error(tried ? `${message} Tried: ${tried}` : message);
     },
-    [tenant],
+    [resolvedApiBase, tenant],
   );
 
   const loadEmployees = useCallback(async () => {
@@ -112,8 +378,11 @@ export default function App() {
     try {
       const data = (await fetchJson("/employees")) as { employees: Employee[] };
       setEmployees(data.employees || []);
-    } catch {
+    } catch (error) {
       setEmployees([]);
+      if (error instanceof Error) {
+        setStatus(error.message);
+      }
     }
   }, [fetchJson, tenant]);
 
@@ -156,41 +425,155 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+
+    const loadLanguage = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(LANGUAGE_STORAGE_KEY);
+        if (raw === "en" || raw === "es") {
+          if (active) {
+            setLanguage(raw);
+          }
+        }
+      } catch {
+        // ignore and keep default language
+      }
+    };
+
+    void loadLanguage();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!tenantHydrated) {
       return;
     }
     void loadEmployees();
   }, [loadEmployees, tenantHydrated]);
 
+  useEffect(() => {
+    let active = true;
+
+    const loadActiveShift = async () => {
+      if (!tenant) {
+        if (active) {
+          setActiveShift(null);
+        }
+        return;
+      }
+
+      try {
+        const raw = await AsyncStorage.getItem(ACTIVE_SHIFT_STORAGE_KEY);
+        if (!raw) {
+          if (active) {
+            setActiveShift(null);
+          }
+          return;
+        }
+
+        const parsed = JSON.parse(raw) as ActiveShift;
+        if (
+          parsed &&
+          parsed.tenantAuthOrgId === tenant.authOrgId &&
+          typeof parsed.employeeId === "string" &&
+          typeof parsed.employeeName === "string"
+        ) {
+          if (active) {
+            setActiveShift(parsed);
+            setEmployeeName(parsed.employeeName);
+            if (parsed.isServer) {
+              setTipsReminderEmployeeId(parsed.employeeId);
+            }
+          }
+        } else if (active) {
+          setActiveShift(null);
+        }
+      } catch {
+        await AsyncStorage.removeItem(ACTIVE_SHIFT_STORAGE_KEY);
+        if (active) {
+          setActiveShift(null);
+        }
+      }
+    };
+
+    void loadActiveShift();
+
+    return () => {
+      active = false;
+    };
+  }, [tenant]);
+
   const configureTenant = async () => {
     const value = tenantInput.trim();
     if (!value) {
-      setTenantStatus("Enter your tenant name or slug.");
+      setTenantStatus(t.enterTenantNameOrSlug);
       return;
     }
 
     setResolvingTenant(true);
     setTenantStatus(null);
     try {
-      const endpoint = new URL(`${apiBase}/tenant-directory/resolve`);
-      endpoint.searchParams.set("tenant", value);
-      const response = await fetch(endpoint.toString(), {
-        headers: { Accept: "application/json" },
-      });
-      const data = (await response.json().catch(() => ({}))) as {
-        id?: string;
-        name?: string;
-        slug?: string;
-        subdomain?: string;
-        authOrgId?: string;
-        error?: string;
-        message?: string;
-      };
+      const orderedBases = Array.from(
+        new Set([resolvedApiBase, ...apiBaseCandidates].filter(Boolean)),
+      ) as string[];
+      let data:
+        | {
+            id?: string;
+            name?: string;
+            slug?: string;
+            subdomain?: string;
+            authOrgId?: string;
+            error?: string;
+            message?: string;
+          }
+        | null = null;
+      let resolvedBase: string | null = null;
+      let lastError: Error | null = null;
 
-      if (!response.ok || !data.authOrgId || !data.slug) {
-        throw new Error(
-          data.message || data.error || "Tenant not found. Check with your manager.",
-        );
+      for (const apiBase of orderedBases) {
+        try {
+          const endpoint = new URL(`${apiBase}/tenant-directory/resolve`);
+          endpoint.searchParams.set("tenant", value);
+          const response = await fetch(endpoint.toString(), {
+            headers: { Accept: "application/json" },
+          });
+          const payload = (await response.json().catch(() => ({}))) as {
+            id?: string;
+            name?: string;
+            slug?: string;
+            subdomain?: string;
+            authOrgId?: string;
+            error?: string;
+            message?: string;
+          };
+
+          if (!response.ok || !payload.authOrgId || !payload.slug) {
+            lastError = new Error(
+              payload.message || payload.error || t.tenantNotFound,
+            );
+            continue;
+          }
+
+          data = payload;
+          resolvedBase = apiBase;
+          break;
+        } catch (error) {
+          if (error instanceof Error) {
+            lastError = error;
+          } else {
+            lastError = new Error(t.unableToValidateTenant);
+          }
+        }
+      }
+
+      if (!data || !data.authOrgId || !data.slug) {
+        throw lastError || new Error(t.unableToValidateTenant);
+      }
+
+      if (resolvedBase && resolvedApiBase !== resolvedBase) {
+        setResolvedApiBase(resolvedBase);
       }
 
       const resolvedTenant: TenantContext = {
@@ -213,115 +596,162 @@ export default function App() {
       setTenantStatus(
         error instanceof Error
           ? error.message
-          : "Unable to validate tenant right now.",
+          : t.unableToValidateTenant,
       );
     } finally {
       setResolvingTenant(false);
     }
   };
 
-  const changeTenant = () => {
-    void AsyncStorage.removeItem(TENANT_STORAGE_KEY);
-    setTenantInput("");
-    setTenant(null);
-    setEmployees([]);
-    setEmployeeName("");
-    setPin("");
-    setStatus(null);
-    setTipsStatus(null);
+  const toggleLanguage = () => {
+    const next = language === "en" ? "es" : "en";
+    setLanguage(next);
+    void AsyncStorage.setItem(LANGUAGE_STORAGE_KEY, next);
   };
 
   const handlePunch = async () => {
     if (!tenant) {
-      setStatus("Tenant not configured.");
+      setStatus(t.tenantNotConfigured);
       return;
     }
 
-    if (!employeeName.trim()) {
-      setStatus("Enter a username first.");
+    const targetEmployee =
+      punchType !== "IN" && sessionEmployee ? sessionEmployee : matchedEmployee;
+
+    if (!targetEmployee) {
+      if (punchType !== "IN") {
+        setStatus(t.noActiveShiftUser);
+      } else if (!employeeName.trim()) {
+        setStatus(t.enterUsernameFirst);
+      } else {
+        setStatus(t.employeeNotFoundUseFullName);
+      }
       return;
     }
-    if (!matchedEmployee) {
-      setStatus("Employee not found. Use the full name.");
+
+    if (punchType === "OUT" && requiresTipsForOut && !hasSubmittedTips) {
+      setStatus(t.submitTipsBeforeOut);
+      setTipsStatus(t.tapSubmitTipsFirst);
+      setTipsAlert(true);
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 50);
       return;
     }
+
+    const requestPin =
+      punchType === "IN" ? pin || undefined : activeShift?.pin || pin || undefined;
 
     setLoading(true);
     setStatus(null);
     try {
-      if (punchType === "OUT" && matchedEmployee.isServer) {
-        const cash = Number.parseFloat(cashTips || "0");
-        const credit = Number.parseFloat(creditCardTips || "0");
-        if (
-          !Number.isFinite(cash) ||
-          cash < 0 ||
-          !Number.isFinite(credit) ||
-          credit < 0
-        ) {
-          throw new Error("Tips must be valid non-negative numbers.");
-        }
-
-        await fetchJson(`/employee-tips/${matchedEmployee.id}`, {
-          method: "POST",
-          body: JSON.stringify({
-            cashTips: cash,
-            creditCardTips: credit,
-          }),
-        });
-      }
-
-      await fetchJson(`/employee-punches/${matchedEmployee.id}`, {
+      await fetchJson(`/employee-punches/${targetEmployee.id}`, {
         method: "POST",
-        body: JSON.stringify({ type: punchType, pin: pin || undefined }),
+        body: JSON.stringify({
+          type: punchType,
+          pin: requestPin,
+        }),
       });
-      setStatus("Punch recorded.");
+      setStatus(t.punchRecorded);
+      setServerTipsRequired(false);
       setLastPunch({
-        name: matchedEmployee.name,
+        name: targetEmployee.name,
         type: punchType,
         occurredAt: new Date(),
       });
+      if (punchType === "IN") {
+        const shift: ActiveShift = {
+          tenantAuthOrgId: tenant.authOrgId,
+          employeeId: targetEmployee.id,
+          employeeName: targetEmployee.name,
+          isServer: Boolean(targetEmployee.isServer),
+          startedAt: new Date().toISOString(),
+          pin: pin || undefined,
+        };
+        setActiveShift(shift);
+        await AsyncStorage.setItem(ACTIVE_SHIFT_STORAGE_KEY, JSON.stringify(shift));
+        setEmployeeName(targetEmployee.name);
+        setTipsAlert(false);
+      }
+      if (punchType !== "IN" && activeShift && !activeShift.pin && pin) {
+        const shifted: ActiveShift = { ...activeShift, pin };
+        setActiveShift(shifted);
+        await AsyncStorage.setItem(ACTIVE_SHIFT_STORAGE_KEY, JSON.stringify(shifted));
+      }
+      if (punchType === "IN" && targetEmployee.isServer) {
+        setTipsReminderEmployeeId(targetEmployee.id);
+      }
       setPin("");
-      if (punchType === "OUT" && matchedEmployee.isServer) {
+      if (punchType === "OUT" && requiresTipsForOut) {
         setCashTips("0");
         setCreditCardTips("0");
+        setTipsSubmittedKey(null);
+        setTipsReminderEmployeeId(null);
+        setTipsStatus(null);
+        setServerTipsRequired(false);
+        setActiveShift(null);
+        await AsyncStorage.removeItem(ACTIVE_SHIFT_STORAGE_KEY);
+        setTipsAlert(false);
+        setPunchType("IN");
+        setEmployeeName("");
       }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Punch failed.");
+      const message = error instanceof Error ? error.message : t.punchFailed;
+      if (
+        message.toLowerCase().includes("server users must submit") ||
+        message.toLowerCase().includes("submit cash and credit card tips")
+      ) {
+        setServerTipsRequired(true);
+        setStatus(t.submitTipsBeforeOut);
+        setTipsStatus(t.tapSubmitTipsFirst);
+        setTipsAlert(true);
+        setTimeout(() => {
+          scrollRef.current?.scrollToEnd({ animated: true });
+        }, 50);
+      } else {
+        setStatus(message);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleSubmitTips = async () => {
-    if (!matchedEmployee) {
-      setTipsStatus("Select a valid employee first.");
+    const targetEmployee =
+      punchType !== "IN" && sessionEmployee ? sessionEmployee : matchedEmployee;
+
+    if (!targetEmployee) {
+      setTipsStatus(t.selectValidEmployee);
       return;
     }
-    if (!matchedEmployee.isServer) {
-      setTipsStatus("Tips can only be submitted for server users.");
+    if (!targetEmployee.isServer) {
+      setTipsStatus(t.tipsOnlyForServers);
       return;
     }
 
     const cash = Number.parseFloat(cashTips || "0");
     const credit = Number.parseFloat(creditCardTips || "0");
     if (!Number.isFinite(cash) || cash < 0 || !Number.isFinite(credit) || credit < 0) {
-      setTipsStatus("Tips must be valid non-negative numbers.");
+      setTipsStatus(t.tipsMustBeValid);
       return;
     }
 
     setSavingTips(true);
     setTipsStatus(null);
     try {
-      await fetchJson(`/employee-tips/${matchedEmployee.id}`, {
+      await fetchJson(`/employee-tips/${targetEmployee.id}`, {
         method: "POST",
         body: JSON.stringify({
           cashTips: cash,
           creditCardTips: credit,
         }),
       });
-      setTipsStatus("Tips saved for today.");
+      setServerTipsRequired(false);
+      setTipsSubmittedKey(getTodayKey(targetEmployee.id));
+      setTipsStatus(t.tipsSaved);
+      setTipsAlert(false);
     } catch (error) {
-      setTipsStatus(error instanceof Error ? error.message : "Unable to save tips.");
+      setTipsStatus(error instanceof Error ? error.message : t.unableToSaveTips);
     } finally {
       setSavingTips(false);
     }
@@ -330,30 +760,28 @@ export default function App() {
   return (
     <LinearGradient colors={["#0b101a", "#111c2b", "#151f30"]} style={styles.gradient}>
       <SafeAreaView style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.container}>
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.container}>
           <View style={styles.brandRow}>
             <View style={styles.badge}>
               <Text style={styles.badgeText}>WS</Text>
             </View>
             <View>
               <Text style={styles.title}>ClockIn</Text>
-              <Text style={styles.subtitle}>Workforce Time Tracking</Text>
+              <Text style={styles.subtitle}>{t.appSubtitle}</Text>
             </View>
           </View>
 
           {!tenantHydrated ? (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Loading</Text>
-              <Text style={styles.subtitleDark}>Checking saved tenant...</Text>
+              <Text style={styles.cardTitle}>{t.loading}</Text>
+              <Text style={styles.subtitleDark}>{t.checkingSavedTenant}</Text>
             </View>
           ) : !tenant ? (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Welcome</Text>
-              <Text style={styles.subtitleDark}>
-                Enter your tenant name before clocking in.
-              </Text>
+              <Text style={styles.cardTitle}>{t.welcome}</Text>
+              <Text style={styles.subtitleDark}>{t.enterTenantBeforeClockIn}</Text>
 
-              <Text style={styles.label}>Tenant Name</Text>
+              <Text style={styles.label}>{t.tenantName}</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. clockin-demo"
@@ -371,70 +799,93 @@ export default function App() {
                 disabled={resolvingTenant}
               >
                 <Text style={styles.primaryText}>
-                  {resolvingTenant ? "Checking..." : "Continue"}
+                  {resolvingTenant ? t.checking : t.continue}
                 </Text>
               </TouchableOpacity>
             </View>
           ) : (
             <>
               <View style={styles.tenantBar}>
-                <Text style={styles.tenantBarText}>Tenant: {tenant.name}</Text>
-                <TouchableOpacity style={styles.tenantSwitch} onPress={changeTenant}>
-                  <Text style={styles.tenantSwitchText}>Change</Text>
-                </TouchableOpacity>
+                <Text style={styles.tenantBarText}>{t.tenant}: {tenant.name}</Text>
+                <View style={styles.tenantBarActions}>
+                  <TouchableOpacity style={styles.tenantSwitch} onPress={toggleLanguage}>
+                    <Text style={styles.tenantSwitchText}>
+                      {t.language}: {language.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
 
               <View style={styles.card}>
                 <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>Clock Station</Text>
-                  <View style={styles.systemRow}>
-                    <View style={styles.systemDot} />
-                    <Text style={styles.systemText}>System Online</Text>
+                  <Text style={styles.cardTitle}>{t.clockStation}</Text>
+                  <View style={styles.headerPills}>
+                    {showTipReminderTag && (
+                      <View style={styles.tipReminderPill}>
+                        <Text style={styles.tipReminderText}>{t.tipsDueAtOut}</Text>
+                      </View>
+                    )}
+                    <View style={styles.systemRow}>
+                      <View style={styles.systemDot} />
+                      <Text style={styles.systemText}>{t.systemOnline}</Text>
+                    </View>
                   </View>
                 </View>
 
-                <Text style={styles.label}>Username</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter full name"
-                  value={employeeName}
-                  onChangeText={setEmployeeName}
-                  autoCorrect={false}
-                  autoCapitalize="words"
-                />
-                {employeeName.trim().length > 0 && (
+                <Text style={styles.label}>{t.username}</Text>
+                {sessionEmployee ? (
+                  <View style={styles.lockedNameRow}>
+                    <View style={styles.lockedNameDot} />
+                    <Text style={styles.lockedNameText}>{sessionEmployee.name}</Text>
+                  </View>
+                ) : (
+                  <TextInput
+                    style={styles.input}
+                    placeholder={t.enterFullName}
+                    value={employeeName}
+                    onChangeText={setEmployeeName}
+                    autoCorrect={false}
+                    autoCapitalize="words"
+                  />
+                )}
+                {!sessionEmployee && employeeName.trim().length > 0 && (
                   <View style={styles.verifyRow}>
                     <View
                       style={[
                         styles.verifyDot,
-                        matchedEmployee ? styles.verifyDotOn : styles.verifyDotOff,
+                        selectedEmployee ? styles.verifyDotOn : styles.verifyDotOff,
                       ]}
                     />
                     <Text style={styles.verifyText}>
-                      {matchedEmployee
-                        ? `${matchedEmployee.name} (Verified)`
-                        : "No exact match yet."}
+                      {selectedEmployee
+                        ? `${selectedEmployee.name} (${t.verified})`
+                        : t.noExactMatchYet}
                     </Text>
                   </View>
                 )}
 
-                <Text style={styles.label}>PIN</Text>
+                <Text style={styles.label}>{t.pin}</Text>
                 <View style={styles.pinRow}>
                   <TextInput
                     style={[styles.input, styles.pinInput]}
-                    placeholder="••••"
-                    secureTextEntry
+                    placeholder={
+                      punchType === "IN" || needsManualPinForSession
+                        ? "••••"
+                        : t.autoPin
+                    }
+                    secureTextEntry={punchType === "IN" || needsManualPinForSession}
                     keyboardType="number-pad"
                     value={pin}
                     onChangeText={setPin}
                     maxLength={4}
+                    editable={punchType === "IN" || needsManualPinForSession}
                   />
                   <View style={styles.pinIcon}>
                     <Text style={styles.pinIconText}>123</Text>
                   </View>
                 </View>
 
-                <Text style={styles.label}>Action</Text>
+                <Text style={styles.label}>{t.action}</Text>
                 <View style={styles.actionRow}>
                   {actions.map((action) => (
                     <TouchableOpacity
@@ -453,38 +904,66 @@ export default function App() {
                             : styles.actionText
                         }
                       >
-                        {action}
+                        {t.actions[action]}
                       </Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
-                {matchedEmployee?.isServer && (
+                {showTipInputs && (
                   <>
-                    <Text style={styles.label}>Cash Tips ($)</Text>
+                    <Text
+                      style={[
+                        styles.tipSectionTitle,
+                        tipsAlert ? styles.tipSectionTitleAlert : styles.tipSectionTitleOk,
+                      ]}
+                    >
+                      {t.tipSubmissionRequired}
+                    </Text>
+                    <Text style={styles.label}>{t.cashTips}</Text>
                     <TextInput
                       style={styles.input}
                       value={cashTips}
                       onChangeText={setCashTips}
                       keyboardType="decimal-pad"
+                      inputMode="decimal"
                       placeholder="0.00"
                     />
-                    <Text style={styles.label}>Credit Card Tips ($)</Text>
+                    <Text style={styles.label}>{t.creditCardTips}</Text>
                     <TextInput
                       style={styles.input}
                       value={creditCardTips}
                       onChangeText={setCreditCardTips}
                       keyboardType="decimal-pad"
+                      inputMode="decimal"
                       placeholder="0.00"
                     />
-                    {tipsStatus && <Text style={styles.statusText}>{tipsStatus}</Text>}
+                    {tipsStatus && (
+                      <Text
+                        style={[
+                          styles.statusText,
+                          tipsAlert ? styles.tipStatusAlert : styles.tipStatusOk,
+                        ]}
+                      >
+                        {tipsStatus}
+                      </Text>
+                    )}
                     <TouchableOpacity
-                      style={[styles.button, styles.secondary]}
+                      style={[
+                        styles.button,
+                        styles.tipsSubmitButton,
+                        tipsAlert ? styles.tipsSubmitButtonAlert : styles.tipsSubmitButtonOk,
+                      ]}
                       onPress={handleSubmitTips}
                       disabled={savingTips}
                     >
-                      <Text style={styles.secondaryText}>
-                        {savingTips ? "Saving Tips..." : "Save Tips Only"}
+                      <Text
+                        style={[
+                          styles.tipsSubmitButtonText,
+                          tipsAlert && styles.tipsSubmitButtonTextAlert,
+                        ]}
+                      >
+                        {savingTips ? t.savingTips : t.tapToSubmitTips}
                       </Text>
                     </TouchableOpacity>
                   </>
@@ -498,14 +977,14 @@ export default function App() {
                   disabled={loading}
                 >
                   <Text style={styles.primaryText}>
-                    {loading ? "Saving..." : "Confirm Punch →"}
+                    {loading ? t.saving : t.confirmPunch}
                   </Text>
                 </TouchableOpacity>
               </View>
 
               {lastPunch && (
                 <View style={styles.deviceCard}>
-                  <Text style={styles.deviceTitle}>This Device</Text>
+                  <Text style={styles.deviceTitle}>{t.thisDevice}</Text>
                   <View style={styles.deviceRow}>
                     <View>
                       <Text style={styles.deviceName}>{lastPunch.name}</Text>
@@ -535,7 +1014,7 @@ export default function App() {
                   </View>
                 </View>
               )}
-              <Text style={styles.footer}>Powered by Websys Workforce</Text>
+              <Text style={styles.footer}>{t.poweredBy}</Text>
             </>
           )}
         </ScrollView>
@@ -609,6 +1088,11 @@ const styles = StyleSheet.create({
     color: "#f9f4ea",
     fontWeight: "600",
   },
+  tenantBarActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   tenantSwitch: {
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.4)",
@@ -638,10 +1122,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 14,
   },
+  headerPills: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   cardTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: "#1f1a16",
+  },
+  tipReminderPill: {
+    backgroundColor: "rgba(255, 138, 61, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 138, 61, 0.5)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  tipReminderText: {
+    fontSize: 11,
+    color: "#8a4a1f",
+    fontWeight: "700",
   },
   systemRow: {
     flexDirection: "row",
@@ -669,6 +1171,18 @@ const styles = StyleSheet.create({
     color: "#5c5b56",
     marginTop: 10,
     marginBottom: 6,
+  },
+  tipSectionTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 10,
+    marginBottom: 2,
+  },
+  tipSectionTitleOk: {
+    color: "#1f7a3f",
+  },
+  tipSectionTitleAlert: {
+    color: "#b42318",
   },
   input: {
     backgroundColor: "#fffaf6",
@@ -722,6 +1236,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#5c5b56",
   },
+  lockedNameRow: {
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  lockedNameDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: "#43b36d",
+  },
+  lockedNameText: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#2b2a27",
+  },
   actionRow: {
     flexDirection: "row",
     gap: 8,
@@ -757,6 +1288,14 @@ const styles = StyleSheet.create({
     marginTop: 10,
     color: "#5c5b56",
   },
+  tipStatusOk: {
+    color: "#1f7a3f",
+    fontWeight: "600",
+  },
+  tipStatusAlert: {
+    color: "#b42318",
+    fontWeight: "600",
+  },
   button: {
     height: 46,
     borderRadius: 14,
@@ -771,6 +1310,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#f0e6d8",
     marginTop: 10,
   },
+  tipsSubmitButton: {
+    marginTop: 10,
+  },
+  tipsSubmitButtonOk: {
+    backgroundColor: "#d9f5e4",
+    borderWidth: 1,
+    borderColor: "#7ccf9a",
+  },
+  tipsSubmitButtonAlert: {
+    backgroundColor: "#fde2e0",
+    borderWidth: 1,
+    borderColor: "#f5a7a2",
+  },
   primaryText: {
     fontWeight: "700",
     color: "#1a1a1a",
@@ -780,6 +1332,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#4b5563",
     fontSize: 14,
+  },
+  tipsSubmitButtonText: {
+    fontWeight: "700",
+    color: "#155d32",
+    fontSize: 14,
+  },
+  tipsSubmitButtonTextAlert: {
+    color: "#912018",
   },
   deviceCard: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",

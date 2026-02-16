@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 import { clockinFetch } from "../../../lib/clockin-api";
+import { scopedQueryFromRequest, withQuery } from "../../../lib/location-scope";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const query = await scopedQueryFromRequest(request);
+  const scope = query.get("scope");
+  if (scope !== "deleted") {
+    query.delete("scope");
+  }
+
   try {
-    const response = await clockinFetch("/employees");
+    const response = await clockinFetch(withQuery("/employees", query));
     if (response.ok) {
       const data = await response.json();
       return NextResponse.json(data);

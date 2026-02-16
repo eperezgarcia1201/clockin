@@ -36,7 +36,7 @@ export class EmployeeTipsService {
     const timeZone = settings?.timezone || "UTC";
 
     const employee = await this.prisma.employee.findFirst({
-      where: { tenantId: tenant.id, id: employeeId },
+      where: { tenantId: tenant.id, id: employeeId, deletedAt: null },
       select: {
         id: true,
         fullName: true,
@@ -120,7 +120,7 @@ export class EmployeeTipsService {
     const timeZone = settings?.timezone || "UTC";
 
     const employee = await this.prisma.employee.findFirst({
-      where: { tenantId: tenant.id, id: employeeId },
+      where: { tenantId: tenant.id, id: employeeId, deletedAt: null },
       select: {
         id: true,
         fullName: true,

@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { clockinFetch } from "../../../../lib/clockin-api";
+import {
+  scopedQueryFromRequest,
+  withQuery,
+} from "../../../../lib/location-scope";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const query = await scopedQueryFromRequest(request);
   try {
-    const response = await clockinFetch("/employees/summary");
+    const response = await clockinFetch(withQuery("/employees/summary", query));
     if (response.ok) {
       const data = await response.json();
       return NextResponse.json(data);

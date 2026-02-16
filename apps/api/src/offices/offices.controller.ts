@@ -12,7 +12,7 @@ import type { RequestWithUser } from "../auth/auth.types";
 import { CreateOfficeDto } from "./dto/create-office.dto";
 import { OfficesService } from "./offices.service";
 
-@Controller("offices")
+@Controller(["offices", "locations"])
 @UseGuards(AuthOrDevGuard)
 export class OfficesController {
   constructor(private readonly offices: OfficesService) {}

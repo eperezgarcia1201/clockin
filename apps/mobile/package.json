@@ -4,6 +4,8 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
+    "start:lan": "EXPO_PUBLIC_API_URL=http://$(ipconfig getifaddr en0 || ipconfig getifaddr en1):4000/api expo start --lan",
+    "start:lan:clear": "EXPO_PUBLIC_API_URL=http://$(ipconfig getifaddr en0 || ipconfig getifaddr en1):4000/api expo start --lan -c",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",

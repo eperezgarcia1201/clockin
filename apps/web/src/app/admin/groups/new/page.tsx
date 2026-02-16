@@ -56,13 +56,13 @@ export default function CreateGroup() {
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Office</label>
+            <label className="form-label">Location</label>
             <select
               className="form-select"
               value={officeId}
               onChange={(e) => setOfficeId(e.target.value)}
             >
-              <option value="">Select office</option>
+              <option value="">Select location</option>
               {offices.map((office) => (
                 <option key={office.id} value={office.id}>
                   {office.name}

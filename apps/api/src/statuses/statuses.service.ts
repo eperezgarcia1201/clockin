@@ -12,7 +12,7 @@ export class StatusesService {
   ) {}
 
   async list(authUser: AuthUser) {
-    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const { tenant } = await this.tenancy.requireFeature(authUser, "statuses");
 
     return this.prisma.punchStatus.findMany({
       where: { tenantId: tenant.id },
@@ -21,7 +21,7 @@ export class StatusesService {
   }
 
   async create(authUser: AuthUser, dto: CreateStatusDto) {
-    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const { tenant } = await this.tenancy.requireFeature(authUser, "statuses");
 
     return this.prisma.punchStatus.create({
       data: {

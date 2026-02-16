@@ -1,22 +1,34 @@
 import { clockinFetch } from "../../../../../lib/clockin-api";
 import { excelResponse } from "../../../../../lib/excel-export";
+import { companyMetaRows, getCompanyExportProfile } from "../../../../../lib/company-export";
+import {
+  scopedQueryFromRequest,
+  withQuery,
+} from "../../../../../lib/location-scope";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const query = searchParams.toString();
-  const response = await clockinFetch(
-    `/reports/daily${query ? `?${query}` : ""}`,
-  );
+  const query = await scopedQueryFromRequest(request);
+  const response = await clockinFetch(withQuery("/reports/daily", query));
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     return new Response(JSON.stringify(error), { status: response.status });
   }
   const data = await response.json();
+  const company = await getCompanyExportProfile();
 
   return excelResponse("daily-report.xlsx", (workbook) => {
     const sheet = workbook.addWorksheet("Daily Report");
+    sheet.addRow([company.displayName]);
+    sheet.addRow(["Report", "Daily Time Report"]);
+    if (data.range?.from && data.range?.to) {
+      sheet.addRow(["Range", `${data.range.from} - ${data.range.to}`]);
+    }
+    companyMetaRows(company).slice(1).forEach(([label, value]) => {
+      sheet.addRow([label, value]);
+    });
+    sheet.addRow([]);
     sheet.columns = [
       { header: "Employee", key: "employee", width: 26 },
       { header: "Date", key: "date", width: 14 },

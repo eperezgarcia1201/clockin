@@ -25,6 +25,14 @@ export class TenantFeaturesDto {
   @IsOptional()
   @IsBoolean()
   allowManualTimeEdits?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  dailySalesReportingEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  multiLocationEnabled?: boolean;
 }
 
 export class CreateTenantAccountDto {

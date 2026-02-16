@@ -2,36 +2,84 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+
+type Theme = "light" | "dark";
+type Lang = "en" | "es";
 
 const hasSso =
   Boolean(process.env.NEXT_PUBLIC_AUTH0_DOMAIN) &&
   Boolean(process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID);
 
-const inferTenantFromHostname = () => {
+const getStoredTheme = (): Theme => {
   if (typeof window === "undefined") {
-    return "";
+    return "light";
   }
+  return localStorage.getItem("clockin-theme") === "dark" ? "dark" : "light";
+};
 
-  const hostname = window.location.hostname.toLowerCase();
-  if (
-    !hostname ||
-    hostname === "localhost" ||
-    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)
-  ) {
-    return "";
+const getStoredLang = (): Lang => {
+  if (typeof window === "undefined") {
+    return "en";
   }
+  return localStorage.getItem("clockin-lang") === "es" ? "es" : "en";
+};
 
-  const parts = hostname.split(".").filter(Boolean);
-  if (parts.length >= 3) {
-    return parts[0];
-  }
-
-  if (parts.length === 2 && parts[1] === "localhost") {
-    return parts[0];
-  }
-
-  return "";
+const copy: Record<Lang, Record<string, string>> = {
+  en: {
+    mode: "Tenant Admin Portal",
+    title: "Administrator Access",
+    subtitle: "Sign in to manage employees, locations, and reports.",
+    dark: "Dark",
+    light: "Light",
+    ownerLogin: "Owner Login",
+    backToClockin: "Back to ClockIn",
+    tenant: "Tenant",
+    username: "Username",
+    password: "Password",
+    tenantHint:
+      "Use tenant name plus tenant-admin or manager credentials assigned by your tenant admin.",
+    signIn: "Sign In",
+    signingIn: "Signing In...",
+    forgotPassword: "Forgot password?",
+    sso: "Sign in with SSO",
+    resetPassword: "Reset Password",
+    resetHelp: "We'll send instructions to the admin email on file.",
+    sendReset: "Send Reset Link",
+    sendingReset: "Sending...",
+    invalidCredentials: "Invalid credentials.",
+    unableSignIn: "Unable to sign in.",
+    unableReset: "Unable to send reset instructions.",
+    unableResetLink: "Unable to send reset link.",
+    resetSent: "If an admin account exists, reset instructions have been sent.",
+  },
+  es: {
+    mode: "Portal Admin del Inquilino",
+    title: "Acceso de Administrador",
+    subtitle: "Inicia sesión para gestionar empleados, ubicaciones y reportes.",
+    dark: "Oscuro",
+    light: "Claro",
+    ownerLogin: "Acceso Dueño",
+    backToClockin: "Volver a ClockIn",
+    tenant: "Inquilino",
+    username: "Usuario",
+    password: "Contraseña",
+    tenantHint:
+      "Usa el nombre del inquilino y credenciales de admin del tenant o manager asignadas por tu admin.",
+    signIn: "Iniciar Sesión",
+    signingIn: "Ingresando...",
+    forgotPassword: "¿Olvidaste tu contraseña?",
+    sso: "Iniciar con SSO",
+    resetPassword: "Restablecer Contraseña",
+    resetHelp: "Enviaremos instrucciones al correo de administrador registrado.",
+    sendReset: "Enviar Enlace",
+    sendingReset: "Enviando...",
+    invalidCredentials: "Credenciales inválidas.",
+    unableSignIn: "No se pudo iniciar sesión.",
+    unableReset: "No se pudieron enviar las instrucciones.",
+    unableResetLink: "No se pudo enviar el enlace.",
+    resetSent: "Si existe una cuenta admin, se enviaron instrucciones.",
+  },
 };
 
 export default function AdminLoginPage() {
@@ -45,10 +93,27 @@ export default function AdminLoginPage() {
   const [resetEmail, setResetEmail] = useState("");
   const [resetStatus, setResetStatus] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [theme, setTheme] = useState<Theme>("light");
+  const [lang, setLang] = useState<Lang>("en");
 
   useEffect(() => {
-    setTenant((current) => current || inferTenantFromHostname());
+    setTheme(getStoredTheme());
+    setLang(getStoredLang());
   }, []);
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.lang = lang;
+    }
+    if (typeof window !== "undefined") {
+      localStorage.setItem("clockin-theme", theme);
+      localStorage.setItem("clockin-lang", lang);
+      window.dispatchEvent(new Event("clockin-lang-change"));
+    }
+  }, [lang, theme]);
+
+  const t = useMemo(() => copy[lang] ?? copy.en, [lang]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -64,12 +129,12 @@ export default function AdminLoginPage() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data?.error || "Invalid credentials.");
+        throw new Error(data?.error || t.invalidCredentials);
       }
 
       router.push("/admin");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to sign in.");
+      setStatus(error instanceof Error ? error.message : t.unableSignIn);
     } finally {
       setSubmitting(false);
     }
@@ -89,16 +154,12 @@ export default function AdminLoginPage() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data?.error || "Unable to send reset instructions.");
+        throw new Error(data?.error || t.unableReset);
       }
 
-      setResetStatus(
-        "If an admin account exists, reset instructions have been sent.",
-      );
+      setResetStatus(t.resetSent);
     } catch (error) {
-      setResetStatus(
-        error instanceof Error ? error.message : "Unable to send reset link.",
-      );
+      setResetStatus(error instanceof Error ? error.message : t.unableResetLink);
     } finally {
       setResetting(false);
     }
@@ -106,28 +167,59 @@ export default function AdminLoginPage() {
 
   return (
     <main className="page admin-login-page">
-      <div className="admin-login-card">
+      <div className="admin-login-card admin-login-card--admin">
         <div className="admin-login-header">
           <div>
-            <h1>Administrator Access</h1>
-            <p>Sign in to manage employees, offices, and reports.</p>
+            <span className="admin-login-mode">{t.mode}</span>
+            <h1>{t.title}</h1>
+            <p>{t.subtitle}</p>
           </div>
-          <Link href="/" className="admin-login-back">
-            <i className="fa-solid fa-arrow-left" aria-hidden="true" />
-            Back to ClockIn
-          </Link>
+          <div className="admin-login-header-actions">
+            <label className="admin-control">
+              <span>Lang</span>
+              <select
+                className="admin-select"
+                value={lang}
+                onChange={(event) => setLang(event.target.value as Lang)}
+              >
+                <option value="en">EN</option>
+                <option value="es">ES</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className="admin-login-theme"
+              onClick={() =>
+                setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+              }
+            >
+              <i
+                className={`fa-solid ${theme === "dark" ? "fa-moon" : "fa-sun"}`}
+                aria-hidden="true"
+              />
+              {theme === "dark" ? t.dark : t.light}
+            </button>
+            <Link href="/owner-login" className="admin-login-switch">
+              <i className="fa-solid fa-crown" aria-hidden="true" />
+              {t.ownerLogin}
+            </Link>
+            <Link href="/" className="admin-login-back">
+              <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+              {t.backToClockin}
+            </Link>
+          </div>
         </div>
 
         <form className="admin-login-body" onSubmit={onSubmit}>
           <label className="form-label" htmlFor="admin-tenant">
-            Tenant
+            {t.tenant}
           </label>
           <div className="input-row">
             <i className="fa-solid fa-building-user" aria-hidden="true" />
             <input
               id="admin-tenant"
               type="text"
-              placeholder="tenant-slug"
+              placeholder="tenant name"
               autoComplete="organization"
               value={tenant}
               onChange={(event) => setTenant(event.target.value)}
@@ -136,7 +228,7 @@ export default function AdminLoginPage() {
           </div>
 
           <label className="form-label" htmlFor="admin-username">
-            Username
+            {t.username}
           </label>
           <div className="input-row">
             <i className="fa-solid fa-user-shield" aria-hidden="true" />
@@ -152,7 +244,7 @@ export default function AdminLoginPage() {
           </div>
 
           <label className="form-label" htmlFor="admin-password">
-            Password
+            {t.password}
           </label>
           <div className="input-row">
             <i className="fa-solid fa-lock" aria-hidden="true" />
@@ -167,15 +259,13 @@ export default function AdminLoginPage() {
             />
           </div>
 
-          <div className="alert alert-info mb-0">
-            Use your tenant slug and admin credentials assigned by the owner.
-          </div>
+          <div className="alert alert-info mb-0">{t.tenantHint}</div>
 
           {status && <div className="alert alert-danger">{status}</div>}
 
           <div className="admin-login-actions">
             <button className="sign-button" type="submit" disabled={submitting}>
-              {submitting ? "Signing In..." : "Sign In"}
+              {submitting ? t.signingIn : t.signIn}
             </button>
             <button
               type="button"
@@ -183,7 +273,7 @@ export default function AdminLoginPage() {
               onClick={() => setShowReset((prev) => !prev)}
             >
               <i className="fa-solid fa-key" aria-hidden="true" />
-              Forgot password?
+              {t.forgotPassword}
             </button>
             {hasSso && (
               <a
@@ -191,7 +281,7 @@ export default function AdminLoginPage() {
                 href="/auth/login?returnTo=/admin"
               >
                 <i className="fa-solid fa-shield-halved" aria-hidden="true" />
-                Sign in with SSO
+                {t.sso}
               </a>
             )}
           </div>
@@ -200,8 +290,8 @@ export default function AdminLoginPage() {
         {showReset && (
           <form className="admin-reset" onSubmit={onReset}>
             <div>
-              <strong>Reset Password</strong>
-              <p>We’ll send instructions to the admin email on file.</p>
+              <strong>{t.resetPassword}</strong>
+              <p>{t.resetHelp}</p>
             </div>
             <div className="input-row">
               <i className="fa-solid fa-envelope" aria-hidden="true" />
@@ -221,7 +311,7 @@ export default function AdminLoginPage() {
               type="submit"
               disabled={resetting}
             >
-              {resetting ? "Sending..." : "Send Reset Link"}
+              {resetting ? t.sendingReset : t.sendReset}
             </button>
           </form>
         )}

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useUiLanguage } from "../../../lib/ui-language";
 
+type Lang = "en" | "es";
 type Employee = { id: string; name: string };
 
 type DayTip = {
@@ -25,10 +27,62 @@ type TipsReportResponse = {
   employees: EmployeeTipReport[];
 };
 
+const copy: Record<Lang, Record<string, string>> = {
+  en: {
+    title: "Tips Report",
+    period: "Period",
+    weekly: "Weekly",
+    biweekly: "Bi-Weekly",
+    monthly: "Monthly",
+    custom: "Custom",
+    from: "From",
+    to: "To",
+    employee: "Employee",
+    allServers: "All Servers",
+    runReport: "Run Report",
+    running: "Running...",
+    downloadPdf: "Download PDF",
+    noData: "No tip records found for this date range.",
+    totalTips: "Total Tips",
+    cash: "Cash",
+    creditCard: "Credit Card",
+    date: "Date",
+    allGood: "Unable to load tips report",
+  },
+  es: {
+    title: "Reporte de Propinas",
+    period: "Período",
+    weekly: "Semanal",
+    biweekly: "Quincenal",
+    monthly: "Mensual",
+    custom: "Personalizado",
+    from: "Desde",
+    to: "Hasta",
+    employee: "Empleado",
+    allServers: "Todos los Meseros",
+    runReport: "Ejecutar Reporte",
+    running: "Procesando...",
+    downloadPdf: "Descargar PDF",
+    noData: "No se encontraron propinas para este rango.",
+    totalTips: "Total de Propinas",
+    cash: "Efectivo",
+    creditCard: "Tarjeta",
+    date: "Fecha",
+    allGood: "No se pudo cargar el reporte de propinas",
+  },
+};
+
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
-const formatMoney = (value: number) => `$${value.toFixed(2)}`;
+const formatMoney = (value: number, lang: Lang) =>
+  new Intl.NumberFormat(lang === "es" ? "es-US" : "en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
 
 export default function TipsReportPage() {
+  const lang = useUiLanguage();
+  const t = useMemo(() => copy[lang] ?? copy.en, [lang]);
+
   const today = useMemo(() => new Date(), []);
   const sevenDaysAgo = useMemo(() => {
     const date = new Date();
@@ -70,7 +124,7 @@ export default function TipsReportPage() {
       setEmployees(data.employees || []);
     };
 
-    loadEmployees();
+    void loadEmployees();
   }, []);
 
   useEffect(() => {
@@ -92,7 +146,7 @@ export default function TipsReportPage() {
         cache: "no-store",
       });
       if (!response.ok) {
-        throw new Error("Unable to load tips report");
+        throw new Error(t.allGood);
       }
       const data = (await response.json()) as TipsReportResponse;
       setReport(data);
@@ -104,33 +158,33 @@ export default function TipsReportPage() {
   };
 
   useEffect(() => {
-    runReport();
+    void runReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="reports-page">
       <div className="admin-header">
-        <h1>Tips Report</h1>
+        <h1>{t.title}</h1>
       </div>
 
       <div className="admin-card report-filters">
         <div className="row g-3 align-items-end">
           <div className="col-12 col-md-3">
-            <label className="form-label">Period</label>
+            <label className="form-label">{t.period}</label>
             <select
               className="form-select"
               value={period}
               onChange={(event) => setPeriod(event.target.value)}
             >
-              <option value="weekly">Weekly</option>
-              <option value="biweekly">Bi-Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="custom">Custom</option>
+              <option value="weekly">{t.weekly}</option>
+              <option value="biweekly">{t.biweekly}</option>
+              <option value="monthly">{t.monthly}</option>
+              <option value="custom">{t.custom}</option>
             </select>
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">From</label>
+            <label className="form-label">{t.from}</label>
             <input
               className="form-control"
               type="date"
@@ -142,7 +196,7 @@ export default function TipsReportPage() {
             />
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">To</label>
+            <label className="form-label">{t.to}</label>
             <input
               className="form-control"
               type="date"
@@ -154,13 +208,13 @@ export default function TipsReportPage() {
             />
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Employee</label>
+            <label className="form-label">{t.employee}</label>
             <select
               className="form-select"
               value={employeeId}
               onChange={(event) => setEmployeeId(event.target.value)}
             >
-              <option value="">All Servers</option>
+              <option value="">{t.allServers}</option>
               {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.name}
@@ -169,16 +223,26 @@ export default function TipsReportPage() {
             </select>
           </div>
           <div className="col-12 d-flex gap-2 flex-wrap">
-            <button className="btn btn-primary" onClick={runReport}>
-              {loading ? "Running..." : "Run Report"}
+            <button className="btn btn-primary" onClick={() => void runReport()}>
+              {loading ? t.running : t.runReport}
             </button>
+            <a
+              className="btn btn-outline-secondary"
+              href={`/api/reports/tips/export?${new URLSearchParams({
+                from,
+                to,
+                ...(employeeId ? { employeeId } : {}),
+              }).toString()}`}
+            >
+              {t.downloadPdf}
+            </a>
           </div>
         </div>
       </div>
 
       {report && report.employees.length === 0 && (
         <div className="admin-card">
-          <p className="mb-0">No tip records found for this date range.</p>
+          <p className="mb-0">{t.noData}</p>
         </div>
       )}
 
@@ -195,12 +259,12 @@ export default function TipsReportPage() {
                 </div>
                 <div className="report-card-meta">
                   <div className="report-total">
-                    <div className="report-total-label">Total Tips</div>
+                    <div className="report-total-label">{t.totalTips}</div>
                     <div className="report-total-value">
-                      {formatMoney(employee.totalTips)}
+                      {formatMoney(employee.totalTips, lang)}
                       <span className="report-total-decimal">
-                        CC {formatMoney(employee.totalCreditCardTips)} / Cash{" "}
-                        {formatMoney(employee.totalCashTips)}
+                        {t.creditCard} {formatMoney(employee.totalCreditCardTips, lang)} / {t.cash}{" "}
+                        {formatMoney(employee.totalCashTips, lang)}
                       </span>
                     </div>
                   </div>
@@ -210,19 +274,19 @@ export default function TipsReportPage() {
                 <table className="report-table">
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Cash</th>
-                      <th>Credit Card</th>
-                      <th>Total</th>
+                      <th>{t.date}</th>
+                      <th>{t.cash}</th>
+                      <th>{t.creditCard}</th>
+                      <th>{t.totalTips}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {employee.days.map((day) => (
                       <tr key={`${employee.id}-${day.date}`}>
                         <td>{day.date}</td>
-                        <td>{formatMoney(day.cashTips)}</td>
-                        <td>{formatMoney(day.creditCardTips)}</td>
-                        <td>{formatMoney(day.totalTips)}</td>
+                        <td>{formatMoney(day.cashTips, lang)}</td>
+                        <td>{formatMoney(day.creditCardTips, lang)}</td>
+                        <td>{formatMoney(day.totalTips, lang)}</td>
                       </tr>
                     ))}
                   </tbody>

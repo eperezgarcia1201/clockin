@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -18,9 +19,11 @@ export class GroupsController {
   constructor(private readonly groups: GroupsService) {}
 
   @Get()
-  async list(@Req() req: RequestWithUser) {
+  async list(@Req() req: RequestWithUser, @Query("officeId") officeId?: string) {
     if (!req.user) throw new UnauthorizedException();
-    return { groups: await this.groups.list(req.user) };
+    return {
+      groups: await this.groups.list(req.user, officeId?.trim() || undefined),
+    };
   }
 
   @Post()

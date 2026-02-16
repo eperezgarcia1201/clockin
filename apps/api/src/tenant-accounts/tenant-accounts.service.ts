@@ -32,6 +32,8 @@ type TenantAccountRecord = {
     requirePin: boolean;
     reportsEnabled: boolean;
     allowManualTimeEdits: boolean;
+    dailySalesReportingEnabled: boolean;
+    multiLocationEnabled: boolean;
   } | null;
   memberships: {
     user: {
@@ -61,6 +63,8 @@ type TenantAccountResponse = {
     requirePin: boolean;
     reportsEnabled: boolean;
     allowManualTimeEdits: boolean;
+    dailySalesReportingEnabled: boolean;
+    multiLocationEnabled: boolean;
   };
   counts: {
     employees: number;
@@ -79,6 +83,8 @@ const defaultFeatures = () => ({
   requirePin: true,
   reportsEnabled: true,
   allowManualTimeEdits: true,
+  dailySalesReportingEnabled: false,
+  multiLocationEnabled: false,
 });
 
 const slugify = (value: string): string =>
@@ -109,6 +115,8 @@ export class TenantAccountsService {
             requirePin: true,
             reportsEnabled: true,
             allowManualTimeEdits: true,
+            dailySalesReportingEnabled: true,
+            multiLocationEnabled: true,
           },
         },
         memberships: {
@@ -202,6 +210,8 @@ export class TenantAccountsService {
           requirePin: features.requirePin,
           reportsEnabled: features.reportsEnabled,
           allowManualTimeEdits: features.allowManualTimeEdits,
+          dailySalesReportingEnabled: features.dailySalesReportingEnabled,
+          multiLocationEnabled: features.multiLocationEnabled,
           ipRestrictions: null,
         },
       });
@@ -293,7 +303,9 @@ export class TenantAccountsService {
     const hasFeaturesUpdate =
       dto.features?.requirePin !== undefined ||
       dto.features?.reportsEnabled !== undefined ||
-      dto.features?.allowManualTimeEdits !== undefined;
+      dto.features?.allowManualTimeEdits !== undefined ||
+      dto.features?.dailySalesReportingEnabled !== undefined ||
+      dto.features?.multiLocationEnabled !== undefined;
 
     const hasSettingsUpdate =
       hasFeaturesUpdate ||
@@ -331,6 +343,14 @@ export class TenantAccountsService {
               dto.features?.allowManualTimeEdits !== undefined
                 ? dto.features.allowManualTimeEdits
                 : undefined,
+            dailySalesReportingEnabled:
+              dto.features?.dailySalesReportingEnabled !== undefined
+                ? dto.features.dailySalesReportingEnabled
+                : undefined,
+            multiLocationEnabled:
+              dto.features?.multiLocationEnabled !== undefined
+                ? dto.features.multiLocationEnabled
+                : undefined,
           },
           create: {
             tenantId,
@@ -343,6 +363,8 @@ export class TenantAccountsService {
             requirePin: features.requirePin,
             reportsEnabled: features.reportsEnabled,
             allowManualTimeEdits: features.allowManualTimeEdits,
+            dailySalesReportingEnabled: features.dailySalesReportingEnabled,
+            multiLocationEnabled: features.multiLocationEnabled,
             ipRestrictions: null,
           },
         });
@@ -386,6 +408,7 @@ export class TenantAccountsService {
             adminDevices: true,
             employeeSchedules: true,
             employeeTips: true,
+            dailySalesReports: true,
           },
         },
       },
@@ -414,7 +437,8 @@ export class TenantAccountsService {
       tenant._count.notifications +
       tenant._count.adminDevices +
       tenant._count.employeeSchedules +
-      tenant._count.employeeTips;
+      tenant._count.employeeTips +
+      tenant._count.dailySalesReports;
 
     if (totalRelated > 0) {
       throw new BadRequestException(
@@ -450,6 +474,11 @@ export class TenantAccountsService {
       reportsEnabled: features?.reportsEnabled ?? defaults.reportsEnabled,
       allowManualTimeEdits:
         features?.allowManualTimeEdits ?? defaults.allowManualTimeEdits,
+      dailySalesReportingEnabled:
+        features?.dailySalesReportingEnabled ??
+        defaults.dailySalesReportingEnabled,
+      multiLocationEnabled:
+        features?.multiLocationEnabled ?? defaults.multiLocationEnabled,
     };
   }
 
@@ -580,6 +609,8 @@ export class TenantAccountsService {
             requirePin: true,
             reportsEnabled: true,
             allowManualTimeEdits: true,
+            dailySalesReportingEnabled: true,
+            multiLocationEnabled: true,
           },
         },
         memberships: {
@@ -635,6 +666,12 @@ export class TenantAccountsService {
         allowManualTimeEdits:
           tenant.settings?.allowManualTimeEdits ??
           defaults.allowManualTimeEdits,
+        dailySalesReportingEnabled:
+          tenant.settings?.dailySalesReportingEnabled ??
+          defaults.dailySalesReportingEnabled,
+        multiLocationEnabled:
+          tenant.settings?.multiLocationEnabled ??
+          defaults.multiLocationEnabled,
       },
       counts: {
         employees: tenant._count.employees,

@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import {
+  type ManagerFeatureKey,
+  managerFeatureOptions,
+} from "../../../../lib/manager-features";
 
 type Office = { id: string; name: string };
 type Group = { id: string; name: string };
@@ -14,6 +18,8 @@ type Employee = {
   hourlyRate?: number | null;
   officeId: string | null;
   groupId: string | null;
+  isManager: boolean;
+  managerPermissions: ManagerFeatureKey[];
   isAdmin: boolean;
   isTimeAdmin: boolean;
   isReports: boolean;
@@ -35,6 +41,8 @@ type FormState = {
   hourlyRate: string;
   officeId: string;
   groupId: string;
+  isManager: boolean;
+  managerPermissions: ManagerFeatureKey[];
   isAdmin: boolean;
   isTimeAdmin: boolean;
   isReports: boolean;
@@ -50,6 +58,8 @@ const emptyForm: FormState = {
   hourlyRate: "",
   officeId: "",
   groupId: "",
+  isManager: false,
+  managerPermissions: [],
   isAdmin: false,
   isTimeAdmin: false,
   isReports: false,
@@ -80,6 +90,8 @@ export default function EditUser() {
   const [clockOutAt, setClockOutAt] = useState("");
   const [clockOutNotes, setClockOutNotes] = useState("Manual clock-out");
   const [timeStatus, setTimeStatus] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deletingUser, setDeletingUser] = useState(false);
 
   useEffect(() => {
     const idParam = params?.id;
@@ -122,6 +134,8 @@ export default function EditUser() {
               : "",
           officeId: employee.officeId || "",
           groupId: employee.groupId || "",
+          isManager: Boolean(employee.isManager),
+          managerPermissions: employee.managerPermissions || [],
           isAdmin: employee.isAdmin,
           isTimeAdmin: employee.isTimeAdmin,
           isReports: employee.isReports,
@@ -183,6 +197,18 @@ export default function EditUser() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const toggleManagerFeature = (feature: ManagerFeatureKey) => {
+    setForm((prev) => {
+      const enabled = prev.managerPermissions.includes(feature);
+      return {
+        ...prev,
+        managerPermissions: enabled
+          ? prev.managerPermissions.filter((key) => key !== feature)
+          : [...prev.managerPermissions, feature],
+      };
+    });
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setStatus(null);
@@ -212,6 +238,8 @@ export default function EditUser() {
         hourlyRate: hourlyRateValue,
         officeId: form.officeId || undefined,
         groupId: form.groupId || undefined,
+        isManager: form.isManager,
+        managerPermissions: form.isManager ? form.managerPermissions : [],
         isAdmin: form.isAdmin,
         isTimeAdmin: form.isTimeAdmin,
         isReports: form.isReports,
@@ -268,15 +296,22 @@ export default function EditUser() {
   };
 
   const handleDelete = async () => {
-    const ok = confirm("Disable this user?");
-    if (!ok) return;
-    const response = await fetch(`/api/employees/${employeeId}`, {
-      method: "DELETE",
-    });
-    if (response.ok) {
-      router.push("/admin/users");
-    } else {
-      setStatus("Unable to disable user.");
+    setDeletingUser(true);
+    setStatus(null);
+    try {
+      const response = await fetch(`/api/employees/${employeeId}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        setConfirmDeleteOpen(false);
+        router.push("/admin/users");
+      } else {
+        setStatus("Unable to move user to Deleted Users.");
+      }
+    } catch {
+      setStatus("Unable to move user to Deleted Users.");
+    } finally {
+      setDeletingUser(false);
     }
   };
 
@@ -360,14 +395,14 @@ export default function EditUser() {
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Office *</label>
+            <label className="form-label">Location *</label>
             <select
               className="form-select"
               value={form.officeId}
               onChange={(e) => update("officeId", e.target.value)}
               required
             >
-              <option value="">Select office</option>
+              <option value="">Select location</option>
               {offices.map((office) => (
                 <option key={office.id} value={office.id}>
                   {office.name}
@@ -391,6 +426,43 @@ export default function EditUser() {
               ))}
             </select>
           </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">Manager Access?</label>
+            <select
+              className="form-select"
+              value={form.isManager ? "yes" : "no"}
+              onChange={(e) => update("isManager", e.target.value === "yes")}
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+          {form.isManager && (
+            <div className="col-12">
+              <label className="form-label">Manager Feature Access</label>
+              <div className="d-flex flex-wrap gap-2">
+                {managerFeatureOptions.map((feature) => {
+                  const checked = form.managerPermissions.includes(feature.key);
+                  return (
+                    <label
+                      key={feature.key}
+                      className={`btn btn-sm ${
+                        checked ? "btn-primary" : "btn-outline-secondary"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="d-none"
+                        checked={checked}
+                        onChange={() => toggleManagerFeature(feature.key)}
+                      />
+                      {feature.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="col-12 col-md-6">
             <label className="form-label">Sys Admin User?</label>
             <select
@@ -453,9 +525,9 @@ export default function EditUser() {
             <button
               className="btn btn-outline-danger"
               type="button"
-              onClick={handleDelete}
+              onClick={() => setConfirmDeleteOpen(true)}
             >
-              Disable User
+              Delete User
             </button>
             <a className="btn btn-outline-secondary" href="/admin/users">
               Cancel
@@ -463,6 +535,46 @@ export default function EditUser() {
           </div>
         </form>
       </div>
+
+      {confirmDeleteOpen && (
+        <div
+          className="embedded-confirm-backdrop"
+          onClick={() => {
+            if (!deletingUser) {
+              setConfirmDeleteOpen(false);
+            }
+          }}
+        >
+          <div
+            className="embedded-confirm-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="embedded-confirm-title">Archive User</h2>
+            <p className="embedded-confirm-message">
+              Move this user to Deleted Users? Records will be preserved and can
+              be restored later.
+            </p>
+            <div className="embedded-confirm-actions">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                disabled={deletingUser}
+                onClick={() => setConfirmDeleteOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={deletingUser}
+                onClick={() => void handleDelete()}
+              >
+                {deletingUser ? "Processing..." : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="admin-card">
         <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">

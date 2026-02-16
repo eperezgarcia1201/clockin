@@ -2,7 +2,57 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+
+type Theme = "light" | "dark";
+type Lang = "en" | "es";
+
+const getStoredTheme = (): Theme => {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+  return localStorage.getItem("clockin-theme") === "dark" ? "dark" : "light";
+};
+
+const getStoredLang = (): Lang => {
+  if (typeof window === "undefined") {
+    return "en";
+  }
+  return localStorage.getItem("clockin-lang") === "es" ? "es" : "en";
+};
+
+const copy: Record<Lang, Record<string, string>> = {
+  en: {
+    mode: "Owner Command Portal",
+    title: "Owner Access",
+    subtitle: "Sign in to manage tenant accounts and feature access.",
+    dark: "Dark",
+    light: "Light",
+    adminLogin: "Admin Login",
+    backToClockin: "Back to ClockIn",
+    username: "Username",
+    password: "Password",
+    signIn: "Sign In",
+    signingIn: "Signing In...",
+    invalidCredentials: "Invalid credentials.",
+    unableSignIn: "Unable to sign in.",
+  },
+  es: {
+    mode: "Portal de Comando del Dueño",
+    title: "Acceso de Dueño",
+    subtitle: "Inicia sesión para administrar inquilinos y funciones.",
+    dark: "Oscuro",
+    light: "Claro",
+    adminLogin: "Acceso Admin",
+    backToClockin: "Volver a ClockIn",
+    username: "Usuario",
+    password: "Contraseña",
+    signIn: "Iniciar Sesión",
+    signingIn: "Ingresando...",
+    invalidCredentials: "Credenciales inválidas.",
+    unableSignIn: "No se pudo iniciar sesión.",
+  },
+};
 
 export default function OwnerLoginPage() {
   const router = useRouter();
@@ -10,6 +60,27 @@ export default function OwnerLoginPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [theme, setTheme] = useState<Theme>("light");
+  const [lang, setLang] = useState<Lang>("en");
+
+  useEffect(() => {
+    setTheme(getStoredTheme());
+    setLang(getStoredLang());
+  }, []);
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.lang = lang;
+    }
+    if (typeof window !== "undefined") {
+      localStorage.setItem("clockin-theme", theme);
+      localStorage.setItem("clockin-lang", lang);
+      window.dispatchEvent(new Event("clockin-lang-change"));
+    }
+  }, [lang, theme]);
+
+  const t = useMemo(() => copy[lang] ?? copy.en, [lang]);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -25,12 +96,12 @@ export default function OwnerLoginPage() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data?.error || "Invalid credentials.");
+        throw new Error(data?.error || t.invalidCredentials);
       }
 
       router.push("/owner");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Unable to sign in.");
+      setStatus(error instanceof Error ? error.message : t.unableSignIn);
     } finally {
       setSubmitting(false);
     }
@@ -38,21 +109,52 @@ export default function OwnerLoginPage() {
 
   return (
     <main className="page admin-login-page">
-      <div className="admin-login-card">
+      <div className="admin-login-card admin-login-card--owner">
         <div className="admin-login-header">
           <div>
-            <h1>Owner Access</h1>
-            <p>Sign in to manage tenant accounts and feature access.</p>
+            <span className="admin-login-mode">{t.mode}</span>
+            <h1>{t.title}</h1>
+            <p>{t.subtitle}</p>
           </div>
-          <Link href="/" className="admin-login-back">
-            <i className="fa-solid fa-arrow-left" aria-hidden="true" />
-            Back to ClockIn
-          </Link>
+          <div className="admin-login-header-actions">
+            <label className="admin-control">
+              <span>Lang</span>
+              <select
+                className="admin-select"
+                value={lang}
+                onChange={(event) => setLang(event.target.value as Lang)}
+              >
+                <option value="en">EN</option>
+                <option value="es">ES</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className="admin-login-theme"
+              onClick={() =>
+                setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+              }
+            >
+              <i
+                className={`fa-solid ${theme === "dark" ? "fa-moon" : "fa-sun"}`}
+                aria-hidden="true"
+              />
+              {theme === "dark" ? t.dark : t.light}
+            </button>
+            <Link href="/admin-login" className="admin-login-switch">
+              <i className="fa-solid fa-user-shield" aria-hidden="true" />
+              {t.adminLogin}
+            </Link>
+            <Link href="/" className="admin-login-back">
+              <i className="fa-solid fa-arrow-left" aria-hidden="true" />
+              {t.backToClockin}
+            </Link>
+          </div>
         </div>
 
         <form className="admin-login-body" onSubmit={onSubmit}>
           <label className="form-label" htmlFor="owner-username">
-            Username
+            {t.username}
           </label>
           <div className="input-row">
             <i className="fa-solid fa-user-tie" aria-hidden="true" />
@@ -68,7 +170,7 @@ export default function OwnerLoginPage() {
           </div>
 
           <label className="form-label" htmlFor="owner-password">
-            Password
+            {t.password}
           </label>
           <div className="input-row">
             <i className="fa-solid fa-lock" aria-hidden="true" />
@@ -87,7 +189,7 @@ export default function OwnerLoginPage() {
 
           <div className="admin-login-actions">
             <button className="sign-button" type="submit" disabled={submitting}>
-              {submitting ? "Signing In..." : "Sign In"}
+              {submitting ? t.signingIn : t.signIn}
             </button>
           </div>
         </form>

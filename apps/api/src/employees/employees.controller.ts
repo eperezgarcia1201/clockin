@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -22,22 +23,31 @@ export class EmployeesController {
   constructor(private readonly employees: EmployeesService) {}
 
   @Get()
-  async list(@Req() req: RequestWithUser) {
+  async list(
+    @Req() req: RequestWithUser,
+    @Query("scope") scope?: string,
+    @Query("officeId") officeId?: string,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
 
-    const employees = await this.employees.listEmployees(req.user);
+    const employees = await this.employees.listEmployees(req.user, {
+      includeDeleted: scope === "deleted",
+      officeId: officeId?.trim() || undefined,
+    });
     return { employees };
   }
 
   @Get("summary")
-  async summary(@Req() req: RequestWithUser) {
+  async summary(@Req() req: RequestWithUser, @Query("officeId") officeId?: string) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
 
-    return this.employees.getSummary(req.user);
+    return this.employees.getSummary(req.user, {
+      officeId: officeId?.trim() || undefined,
+    });
   }
 
   @Post()
@@ -77,6 +87,24 @@ export class EmployeesController {
       throw new UnauthorizedException();
     }
 
-    return this.employees.deleteEmployee(req.user, id);
+    return this.employees.softDeleteEmployee(req.user, id);
+  }
+
+  @Patch(":id/restore")
+  async restore(@Req() req: RequestWithUser, @Param("id") id: string) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.employees.restoreEmployee(req.user, id);
+  }
+
+  @Delete(":id/permanent")
+  async removePermanently(@Req() req: RequestWithUser, @Param("id") id: string) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.employees.deleteEmployeePermanently(req.user, id);
   }
 }

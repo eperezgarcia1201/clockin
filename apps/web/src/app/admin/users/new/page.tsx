@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  type ManagerFeatureKey,
+  managerFeatureOptions,
+} from "../../../../lib/manager-features";
 
 type Office = { id: string; name: string };
 type Group = { id: string; name: string };
@@ -13,6 +17,8 @@ type FormState = {
   hourlyRate: string;
   officeId: string;
   groupId: string;
+  isManager: boolean;
+  managerPermissions: ManagerFeatureKey[];
   isAdmin: boolean;
   isTimeAdmin: boolean;
   isReports: boolean;
@@ -28,6 +34,8 @@ const initialForm: FormState = {
   hourlyRate: "",
   officeId: "",
   groupId: "",
+  isManager: false,
+  managerPermissions: [],
   isAdmin: false,
   isTimeAdmin: false,
   isReports: false,
@@ -66,6 +74,18 @@ export default function CreateUser() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const toggleManagerFeature = (feature: ManagerFeatureKey) => {
+    setForm((prev) => {
+      const enabled = prev.managerPermissions.includes(feature);
+      return {
+        ...prev,
+        managerPermissions: enabled
+          ? prev.managerPermissions.filter((key) => key !== feature)
+          : [...prev.managerPermissions, feature],
+      };
+    });
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setStatus(null);
@@ -95,6 +115,8 @@ export default function CreateUser() {
         hourlyRate: hourlyRateValue,
         officeId: form.officeId || undefined,
         groupId: form.groupId || undefined,
+        isManager: form.isManager,
+        managerPermissions: form.isManager ? form.managerPermissions : [],
         isAdmin: form.isAdmin,
         isTimeAdmin: form.isTimeAdmin,
         isReports: form.isReports,
@@ -191,14 +213,14 @@ export default function CreateUser() {
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Office *</label>
+            <label className="form-label">Location *</label>
             <select
               className="form-select"
               value={form.officeId}
               onChange={(e) => update("officeId", e.target.value)}
               required
             >
-              <option value="">Select office</option>
+              <option value="">Select location</option>
               {offices.map((office) => (
                 <option key={office.id} value={office.id}>
                   {office.name}
@@ -222,6 +244,43 @@ export default function CreateUser() {
               ))}
             </select>
           </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">Manager Access?</label>
+            <select
+              className="form-select"
+              value={form.isManager ? "yes" : "no"}
+              onChange={(e) => update("isManager", e.target.value === "yes")}
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+          {form.isManager && (
+            <div className="col-12">
+              <label className="form-label">Manager Feature Access</label>
+              <div className="d-flex flex-wrap gap-2">
+                {managerFeatureOptions.map((feature) => {
+                  const checked = form.managerPermissions.includes(feature.key);
+                  return (
+                    <label
+                      key={feature.key}
+                      className={`btn btn-sm ${
+                        checked ? "btn-primary" : "btn-outline-secondary"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="d-none"
+                        checked={checked}
+                        onChange={() => toggleManagerFeature(feature.key)}
+                      />
+                      {feature.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           <div className="col-12 col-md-6">
             <label className="form-label">Sys Admin User?</label>
             <select

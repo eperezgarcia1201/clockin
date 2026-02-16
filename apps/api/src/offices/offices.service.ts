@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { TenancyService } from "../tenancy/tenancy.service";
 import type { AuthUser } from "../auth/auth.types";
@@ -12,7 +12,7 @@ export class OfficesService {
   ) {}
 
   async list(authUser: AuthUser) {
-    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const { tenant } = await this.tenancy.requireFeature(authUser, "locations");
 
     return this.prisma.office.findMany({
       where: { tenantId: tenant.id },
@@ -21,7 +21,19 @@ export class OfficesService {
   }
 
   async create(authUser: AuthUser, dto: CreateOfficeDto) {
-    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const access = await this.tenancy.requireFeature(authUser, "locations");
+    const { tenant } = access;
+
+    if (!access.settings.multiLocationEnabled) {
+      const locationCount = await this.prisma.office.count({
+        where: { tenantId: tenant.id },
+      });
+      if (locationCount > 0) {
+        throw new ForbiddenException(
+          "Multi-location management is disabled for this tenant.",
+        );
+      }
+    }
 
     return this.prisma.office.create({
       data: {
