@@ -9,12 +9,18 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.websysclockin.com/api"
+      }
     },
     "production": {
       "distribution": "store",
       "channel": "production",
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.websysclockin.com/api"
+      },
       "android": {
         "buildType": "app-bundle"
       }

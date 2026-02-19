@@ -11,6 +11,7 @@ type Employee = {
   name: string;
   active: boolean;
   isServer?: boolean;
+  officeId?: string | null;
 };
 
 type Office = {
@@ -46,6 +47,26 @@ type PunchRow = {
 
 const EMPLOYEE_TENANT_STORAGE_KEY = "clockin_employee_tenant";
 const EMPLOYEE_OFFICE_STORAGE_KEY = "clockin_employee_office_id";
+const isOfficeScopeUnsupportedError = (message: string) => {
+  const normalized = message.toLowerCase();
+  return normalized.includes("officeid") && normalized.includes("should not exist");
+};
+
+const readApiErrorMessage = async (response: Response) => {
+  const raw = await response.text().catch(() => "");
+  if (!raw) {
+    return `Request failed (${response.status})`;
+  }
+  try {
+    const payload = JSON.parse(raw) as {
+      message?: string;
+      error?: string;
+    };
+    return payload.message || payload.error || raw;
+  } catch {
+    return raw;
+  }
+};
 
 export default function Home() {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -137,16 +158,47 @@ export default function Home() {
   const loadEmployees = useCallback(async () => {
     if (!contextReady) return;
     try {
-      const query = activeOfficeId
-        ? `?officeId=${encodeURIComponent(activeOfficeId)}`
-        : "";
-      const response = await fetch(`${apiBase}/employees${query}`, {
+      if (activeOfficeId) {
+        const scopedResponse = await fetch(
+          `${apiBase}/employees?officeId=${encodeURIComponent(activeOfficeId)}`,
+          {
+            cache: "no-store",
+          },
+        );
+        if (scopedResponse.ok) {
+          const scopedData = (await scopedResponse.json()) as {
+            employees?: Employee[];
+          };
+          if (scopedData.employees) {
+            setEmployees(scopedData.employees);
+          }
+          return;
+        }
+
+        const scopedErrorMessage = await readApiErrorMessage(scopedResponse);
+        if (!isOfficeScopeUnsupportedError(scopedErrorMessage)) {
+          return;
+        }
+      }
+
+      const response = await fetch(`${apiBase}/employees`, {
         cache: "no-store",
       });
       if (!response.ok) return;
       const data = (await response.json()) as { employees?: Employee[] };
       if (data.employees) {
-        setEmployees(data.employees);
+        if (!activeOfficeId) {
+          setEmployees(data.employees);
+          return;
+        }
+
+        const scopedFallback = data.employees.filter((employee) => {
+          if (typeof employee.officeId === "string") {
+            return employee.officeId === activeOfficeId;
+          }
+          return true;
+        });
+        setEmployees(scopedFallback);
       }
     } finally {
       setLoadingEmployees(false);
@@ -156,15 +208,30 @@ export default function Home() {
   const loadPunches = useCallback(async () => {
     if (!contextReady) return;
     try {
-      const query = activeOfficeId
-        ? `?officeId=${encodeURIComponent(activeOfficeId)}`
-        : "";
-      const response = await fetch(
-        `${apiBase}/employee-punches/recent${query}`,
-        {
-          cache: "no-store",
-        },
-      );
+      if (activeOfficeId) {
+        const scopedResponse = await fetch(
+          `${apiBase}/employee-punches/recent?officeId=${encodeURIComponent(activeOfficeId)}`,
+          {
+            cache: "no-store",
+          },
+        );
+        if (scopedResponse.ok) {
+          const scopedData = (await scopedResponse.json()) as { rows?: PunchRow[] };
+          if (scopedData.rows) {
+            setRecentPunches(scopedData.rows);
+          }
+          return;
+        }
+
+        const scopedErrorMessage = await readApiErrorMessage(scopedResponse);
+        if (!isOfficeScopeUnsupportedError(scopedErrorMessage)) {
+          return;
+        }
+      }
+
+      const response = await fetch(`${apiBase}/employee-punches/recent`, {
+        cache: "no-store",
+      });
       if (!response.ok) return;
       const data = (await response.json()) as { rows?: PunchRow[] };
       if (data.rows) {

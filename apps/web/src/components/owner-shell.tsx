@@ -76,10 +76,10 @@ export function OwnerShell({
         <div className="admin-branding">
           <div className="admin-logo">
             <Image
-              src="/websys-logo.png"
+              src="/websys-mark.png"
               alt="Websys logo"
-              width={38}
-              height={38}
+              width={52}
+              height={52}
               className="admin-logo-image"
               priority
             />

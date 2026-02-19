@@ -35,6 +35,7 @@ enum NotificationType {
   NO_BREAK_6H
   TIPS_7D_SUMMARY
   SCHEDULE_OVERRIDE_REQUEST
+  LATE_CLOCK_IN_5M
 }
 
 enum ScheduleOverrideStatus {
@@ -80,6 +81,7 @@ model Tenant {
   employeeTips             EmployeeTip[]
   dailySalesReports        DailySalesReport[]
   dailyExpenses            DailyExpense[]
+  companyOrders            CompanyOrder[]
   settings                 TenantSettings?
 
   @@index([isActive])
@@ -137,15 +139,19 @@ model Location {
 }
 
 model Office {
-  id        String   @id @default(cuid())
-  tenantId  String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  tenantId             String
+  name                 String
+  latitude             Float?
+  longitude            Float?
+  geofenceRadiusMeters Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  groups    Group[]
-  employees Employee[]
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  groups        Group[]
+  employees     Employee[]
+  companyOrders CompanyOrder[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -168,32 +174,34 @@ model Group {
 }
 
 model Employee {
-  id          String    @id @default(cuid())
-  tenantId    String
-  fullName    String
-  displayName String?
-  email       String?
-  pinHash     String?
-  hourlyRate  Float?
-  officeId    String?
-  groupId     String?
-  isManager   Boolean   @default(false)
-  managerPermissions String[] @default([])
-  isAdmin     Boolean   @default(false)
-  isTimeAdmin Boolean   @default(false)
-  isReports   Boolean   @default(false)
-  isServer    Boolean   @default(false)
-  disabled    Boolean   @default(false)
-  deletedAt   DateTime?
-  deletedBy   String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  tenantId           String
+  fullName           String
+  displayName        String?
+  email              String?
+  pinHash            String?
+  hourlyRate         Float?
+  officeId           String?
+  groupId            String?
+  isManager          Boolean   @default(false)
+  managerPermissions String[]  @default([])
+  isAdmin            Boolean   @default(false)
+  isTimeAdmin        Boolean   @default(false)
+  isReports          Boolean   @default(false)
+  isServer           Boolean   @default(false)
+  isKitchenManager   Boolean   @default(false)
+  disabled           Boolean   @default(false)
+  deletedAt          DateTime?
+  deletedBy          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   tenant                   Tenant                    @relation(fields: [tenantId], references: [id])
   office                   Office?                   @relation(fields: [officeId], references: [id])
   group                    Group?                    @relation(fields: [groupId], references: [id])
   punches                  EmployeePunch[]
   tips                     EmployeeTip[]
+  companyOrdersCreated     CompanyOrder[]            @relation("CompanyOrderCreatedBy")
   notifications            Notification[]
   schedules                EmployeeSchedule[]
   scheduleOverrideRequests ScheduleOverrideRequest[]
@@ -285,6 +293,8 @@ model EmployeePunch {
   occurredAt DateTime
   notes      String?
   ipAddress  String?
+  latitude   Float?
+  longitude  Float?
   createdAt  DateTime  @default(now())
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id])
@@ -369,6 +379,7 @@ model TenantSettings {
   reportsEnabled             Boolean  @default(true)
   allowManualTimeEdits       Boolean  @default(true)
   dailySalesReportingEnabled Boolean  @default(false)
+  companyOrdersEnabled       Boolean  @default(false)
   multiLocationEnabled       Boolean  @default(false)
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
@@ -392,6 +403,40 @@ model EmployeeTip {
   @@unique([tenantId, employeeId, workDate])
   @@index([tenantId, workDate])
   @@index([tenantId, employeeId])
+}
+
+model CompanyOrder {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  officeId            String?
+  supplierName        String
+  orderDate           DateTime
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  office            Office?            @relation(fields: [officeId], references: [id])
+  createdByEmployee Employee?          @relation("CompanyOrderCreatedBy", fields: [createdByEmployeeId], references: [id])
+  items             CompanyOrderItem[]
+
+  @@index([tenantId, orderDate])
+  @@index([tenantId, supplierName])
+  @@index([tenantId, officeId, orderDate])
+}
+
+model CompanyOrderItem {
+  id             String   @id @default(cuid())
+  companyOrderId String
+  nameEs         String
+  nameEn         String
+  quantity       Float
+  createdAt      DateTime @default(now())
+
+  companyOrder CompanyOrder @relation(fields: [companyOrderId], references: [id], onDelete: Cascade)
+
+  @@index([companyOrderId])
 }
 
 model DailySalesReport {

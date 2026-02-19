@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Put,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -17,6 +18,18 @@ import { UpdateEmployeeScheduleDto } from './dto/update-employee-schedule.dto';
 @UseGuards(AuthOrDevGuard)
 export class EmployeeSchedulesController {
   constructor(private readonly schedules: EmployeeSchedulesService) {}
+
+  @Get('today')
+  async getToday(
+    @Req() req: RequestWithUser,
+    @Query('officeId') officeId?: string,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.schedules.getTodaySchedule(req.user, { officeId });
+  }
 
   @Get(':employeeId')
   async getOne(

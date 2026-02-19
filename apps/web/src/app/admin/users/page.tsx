@@ -12,10 +12,12 @@ type EmployeeRow = {
   groupId?: string | null;
   isManager?: boolean;
   managerPermissions?: string[];
+  isOwnerManager?: boolean;
   isAdmin?: boolean;
   isTimeAdmin?: boolean;
   isReports?: boolean;
   isServer?: boolean;
+  isKitchenManager?: boolean;
   deletedAt?: string | null;
   deletedBy?: string | null;
   hoursRecordCount?: number;
@@ -376,12 +378,14 @@ export default function UsersSummary() {
                   <th>Location</th>
                   <th>Group</th>
                   <th>Manager</th>
+                  <th>Owner</th>
                   <th>Hours Records</th>
                   <th>Disabled</th>
                   <th>Sys Admin</th>
                   <th>Time Admin</th>
                   <th>Reports</th>
                   <th>Server</th>
+                  <th>Kitchen Mgr</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -402,12 +406,20 @@ export default function UsersSummary() {
                         : "—"}
                     </td>
                     <td>{employee.isManager ? "Yes" : ""}</td>
+                    <td>
+                      {employee.isManager
+                        ? employee.isOwnerManager
+                          ? "Yes"
+                          : "No"
+                        : "—"}
+                    </td>
                     <td>{employee.hoursRecordCount ?? 0}</td>
                     <td>{employee.active ? "" : "Yes"}</td>
                     <td>{employee.isAdmin ? "Yes" : ""}</td>
                     <td>{employee.isTimeAdmin ? "Yes" : ""}</td>
                     <td>{employee.isReports ? "Yes" : ""}</td>
                     <td>{employee.isServer ? "Yes" : ""}</td>
+                    <td>{employee.isKitchenManager ? "Yes" : ""}</td>
                     <td>
                       <div className="d-flex gap-2">
                         <a
@@ -465,7 +477,7 @@ export default function UsersSummary() {
                 ))}
                 {filteredEmployees.length === 0 && (
                   <tr>
-                    <td colSpan={12} className="text-center text-muted py-4">
+                    <td colSpan={14} className="text-center text-muted py-4">
                       No active users found.
                     </td>
                   </tr>

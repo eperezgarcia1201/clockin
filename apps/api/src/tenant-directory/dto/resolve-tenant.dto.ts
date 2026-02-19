@@ -10,4 +10,9 @@ export class ResolveTenantDto {
   @IsString()
   @MaxLength(200)
   host?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  officeId?: string;
 }

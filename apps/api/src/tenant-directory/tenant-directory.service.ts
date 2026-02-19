@@ -40,6 +40,16 @@ const DEFAULT_ADMIN_PASSWORD = '1234qwer';
 export class TenantDirectoryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private scopedOfficeFilter(officeId?: string) {
+    const scopedOfficeId = officeId?.trim() || undefined;
+    if (!scopedOfficeId) {
+      return {};
+    }
+    return {
+      OR: [{ officeId: scopedOfficeId }, { officeId: null }],
+    };
+  }
+
   async resolve(dto: ResolveTenantDto) {
     const tenantInput = dto.tenant?.trim() || '';
     const hostInput = dto.host?.trim() || '';
@@ -63,18 +73,20 @@ export class TenantDirectoryService {
   async employeeContext(dto: ResolveTenantDto) {
     const tenantInput = dto.tenant?.trim() || '';
     const hostInput = dto.host?.trim() || '';
+    const officeId = dto.officeId?.trim() || undefined;
 
     if (!tenantInput && !hostInput) {
       throw new BadRequestException('Tenant is required.');
     }
 
     const tenant = await this.resolveTenantRecord(tenantInput, hostInput);
-    const [settings, offices] = await Promise.all([
+    const [settings, offices, employees] = await Promise.all([
       this.prisma.tenantSettings.findUnique({
         where: { tenantId: tenant.id },
         select: {
           adminUsername: true,
           multiLocationEnabled: true,
+          companyOrdersEnabled: true,
         },
       }),
       this.prisma.office.findMany({
@@ -82,8 +94,30 @@ export class TenantDirectoryService {
         select: {
           id: true,
           name: true,
+          latitude: true,
+          longitude: true,
+          geofenceRadiusMeters: true,
         },
         orderBy: [{ createdAt: 'asc' }, { name: 'asc' }],
+      }),
+      this.prisma.employee.findMany({
+        where: {
+          tenantId: tenant.id,
+          deletedAt: null,
+          disabled: false,
+          ...this.scopedOfficeFilter(officeId),
+        },
+        select: {
+          id: true,
+          fullName: true,
+          displayName: true,
+          isManager: true,
+          isAdmin: true,
+          isServer: true,
+          isKitchenManager: true,
+          officeId: true,
+        },
+        orderBy: [{ fullName: 'asc' }],
       }),
     ]);
 
@@ -96,7 +130,17 @@ export class TenantDirectoryService {
       isActive: tenant.isActive,
       adminUsername: settings?.adminUsername || DEFAULT_ADMIN_USERNAME,
       multiLocationEnabled: settings?.multiLocationEnabled ?? false,
+      companyOrdersEnabled: settings?.companyOrdersEnabled ?? false,
       offices,
+      employees: employees.map((employee) => ({
+        id: employee.id,
+        name: employee.displayName || employee.fullName,
+        active: true,
+        isManager: employee.isManager || employee.isAdmin,
+        isServer: employee.isServer,
+        isKitchenManager: employee.isKitchenManager,
+        officeId: employee.officeId,
+      })),
     };
   }
 
@@ -117,10 +161,12 @@ export class TenantDirectoryService {
       select: {
         adminUsername: true,
         adminPasswordHash: true,
+        companyOrdersEnabled: true,
       },
     });
 
     const expectedUsername = settings?.adminUsername || DEFAULT_ADMIN_USERNAME;
+    const companyOrdersEnabled = settings?.companyOrdersEnabled ?? false;
     const tenantAdminValid = await this.isTenantAdminCredentialValid(
       expectedUsername,
       settings?.adminPasswordHash,
@@ -139,7 +185,10 @@ export class TenantDirectoryService {
         adminUsername: expectedUsername,
         loginType: 'tenant_admin',
         managerEmployeeId: null,
-        featurePermissions: allManagerFeatures(),
+        featurePermissions: this.filterTenantFeaturePermissions(
+          allManagerFeatures(),
+          companyOrdersEnabled,
+        ),
       };
     }
 
@@ -166,7 +215,10 @@ export class TenantDirectoryService {
       adminUsername: manager.username,
       loginType: 'manager',
       managerEmployeeId: manager.id,
-      featurePermissions: manager.featurePermissions,
+      featurePermissions: this.filterTenantFeaturePermissions(
+        manager.featurePermissions,
+        companyOrdersEnabled,
+      ),
     };
   }
 
@@ -349,6 +401,16 @@ export class TenantDirectoryService {
       return false;
     }
     return timingSafeEqual(left, right);
+  }
+
+  private filterTenantFeaturePermissions(
+    features: string[],
+    companyOrdersEnabled: boolean,
+  ) {
+    if (companyOrdersEnabled) {
+      return features;
+    }
+    return features.filter((feature) => feature !== 'companyOrders');
   }
 
   private defaultAdminPassword() {

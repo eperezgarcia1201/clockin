@@ -18,6 +18,7 @@ type AccessPermissions = {
   groups: boolean;
   statuses: boolean;
   schedules: boolean;
+  companyOrders: boolean;
   reports: boolean;
   tips: boolean;
   salesCapture: boolean;
@@ -46,9 +47,12 @@ const translations: Record<Lang, Record<string, string>> = {
     statusSummary: "Status Summary",
     createStatus: "Create Status",
     manageSchedules: "Manage Schedules",
+    companyOrders: "Company Orders",
+    companyOrdersCatalog: "Order Catalog",
     timeEdits: "Edit Time",
     systemSettings: "System Settings",
     companyInfo: "Company Info",
+    companyOrderArchive: "Company Orders",
     databaseTools: "Database Tools",
     runReports: "Run Reports",
     reportMenu: "Report Menu",
@@ -59,6 +63,7 @@ const translations: Record<Lang, Record<string, string>> = {
     tipsReports: "Tips Reports",
     salesReports: "Sales Reports",
     dailySales: "Daily Sales",
+    expensesReport: "Expenses",
     notifications: "Notifications",
     backToAdmin: "Back to Admin",
     locationScope: "Location",
@@ -89,9 +94,12 @@ const translations: Record<Lang, Record<string, string>> = {
     statusSummary: "Resumen de Estado",
     createStatus: "Crear Estado",
     manageSchedules: "Gestionar Horarios",
+    companyOrders: "Ordenes de Empresa",
+    companyOrdersCatalog: "Catalogo de Ordenes",
     timeEdits: "Editar Tiempo",
     systemSettings: "Configuración",
     companyInfo: "Información Empresa",
+    companyOrderArchive: "Ordenes Empresa",
     databaseTools: "Herramientas DB",
     runReports: "Ejecutar Reportes",
     reportMenu: "Menú de Reportes",
@@ -102,6 +110,7 @@ const translations: Record<Lang, Record<string, string>> = {
     tipsReports: "Reporte de Propinas",
     salesReports: "Reporte de Ventas",
     dailySales: "Ventas Diarias",
+    expensesReport: "Gastos",
     notifications: "Notificaciones",
     backToAdmin: "Volver a Admin",
     locationScope: "Ubicacion",
@@ -160,7 +169,8 @@ export function AdminShell({
   const [officesLoaded, setOfficesLoaded] = useState(false);
   const [officesLoadSucceeded, setOfficesLoadSucceeded] = useState(false);
   const [activeLocationId, setActiveLocationId] = useState("");
-  const [locationScopeInitialized, setLocationScopeInitialized] = useState(false);
+  const [locationScopeInitialized, setLocationScopeInitialized] =
+    useState(false);
   const [permissions, setPermissions] = useState<AccessPermissions>({
     dashboard: true,
     users: true,
@@ -169,6 +179,7 @@ export function AdminShell({
     groups: true,
     statuses: true,
     schedules: true,
+    companyOrders: true,
     reports: true,
     tips: true,
     salesCapture: true,
@@ -230,6 +241,8 @@ export function AdminShell({
   const can = (feature: keyof AccessPermissions) => permissions[feature];
   const canManageMultiLocation =
     multiLocationEnabled && can("manageMultiLocation");
+  const isCompanyOrdersCatalog =
+    pathname?.startsWith("/admin/company-orders/catalog") || false;
 
   const handleLocationScopeChange = (nextLocationId: string) => {
     setActiveLocationId(nextLocationId);
@@ -436,6 +449,20 @@ export function AdminShell({
               {t.manageSchedules}
             </Link>
           )}
+          {can("companyOrders") && (
+            <Link
+              className={`topnav-link ${
+                pathname?.startsWith("/admin/company-orders") &&
+                !isCompanyOrdersCatalog
+                  ? "is-active"
+                  : ""
+              }`}
+              href="/admin/company-orders"
+            >
+              <i className="fa-solid fa-truck-ramp-box" aria-hidden="true" />
+              {t.companyOrders}
+            </Link>
+          )}
           {can("reports") && (
             <Link
               className={`topnav-link ${
@@ -456,6 +483,12 @@ export function AdminShell({
             >
               <i className="fa-solid fa-cash-register" aria-hidden="true" />
               {t.dailySales}
+            </Link>
+          )}
+          {can("salesCapture") && (
+            <Link className="topnav-link" href="/reports/sales#expenses-section">
+              <i className="fa-solid fa-file-invoice-dollar" aria-hidden="true" />
+              {t.expensesReport}
             </Link>
           )}
           {can("notifications") && (
@@ -620,6 +653,24 @@ export function AdminShell({
                     {t.manageSchedules}
                   </Link>
                 )}
+                {can("companyOrders") && (
+                  <>
+                    <Link className="admin-link" href="/admin/company-orders">
+                      <i
+                        className="fa-solid fa-truck-ramp-box"
+                        aria-hidden="true"
+                      />
+                      {t.companyOrders}
+                    </Link>
+                    <Link
+                      className="admin-link"
+                      href="/admin/company-orders/catalog"
+                    >
+                      <i className="fa-solid fa-list-check" aria-hidden="true" />
+                      {t.companyOrdersCatalog}
+                    </Link>
+                  </>
+                )}
                 {can("notifications") && (
                   <Link className="admin-link" href="/admin/notifications">
                     <i className="fa-solid fa-bell" aria-hidden="true" />
@@ -651,7 +702,10 @@ export function AdminShell({
                   <div className="admin-section-title">{t.reports}</div>
                   {can("reports") && (
                     <Link className="admin-link" href="/reports">
-                      <i className="fa-solid fa-file-lines" aria-hidden="true" />
+                      <i
+                        className="fa-solid fa-file-lines"
+                        aria-hidden="true"
+                      />
                       {t.runReports}
                     </Link>
                   )}

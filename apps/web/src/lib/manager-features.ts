@@ -5,6 +5,7 @@ export const managerFeatureOptions = [
   { key: "groups", label: "Groups" },
   { key: "statuses", label: "Statuses" },
   { key: "schedules", label: "Schedules" },
+  { key: "companyOrders", label: "Company Orders" },
   { key: "reports", label: "Reports" },
   { key: "tips", label: "Tips Reports" },
   { key: "salesCapture", label: "Daily Sales Input" },

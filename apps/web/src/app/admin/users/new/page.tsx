@@ -18,11 +18,13 @@ type FormState = {
   officeId: string;
   groupId: string;
   isManager: boolean;
+  isOwnerManager: boolean;
   managerPermissions: ManagerFeatureKey[];
   isAdmin: boolean;
   isTimeAdmin: boolean;
   isReports: boolean;
   isServer: boolean;
+  isKitchenManager: boolean;
   disabled: boolean;
 };
 
@@ -35,11 +37,13 @@ const initialForm: FormState = {
   officeId: "",
   groupId: "",
   isManager: false,
+  isOwnerManager: false,
   managerPermissions: [],
   isAdmin: false,
   isTimeAdmin: false,
   isReports: false,
   isServer: false,
+  isKitchenManager: false,
   disabled: false,
 };
 
@@ -77,11 +81,13 @@ export default function CreateUser() {
   const toggleManagerFeature = (feature: ManagerFeatureKey) => {
     setForm((prev) => {
       const enabled = prev.managerPermissions.includes(feature);
+      const managerPermissions = enabled
+        ? prev.managerPermissions.filter((key) => key !== feature)
+        : [...prev.managerPermissions, feature];
       return {
         ...prev,
-        managerPermissions: enabled
-          ? prev.managerPermissions.filter((key) => key !== feature)
-          : [...prev.managerPermissions, feature],
+        isManager: managerPermissions.length > 0 ? true : prev.isManager,
+        managerPermissions,
       };
     });
   };
@@ -116,11 +122,13 @@ export default function CreateUser() {
         officeId: form.officeId || undefined,
         groupId: form.groupId || undefined,
         isManager: form.isManager,
+        isOwnerManager: form.isManager ? form.isOwnerManager : false,
         managerPermissions: form.isManager ? form.managerPermissions : [],
         isAdmin: form.isAdmin,
         isTimeAdmin: form.isTimeAdmin,
         isReports: form.isReports,
         isServer: form.isServer,
+        isKitchenManager: form.isKitchenManager,
         disabled: form.disabled,
       }),
     });
@@ -249,7 +257,42 @@ export default function CreateUser() {
             <select
               className="form-select"
               value={form.isManager ? "yes" : "no"}
-              onChange={(e) => update("isManager", e.target.value === "yes")}
+              onChange={(e) => {
+                const enabled = e.target.value === "yes";
+                setForm((prev) => ({
+                  ...prev,
+                  isManager: enabled,
+                  isOwnerManager: enabled ? prev.isOwnerManager : false,
+                  managerPermissions: enabled ? prev.managerPermissions : [],
+                }));
+              }}
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">Manager Is Owner?</label>
+            <select
+              className="form-select"
+              value={form.isOwnerManager ? "yes" : "no"}
+              onChange={(e) =>
+                update("isOwnerManager", e.target.value === "yes")
+              }
+              disabled={!form.isManager}
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">Kitchen Manager User?</label>
+            <select
+              className="form-select"
+              value={form.isKitchenManager ? "yes" : "no"}
+              onChange={(e) =>
+                update("isKitchenManager", e.target.value === "yes")
+              }
             >
               <option value="no">No</option>
               <option value="yes">Yes</option>

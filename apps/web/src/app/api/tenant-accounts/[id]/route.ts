@@ -114,7 +114,12 @@ export async function DELETE(
   }
 
   try {
-    const response = await clockinFetch(`/tenant-accounts/${tenantId}`, {
+    const requestUrl = new URL(request.url);
+    const query = requestUrl.searchParams.toString();
+    const path = query
+      ? `/tenant-accounts/${tenantId}?${query}`
+      : `/tenant-accounts/${tenantId}`;
+    const response = await clockinFetch(path, {
       method: "DELETE",
       headers: ownerDevHeaders(),
     });

@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Patch,
@@ -12,6 +13,7 @@ import {
 import { AuthOrDevGuard } from '../auth/auth.guard';
 import type { RequestWithUser } from '../auth/auth.types';
 import { NotificationsService } from './notifications.service';
+import { CreateEmployeeMessageDto } from './dto/create-employee-message.dto';
 
 @Controller('notifications')
 @UseGuards(AuthOrDevGuard)
@@ -50,5 +52,17 @@ export class NotificationsController {
     }
 
     return this.notifications.markAllRead(req.user);
+  }
+
+  @Post('employee-message')
+  async createEmployeeMessage(
+    @Req() req: RequestWithUser,
+    @Body() dto: CreateEmployeeMessageDto,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.notifications.createEmployeeMessage(req.user, dto);
   }
 }

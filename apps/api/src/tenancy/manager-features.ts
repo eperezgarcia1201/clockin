@@ -6,6 +6,7 @@ export const MANAGER_FEATURE_KEYS = [
   'groups',
   'statuses',
   'schedules',
+  'companyOrders',
   'reports',
   'tips',
   'salesCapture',

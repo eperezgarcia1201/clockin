@@ -13,6 +13,7 @@ import {
   allManagerFeatures,
   normalizeManagerFeatures,
 } from './manager-features';
+import { OWNER_MANAGER_PERMISSION } from './owner-manager';
 
 const slugify = (value: string): string =>
   value
@@ -38,7 +39,21 @@ type AdminAccess = {
   settings: {
     adminUsername: string;
     multiLocationEnabled: boolean;
+    companyOrdersEnabled: boolean;
   };
+  ownerClockExempt: boolean;
+};
+
+type CompanyOrdersAccess = {
+  actorType: AdminActorType | 'kitchen_manager';
+  displayName: string;
+  employeeId: string | null;
+  allowedOfficeId: string | null;
+  tenant: Awaited<ReturnType<TenancyService['requireTenantAndUser']>>['tenant'];
+  user: Awaited<ReturnType<TenancyService['requireTenantAndUser']>>['user'];
+  membership: Awaited<
+    ReturnType<TenancyService['requireTenantAndUser']>
+  >['membership'];
 };
 
 @Injectable()
@@ -111,12 +126,14 @@ export class TenancyService {
       select: {
         adminUsername: true,
         multiLocationEnabled: true,
+        companyOrdersEnabled: true,
       },
     });
 
     const adminUsername = (
       settings?.adminUsername || DEFAULT_ADMIN_USERNAME
     ).trim();
+    const companyOrdersEnabled = settings?.companyOrdersEnabled ?? false;
     const loginIdentifier = (
       authUser.name ||
       authUser.email ||
@@ -131,12 +148,17 @@ export class TenancyService {
         ...context,
         actorType: 'tenant_admin',
         displayName: adminUsername,
-        featurePermissions: allManagerFeatures(),
+        featurePermissions: this.filterTenantFeaturePermissions(
+          allManagerFeatures(),
+          companyOrdersEnabled,
+        ),
         employeeId: null,
         settings: {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
+          companyOrdersEnabled,
         },
+        ownerClockExempt: false,
       };
     }
 
@@ -151,12 +173,19 @@ export class TenancyService {
         ...context,
         actorType: 'manager',
         displayName: manager.displayName || manager.fullName,
-        featurePermissions: this.resolveManagerFeatures(manager),
+        featurePermissions: this.filterTenantFeaturePermissions(
+          this.resolveManagerFeatures(manager),
+          companyOrdersEnabled,
+        ),
         employeeId: manager.id,
         settings: {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
+          companyOrdersEnabled,
         },
+        ownerClockExempt:
+          manager.isManager &&
+          this.hasOwnerManagerPermission(manager.managerPermissions),
       };
     }
 
@@ -166,12 +195,17 @@ export class TenancyService {
         ...context,
         actorType: 'membership',
         displayName: authUser.name || authUser.email || 'Admin',
-        featurePermissions: allManagerFeatures(),
+        featurePermissions: this.filterTenantFeaturePermissions(
+          allManagerFeatures(),
+          companyOrdersEnabled,
+        ),
         employeeId: null,
         settings: {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
+          companyOrdersEnabled,
         },
+        ownerClockExempt: false,
       };
     }
 
@@ -184,7 +218,9 @@ export class TenancyService {
       settings: {
         adminUsername,
         multiLocationEnabled: settings?.multiLocationEnabled ?? false,
+        companyOrdersEnabled,
       },
+      ownerClockExempt: false,
     };
   }
 
@@ -210,6 +246,48 @@ export class TenancyService {
     throw new ForbiddenException(
       'This account does not have access to this feature.',
     );
+  }
+
+  async requireCompanyOrdersAccess(
+    authUser: AuthUser,
+  ): Promise<CompanyOrdersAccess> {
+    const access = await this.resolveAdminAccess(authUser);
+    if (!access.settings.companyOrdersEnabled) {
+      throw new ForbiddenException(
+        'Company orders are disabled for this tenant.',
+      );
+    }
+    if (access.featurePermissions.includes('companyOrders')) {
+      return {
+        actorType: access.actorType,
+        displayName: access.displayName,
+        employeeId: access.employeeId,
+        allowedOfficeId: null,
+        tenant: access.tenant,
+        user: access.user,
+        membership: access.membership,
+      };
+    }
+
+    const kitchenManager = await this.findKitchenManagerEmployee(
+      access.tenant.id,
+      authUser,
+    );
+    if (!kitchenManager) {
+      throw new ForbiddenException(
+        'This account does not have access to company orders.',
+      );
+    }
+
+    return {
+      actorType: 'kitchen_manager',
+      displayName: kitchenManager.displayName || kitchenManager.fullName,
+      employeeId: kitchenManager.id,
+      allowedOfficeId: kitchenManager.officeId || null,
+      tenant: access.tenant,
+      user: access.user,
+      membership: access.membership,
+    };
   }
 
   private async findManagerEmployee(
@@ -250,11 +328,110 @@ export class TenancyService {
         id: true,
         fullName: true,
         displayName: true,
+        email: true,
         isManager: true,
         isAdmin: true,
         isTimeAdmin: true,
         isReports: true,
         managerPermissions: true,
+      },
+    });
+  }
+
+  async getOwnerManagerEmployeeIds(
+    tenantId: string,
+    employeeIds?: string[],
+  ): Promise<Set<string>> {
+    const scopedEmployeeIds = (employeeIds || [])
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    const managerEmployees = await this.prisma.employee.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        disabled: false,
+        isManager: true,
+        managerPermissions: {
+          has: OWNER_MANAGER_PERMISSION,
+        },
+        id: scopedEmployeeIds.length ? { in: scopedEmployeeIds } : undefined,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return new Set<string>(managerEmployees.map((employee) => employee.id));
+  }
+
+  async isOwnerManagerEmployee(tenantId: string, employeeId: string) {
+    const target = employeeId.trim();
+    if (!target) {
+      return false;
+    }
+    const matched = await this.getOwnerManagerEmployeeIds(tenantId, [target]);
+    return matched.has(target);
+  }
+
+  private parseEmployeeActorId(rawUserId: string) {
+    const value = rawUserId.trim();
+    if (!value) {
+      return '';
+    }
+    const match = /^(?:employee|kitchen-manager):(.+)$/i.exec(value);
+    if (!match) {
+      return '';
+    }
+    return match[1]?.trim() || '';
+  }
+
+  private async findKitchenManagerEmployee(tenantId: string, authUser: AuthUser) {
+    const actorEmployeeId = this.parseEmployeeActorId(authUser.authUserId || '');
+    const loginIdentifier = (
+      authUser.name ||
+      authUser.email ||
+      authUser.authUserId
+    ).trim();
+    const conditions: {
+      id?: string;
+      fullName?: { equals: string; mode: 'insensitive' };
+      displayName?: { equals: string; mode: 'insensitive' };
+      email?: { equals: string; mode: 'insensitive' };
+    }[] = [];
+
+    if (actorEmployeeId) {
+      conditions.push({ id: actorEmployeeId });
+    }
+    if (loginIdentifier) {
+      conditions.push(
+        { fullName: { equals: loginIdentifier, mode: 'insensitive' } },
+        { displayName: { equals: loginIdentifier, mode: 'insensitive' } },
+        { email: { equals: loginIdentifier, mode: 'insensitive' } },
+      );
+    }
+    if (authUser.email?.trim()) {
+      conditions.push({
+        email: { equals: authUser.email.trim(), mode: 'insensitive' },
+      });
+    }
+
+    if (conditions.length === 0) {
+      return null;
+    }
+
+    return this.prisma.employee.findFirst({
+      where: {
+        tenantId,
+        deletedAt: null,
+        disabled: false,
+        isKitchenManager: true,
+        AND: [{ OR: conditions }],
+      },
+      select: {
+        id: true,
+        fullName: true,
+        displayName: true,
+        officeId: true,
       },
     });
   }
@@ -287,6 +464,20 @@ export class TenancyService {
     }
 
     return allManagerFeatures().filter((feature) => derived.has(feature));
+  }
+
+  private filterTenantFeaturePermissions(
+    features: ManagerFeatureKey[],
+    companyOrdersEnabled: boolean,
+  ) {
+    if (companyOrdersEnabled) {
+      return features;
+    }
+    return features.filter((feature) => feature !== 'companyOrders');
+  }
+
+  private hasOwnerManagerPermission(permissions: string[]) {
+    return permissions.includes(OWNER_MANAGER_PERMISSION);
   }
 
   private makeTenantSlug(authUser: AuthUser): string {

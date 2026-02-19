@@ -29,6 +29,8 @@ export class AccessController {
       isAdmin: access.featurePermissions.length > 0,
       actorType: access.actorType,
       actorName: access.displayName,
+      employeeId: access.employeeId,
+      ownerClockExempt: access.ownerClockExempt,
       adminUsername: access.settings.adminUsername,
       multiLocationEnabled: access.settings.multiLocationEnabled,
       permissions: managerFeaturesToMap(access.featurePermissions),

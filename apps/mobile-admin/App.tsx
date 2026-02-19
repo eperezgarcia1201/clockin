@@ -1,8 +1,14 @@
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import {
+  Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -17,6 +23,8 @@ import * as ImagePicker from "expo-image-picker";
 import Constants from "expo-constants";
 
 const normalizeApiBase = (value: string) => value.trim().replace(/\/$/, "");
+const DEFAULT_API_BASE = "https://api.websysclockin.com/api";
+const ADMIN_TENANT_STORAGE_KEY = "clockin.mobile-admin.tenant";
 
 const isLoopbackHost = (host: string) =>
   host === "localhost" ||
@@ -52,44 +60,107 @@ const pickMetroHosts = () => {
   const hosts = [
     parseHostCandidate(Constants.expoConfig?.hostUri ?? null),
     parseHostCandidate(runtimeConfig.expoGoConfig?.debuggerHost ?? null),
-    parseHostCandidate(runtimeConfig.manifest2?.extra?.expoClient?.hostUri ?? null),
+    parseHostCandidate(
+      runtimeConfig.manifest2?.extra?.expoClient?.hostUri ?? null,
+    ),
     parseHostCandidate(Constants.linkingUri ?? null),
   ];
 
-  return Array.from(new Set(hosts.filter((host): host is string => Boolean(host))));
+  return Array.from(
+    new Set(hosts.filter((host): host is string => Boolean(host))),
+  );
 };
 
 const apiBaseCandidates = (() => {
   const values: string[] = [];
   const runningOnSimulator = !Device.isDevice;
+  const runningInExpoGo = Constants.appOwnership === "expo";
+  const preferLocalBase = __DEV__ || runningInExpoGo;
 
   const metroHosts = pickMetroHosts();
   const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
+  const pushCandidate = (candidate?: string | null) => {
+    if (!candidate || !candidate.trim()) {
+      return;
+    }
+    values.push(candidate);
+  };
 
   if (fromEnv) {
     const fromEnvHost = parseHostCandidate(fromEnv);
     if (runningOnSimulator || !fromEnvHost || !isLoopbackHost(fromEnvHost)) {
-      values.push(fromEnv);
+      if (!preferLocalBase) {
+        pushCandidate(fromEnv);
+      }
     }
   }
 
-  metroHosts.forEach((host) => {
-    if (!runningOnSimulator && isLoopbackHost(host)) {
-      return;
-    }
-    values.push(`http://${host}:4000/api`);
-  });
+  if (preferLocalBase) {
+    metroHosts.forEach((host) => {
+      if (!runningOnSimulator && isLoopbackHost(host)) {
+        return;
+      }
+      pushCandidate(`http://${host}:4000/api`);
+    });
 
-  if (runningOnSimulator) {
-    values.push("http://localhost:4000/api");
-    values.push("http://127.0.0.1:4000/api");
+    if (runningOnSimulator) {
+      pushCandidate("http://localhost:4000/api");
+      pushCandidate("http://127.0.0.1:4000/api");
+    }
+
+    if (fromEnv) {
+      const fromEnvHost = parseHostCandidate(fromEnv);
+      if (runningOnSimulator || !fromEnvHost || !isLoopbackHost(fromEnvHost)) {
+        pushCandidate(fromEnv);
+      }
+    }
+  } else {
+    pushCandidate(DEFAULT_API_BASE);
+
+    metroHosts.forEach((host) => {
+      if (!runningOnSimulator && isLoopbackHost(host)) {
+        return;
+      }
+      pushCandidate(`http://${host}:4000/api`);
+    });
+
+    if (runningOnSimulator) {
+      pushCandidate("http://localhost:4000/api");
+      pushCandidate("http://127.0.0.1:4000/api");
+    }
   }
 
   return Array.from(new Set(values.map(normalizeApiBase).filter(Boolean)));
 })();
 
-const DEFAULT_TENANT =
-  process.env.EXPO_PUBLIC_TENANT_SLUG || "dev-tenant";
+const bytesToBase64 = (bytes: Uint8Array) => {
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let output = "";
+
+  for (let index = 0; index < bytes.length; index += 3) {
+    const a = bytes[index] ?? 0;
+    const b = bytes[index + 1] ?? 0;
+    const c = bytes[index + 2] ?? 0;
+    const combined = (a << 16) | (b << 8) | c;
+
+    output += alphabet[(combined >> 18) & 63];
+    output += alphabet[(combined >> 12) & 63];
+    output += index + 1 < bytes.length ? alphabet[(combined >> 6) & 63] : "=";
+    output += index + 2 < bytes.length ? alphabet[combined & 63] : "=";
+  }
+
+  return output;
+};
+
+const extractPendingTipsWorkDate = (message: string) => {
+  const match = /pending tips required for work date (\d{4}-\d{2}-\d{2})/i.exec(
+    message,
+  );
+  return match?.[1] || null;
+};
+
+const DEFAULT_TENANT = process.env.EXPO_PUBLIC_TENANT_SLUG || "dev-tenant";
 const BRAND_LOGO = require("./assets/websys-logo.png");
 
 type Screen =
@@ -100,7 +171,8 @@ type Screen =
   | "capture"
   | "reports"
   | "alerts"
-  | "schedules";
+  | "schedules"
+  | "companyOrders";
 
 type Summary = {
   total: number;
@@ -115,13 +187,24 @@ type Employee = {
   email?: string;
   active: boolean;
   officeId?: string | null;
+  groupId?: string | null;
+  isManager?: boolean;
+  isOwnerManager?: boolean;
+  managerPermissions?: string[];
   isAdmin?: boolean;
   isTimeAdmin?: boolean;
   isReports?: boolean;
   isServer?: boolean;
+  isKitchenManager?: boolean;
 };
 
-type Office = { id: string; name: string };
+type Office = {
+  id: string;
+  name: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  geofenceRadiusMeters?: number | null;
+};
 
 type Group = { id: string; name: string; officeId?: string | null };
 
@@ -133,6 +216,7 @@ type AccessPermissions = {
   groups: boolean;
   statuses: boolean;
   schedules: boolean;
+  companyOrders: boolean;
   reports: boolean;
   tips: boolean;
   salesCapture: boolean;
@@ -176,6 +260,7 @@ const tabs: Screen[] = [
   "offices",
   "groups",
   "schedules",
+  "companyOrders",
   "capture",
   "reports",
   "alerts",
@@ -188,6 +273,7 @@ const tabLabels: Record<Lang, Record<Screen, string>> = {
     offices: "Locations",
     groups: "Groups",
     schedules: "Schedules",
+    companyOrders: "Company Orders",
     capture: "Daily Input",
     reports: "Reports",
     alerts: "Alerts",
@@ -198,6 +284,7 @@ const tabLabels: Record<Lang, Record<Screen, string>> = {
     offices: "Ubicaciones",
     groups: "Grupos",
     schedules: "Horarios",
+    companyOrders: "Ordenes Empresa",
     capture: "Carga Diaria",
     reports: "Reportes",
     alerts: "Alertas",
@@ -371,6 +458,58 @@ type ScheduleDay = {
   endTime: string;
 };
 
+type TodayScheduleRow = {
+  employeeId: string;
+  employeeName: string;
+  startTime: string;
+  endTime: string;
+  isServer: boolean;
+  officeName: string | null;
+  groupName: string | null;
+  roleLabel: string;
+};
+
+type TodayScheduleResponse = {
+  date: string;
+  weekday: number;
+  weekdayLabel: string;
+  timezone: string;
+  rows: TodayScheduleRow[];
+};
+
+type CompanyOrderCatalogItem = {
+  nameEs: string;
+  nameEn: string;
+};
+
+type CompanyOrderCatalogSupplier = {
+  supplierName: string;
+  items: CompanyOrderCatalogItem[];
+};
+
+type CompanyOrderItem = {
+  id: string;
+  nameEs: string;
+  nameEn: string;
+  quantity: number;
+};
+
+type CompanyOrderRow = {
+  id: string;
+  supplierName: string;
+  orderDate: string;
+  weekStartDate?: string;
+  weekEndDate?: string;
+  orderLabel?: string;
+  contributors?: string[];
+  notes: string;
+  officeName: string | null;
+  createdBy: string | null;
+  totalQuantity: number;
+  itemCount: number;
+  items: CompanyOrderItem[];
+};
+
 type EditUserForm = {
   fullName: string;
   displayName: string;
@@ -379,10 +518,13 @@ type EditUserForm = {
   hourlyRate: string;
   officeId: string;
   groupId: string;
+  isManager: boolean;
+  isOwnerManager: boolean;
   isAdmin: boolean;
   isTimeAdmin: boolean;
   isReports: boolean;
   isServer: boolean;
+  isKitchenManager: boolean;
   disabled: boolean;
 };
 
@@ -413,10 +555,13 @@ const emptyEditUserForm = (): EditUserForm => ({
   hourlyRate: "",
   officeId: "",
   groupId: "",
+  isManager: false,
+  isOwnerManager: false,
   isAdmin: false,
   isTimeAdmin: false,
   isReports: false,
   isServer: false,
+  isKitchenManager: false,
   disabled: false,
 });
 
@@ -428,6 +573,7 @@ const defaultAccessPermissions = (): AccessPermissions => ({
   groups: true,
   statuses: true,
   schedules: true,
+  companyOrders: true,
   reports: true,
   tips: true,
   salesCapture: true,
@@ -565,10 +711,64 @@ const formatDisplayDate = (value: string) => {
   return `${match[2]}/${match[3]}/${match[1]}`;
 };
 
+const getCurrentWeekStartDateKey = () => {
+  const now = new Date();
+  const utcDate = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+  const day = utcDate.getUTCDay();
+  const distanceToMonday = (day + 6) % 7;
+  utcDate.setUTCDate(utcDate.getUTCDate() - distanceToMonday);
+  return utcDate.toISOString().slice(0, 10);
+};
+
+const formatScheduleShiftLabel = (startTime: string, endTime: string) => {
+  if (startTime && endTime) {
+    return `${formatScheduleTimeLabel(startTime)} - ${formatScheduleTimeLabel(endTime)}`;
+  }
+  if (startTime) {
+    return `Starts ${formatScheduleTimeLabel(startTime)}`;
+  }
+  if (endTime) {
+    return `Ends ${formatScheduleTimeLabel(endTime)}`;
+  }
+  return "Any time";
+};
+
 const parseMoneyInput = (value: string) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return Number(parsed.toFixed(2));
+};
+
+const companyOrderItemKey = (nameEs: string, nameEn: string) =>
+  `${nameEs.trim().toLowerCase()}|${nameEn.trim().toLowerCase()}`;
+
+const normalizeCompanyOrderQuantityInput = (value: string) => {
+  const trimmed = value.replace(/,/g, ".").replace(/[^\d.]/g, "");
+  if (!trimmed) {
+    return "";
+  }
+  const parts = trimmed.split(".");
+  const integerPart = parts[0] || "0";
+  const decimalPart = parts.slice(1).join("").slice(0, 2);
+  return decimalPart ? `${integerPart}.${decimalPart}` : integerPart;
+};
+
+const parseOptionalCoordinate = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) return Number.NaN;
+  return parsed;
+};
+
+const parseOptionalRadius = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) return Number.NaN;
+  return Math.round(parsed);
 };
 
 const formatMoney = (value: number) => `$${Number(value || 0).toFixed(2)}`;
@@ -612,6 +812,18 @@ const parseScheduleOverrideNotification = (notice: NotificationRow) => {
   };
 };
 
+const formatApiBaseLabel = (value: string) => {
+  if (!value) {
+    return "n/a";
+  }
+  try {
+    const parsed = new URL(value);
+    return `${parsed.host}${parsed.pathname}`.replace(/\/$/, "");
+  } catch {
+    return value;
+  }
+};
+
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
   const [tenantInput, setTenantInput] = useState("");
@@ -641,22 +853,51 @@ export default function App() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [alertsStatus, setAlertsStatus] = useState<string | null>(null);
+  const [employeeMessageEmployeeId, setEmployeeMessageEmployeeId] =
+    useState("");
+  const [employeeMessageSubject, setEmployeeMessageSubject] = useState("");
+  const [employeeMessageBody, setEmployeeMessageBody] = useState("");
+  const [employeeMessageSending, setEmployeeMessageSending] = useState(false);
+  const [employeeMessageStatus, setEmployeeMessageStatus] = useState<
+    string | null
+  >(null);
   const [scheduleOverrideLoadingId, setScheduleOverrideLoadingId] = useState<
     string | null
   >(null);
+  const [sessionManagerEmployeeId, setSessionManagerEmployeeId] = useState<
+    string | null
+  >(null);
+  const [managerClockExempt, setManagerClockExempt] = useState(false);
   const [activeNow, setActiveNow] = useState<
+    { id: string; name: string; status: string }[]
+  >([]);
+  const [recentPunchRows, setRecentPunchRows] = useState<
     { id: string; name: string; status: string }[]
   >([]);
   const [punchStatus, setPunchStatus] = useState<string | null>(null);
   const [punchLoadingId, setPunchLoadingId] = useState<string | null>(null);
+  const [managerPin, setManagerPin] = useState("");
+  const [managerPunchLoading, setManagerPunchLoading] = useState(false);
+  const [managerPunchStatus, setManagerPunchStatus] = useState<string | null>(
+    null,
+  );
+  const [managerPendingTipWorkDate, setManagerPendingTipWorkDate] = useState<
+    string | null
+  >(null);
+  const [managerCashTips, setManagerCashTips] = useState("0");
+  const [managerCreditCardTips, setManagerCreditCardTips] = useState("0");
+  const [managerTipSaving, setManagerTipSaving] = useState(false);
 
   const [newUserName, setNewUserName] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserPin, setNewUserPin] = useState("");
+  const [newUserIsManager, setNewUserIsManager] = useState(false);
+  const [newUserIsOwnerManager, setNewUserIsOwnerManager] = useState(false);
   const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
   const [newUserIsTimeAdmin, setNewUserIsTimeAdmin] = useState(false);
   const [newUserIsReports, setNewUserIsReports] = useState(false);
   const [newUserIsServer, setNewUserIsServer] = useState(false);
+  const [newUserIsKitchenManager, setNewUserIsKitchenManager] = useState(false);
   const [userStatus, setUserStatus] = useState<string | null>(null);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editUserForm, setEditUserForm] =
@@ -666,7 +907,15 @@ export default function App() {
   const [editUserSaving, setEditUserSaving] = useState(false);
 
   const [newOfficeName, setNewOfficeName] = useState("");
+  const [newOfficeLatitude, setNewOfficeLatitude] = useState("");
+  const [newOfficeLongitude, setNewOfficeLongitude] = useState("");
+  const [newOfficeRadius, setNewOfficeRadius] = useState("120");
   const [officeStatus, setOfficeStatus] = useState<string | null>(null);
+  const [officeGeoLatitude, setOfficeGeoLatitude] = useState("");
+  const [officeGeoLongitude, setOfficeGeoLongitude] = useState("");
+  const [officeGeoRadius, setOfficeGeoRadius] = useState("120");
+  const [officeGeoStatus, setOfficeGeoStatus] = useState<string | null>(null);
+  const [officeGeoSaving, setOfficeGeoSaving] = useState(false);
 
   const [newGroupName, setNewGroupName] = useState("");
   const [groupStatus, setGroupStatus] = useState<string | null>(null);
@@ -679,6 +928,37 @@ export default function App() {
     defaultScheduleDays(),
   );
   const [scheduleStatus, setScheduleStatus] = useState<string | null>(null);
+  const [todaySchedule, setTodaySchedule] =
+    useState<TodayScheduleResponse | null>(null);
+  const [todayScheduleStatus, setTodayScheduleStatus] = useState<string | null>(
+    null,
+  );
+  const [todayScheduleLoading, setTodayScheduleLoading] = useState(false);
+  const [todayRoleFilter, setTodayRoleFilter] = useState("All");
+  const [companyOrderCatalog, setCompanyOrderCatalog] = useState<
+    CompanyOrderCatalogSupplier[]
+  >([]);
+  const [companyOrderSupplier, setCompanyOrderSupplier] = useState("");
+  const [companyOrderSearch, setCompanyOrderSearch] = useState("");
+  const [companyOrderShowOnlyAdded, setCompanyOrderShowOnlyAdded] =
+    useState(false);
+  const [companyOrderVisibleCount, setCompanyOrderVisibleCount] = useState(16);
+  const [companyOrderNotes, setCompanyOrderNotes] = useState("");
+  const [companyOrderDrafts, setCompanyOrderDrafts] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [companyOrderRows, setCompanyOrderRows] = useState<CompanyOrderRow[]>(
+    [],
+  );
+  const [companyOrderLoading, setCompanyOrderLoading] = useState(false);
+  const [companyOrderSaving, setCompanyOrderSaving] = useState(false);
+  const [companyOrderExportingFormat, setCompanyOrderExportingFormat] =
+    useState<"pdf" | "csv" | "excel" | null>(null);
+  const [lastSubmittedCompanyOrderWeekStart, setLastSubmittedCompanyOrderWeekStart] =
+    useState(getCurrentWeekStartDateKey());
+  const [companyOrderStatus, setCompanyOrderStatus] = useState<string | null>(
+    null,
+  );
 
   const [reportType, setReportType] = useState<ReportType>("daily");
   const [reportEmployeeId, setReportEmployeeId] = useState("");
@@ -723,7 +1003,51 @@ export default function App() {
   const canCreateLocations = permissions.locations;
   const canManageMultiLocation =
     multiLocationEnabled && permissions.manageMultiLocation;
-  const scopedLocationId = canManageMultiLocation ? activeLocationId.trim() : "";
+  const scopedLocationId = canManageMultiLocation
+    ? activeLocationId.trim()
+    : "";
+  const defaultOfficeId = useMemo(
+    () => offices[0]?.id?.trim() || "",
+    [offices],
+  );
+  const companyOrdersOfficeId = useMemo(() => {
+    if (scopedLocationId) {
+      return scopedLocationId;
+    }
+    if (!canManageMultiLocation) {
+      return defaultOfficeId;
+    }
+    return "";
+  }, [canManageMultiLocation, defaultOfficeId, scopedLocationId]);
+
+  useEffect(() => {
+    let active = true;
+    const loadTenant = async () => {
+      try {
+        const storedTenant = (
+          await AsyncStorage.getItem(ADMIN_TENANT_STORAGE_KEY)
+        )?.trim();
+        if (!active || !storedTenant) {
+          return;
+        }
+        setTenantInput(storedTenant);
+      } catch {
+        // keep empty when storage is unavailable
+      }
+    };
+    void loadTenant();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const normalized = tenantInput.trim();
+    if (!normalized) {
+      return;
+    }
+    void AsyncStorage.setItem(ADMIN_TENANT_STORAGE_KEY, normalized);
+  }, [tenantInput]);
 
   const appendOfficeScope = useCallback(
     (path: string) => {
@@ -741,21 +1065,47 @@ export default function App() {
     setPermissions(defaultAccessPermissions());
     setMultiLocationEnabled(false);
     setActiveLocationId("");
+    setSessionManagerEmployeeId(null);
+    setManagerClockExempt(false);
+    setManagerPin("");
+    setManagerPunchLoading(false);
+    setManagerPunchStatus(null);
+    setManagerPendingTipWorkDate(null);
+    setManagerCashTips("0");
+    setManagerCreditCardTips("0");
+    setManagerTipSaving(false);
     setPushRegisteredTenant("");
     setActiveTenant("");
     setActiveTenantLabel("");
     setActiveAdminUsername("");
-    setTenantInput("");
     setUsername("");
     setPassword("");
     setScreen("dashboard");
+    setTodaySchedule(null);
+    setTodayScheduleStatus(null);
+    setTodayRoleFilter("All");
+    setCompanyOrderCatalog([]);
+    setCompanyOrderSupplier("");
+    setCompanyOrderSearch("");
+    setCompanyOrderNotes("");
+    setCompanyOrderDrafts({});
+    setCompanyOrderRows([]);
+    setCompanyOrderExportingFormat(null);
+    setLastSubmittedCompanyOrderWeekStart(getCurrentWeekStartDateKey());
+    setCompanyOrderStatus(null);
+    setRecentPunchRows([]);
+    setEmployeeMessageEmployeeId("");
+    setEmployeeMessageSubject("");
+    setEmployeeMessageBody("");
+    setEmployeeMessageStatus(null);
+    setResolvedApiBase(null);
   }, []);
 
   const fetchJson = useCallback(
     async (path: string, options?: RequestInit) => {
-      const orderedBases = Array.from(
-        new Set([resolvedApiBase, ...apiBaseCandidates].filter(Boolean)),
-      ) as string[];
+      const orderedBases = resolvedApiBase
+        ? [resolvedApiBase]
+        : (Array.from(new Set(apiBaseCandidates.filter(Boolean))) as string[]);
       let lastError: Error | null = null;
 
       for (const apiBase of orderedBases) {
@@ -808,11 +1158,18 @@ export default function App() {
                 message = raw;
               }
             }
-            lastError = new Error(`${message} (${response.status})`);
-            continue;
+            const responseError = new Error(`${message} (${response.status})`);
+            if (!resolvedApiBase) {
+              setResolvedApiBase(apiBase);
+            }
+            if (response.status >= 500 || response.status === 429) {
+              lastError = responseError;
+              continue;
+            }
+            throw responseError;
           }
 
-          if (resolvedApiBase !== apiBase) {
+          if (!resolvedApiBase) {
             setResolvedApiBase(apiBase);
           }
 
@@ -853,6 +1210,148 @@ export default function App() {
     [
       activeAdminUsername,
       activeTenant,
+      loggedIn,
+      resolvedApiBase,
+      tenantInput,
+      username,
+    ],
+  );
+
+  const fetchCompanyOrderExport = useCallback(
+    async (format: "pdf" | "csv" | "excel", weekStartDate: string) => {
+      const orderedBases = resolvedApiBase
+        ? [resolvedApiBase]
+        : (Array.from(new Set(apiBaseCandidates.filter(Boolean))) as string[]);
+      const query = new URLSearchParams();
+      query.set("format", format);
+      query.set("weekStart", weekStartDate);
+      if (companyOrdersOfficeId) {
+        query.set("officeId", companyOrdersOfficeId);
+      }
+      const path = `/company-orders/export?${query.toString()}`;
+      const acceptHeader =
+        format === "pdf"
+          ? "application/pdf"
+          : format === "csv"
+            ? "text/csv"
+            : "application/vnd.ms-excel";
+
+      for (const apiBase of orderedBases) {
+        try {
+          const headers = new Headers();
+          const tenantHeader =
+            (loggedIn ? activeTenant : tenantInput).trim() || DEFAULT_TENANT;
+          const activeLoginName = (
+            (loggedIn ? activeAdminUsername : username) || ""
+          ).trim();
+          const normalizedLoginName = activeLoginName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/(^-|-$)+/g, "");
+          headers.set("Accept", acceptHeader);
+          headers.set(
+            "x-dev-user-id",
+            normalizedLoginName
+              ? `tenant-admin:${normalizedLoginName}`
+              : "dev-user",
+          );
+          headers.set(
+            "x-dev-email",
+            normalizedLoginName
+              ? `${normalizedLoginName}@clockin.local`
+              : "dev@clockin.local",
+          );
+          headers.set("x-dev-name", activeLoginName || "Dev User");
+          headers.set("x-dev-tenant-id", tenantHeader);
+
+          const response = await fetch(`${apiBase}${path}`, { headers });
+          if (!response.ok) {
+            continue;
+          }
+          if (!resolvedApiBase) {
+            setResolvedApiBase(apiBase);
+          }
+          const extension =
+            format === "pdf" ? "pdf" : format === "csv" ? "csv" : "xls";
+          const contentDisposition =
+            response.headers.get("content-disposition") || "";
+          const filenameMatch = /filename=\"?([^\";]+)\"?/i.exec(
+            contentDisposition,
+          );
+          const filename =
+            (filenameMatch?.[1] || `company-orders-week-${weekStartDate}.${extension}`)
+              .trim()
+              .replace(/[^\w.\-]/g, "_");
+
+          if (Platform.OS === "web") {
+            const webResponse = response as any;
+            if (typeof webResponse.blob === "function") {
+              const blob = await webResponse.blob();
+              const webUrl = (globalThis as any)?.URL;
+              const webDocument = (globalThis as any)?.document;
+              if (
+                blob &&
+                webUrl?.createObjectURL &&
+                webDocument?.createElement
+              ) {
+                const objectUrl = webUrl.createObjectURL(blob);
+                const anchor = webDocument.createElement("a");
+                anchor.href = objectUrl;
+                anchor.download = filename;
+                anchor.rel = "noopener";
+                if (webDocument.body?.appendChild) {
+                  webDocument.body.appendChild(anchor);
+                }
+                anchor.click();
+                if (typeof anchor.remove === "function") {
+                  anchor.remove();
+                }
+                setTimeout(() => {
+                  if (webUrl?.revokeObjectURL) {
+                    webUrl.revokeObjectURL(objectUrl);
+                  }
+                }, 1200);
+                return true;
+              }
+            }
+          }
+
+          const arrayBuffer = await response.arrayBuffer();
+          if (Platform.OS !== "web") {
+            const directoryUri =
+              FileSystem.cacheDirectory || FileSystem.documentDirectory;
+            if (!directoryUri) {
+              throw new Error("Unable to access local storage for download.");
+            }
+
+            const fileUri = `${directoryUri}${filename}`;
+            const bytes = new Uint8Array(arrayBuffer);
+            const base64 = bytesToBase64(bytes);
+            await FileSystem.writeAsStringAsync(fileUri, base64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(fileUri, {
+                mimeType: acceptHeader,
+                dialogTitle: filename,
+              });
+            } else {
+              Alert.alert("Download ready", filename);
+            }
+            return true;
+          }
+
+          return true;
+        } catch {
+          // try next base
+        }
+      }
+      return false;
+    },
+    [
+      activeAdminUsername,
+      activeTenant,
+      companyOrdersOfficeId,
       loggedIn,
       resolvedApiBase,
       tenantInput,
@@ -907,10 +1406,20 @@ export default function App() {
 
   useEffect(() => {
     if (!loggedIn) return;
-    if (screen === "schedules" && scheduleEmployeeId) {
-      loadSchedule(scheduleEmployeeId);
+    if (screen === "schedules") {
+      void loadTodaySchedule();
+      if (scheduleEmployeeId) {
+        void loadSchedule(scheduleEmployeeId);
+      }
     }
-  }, [loggedIn, screen, scheduleEmployeeId]);
+  }, [loggedIn, screen, scheduleEmployeeId, scopedLocationId]);
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    if (screen !== "companyOrders") return;
+    void loadCompanyOrderCatalog();
+    void loadCompanyOrders();
+  }, [companyOrdersOfficeId, loggedIn, screen, scopedLocationId]);
 
   useEffect(() => {
     if (!loggedIn) return;
@@ -928,6 +1437,19 @@ export default function App() {
     if (screen === "groups") {
       loadGroups();
     }
+  }, [loggedIn, screen, scopedLocationId]);
+
+  useEffect(() => {
+    if (!loggedIn || screen !== "dashboard") {
+      return;
+    }
+    const timer = setInterval(() => {
+      void loadActiveNow();
+      void loadNotifications();
+    }, 60_000);
+    return () => {
+      clearInterval(timer);
+    };
   }, [loggedIn, screen, scopedLocationId]);
 
   useEffect(() => {
@@ -982,47 +1504,57 @@ export default function App() {
     setLoginLoading(true);
     setLoginStatus(null);
     try {
-      const orderedBases = Array.from(
-        new Set([resolvedApiBase, ...apiBaseCandidates].filter(Boolean)),
-      ) as string[];
+      const orderedBases = resolvedApiBase
+        ? [resolvedApiBase]
+        : (Array.from(new Set(apiBaseCandidates.filter(Boolean))) as string[]);
       let lastError: Error | null = null;
-      let verified:
-        | {
-            name?: string;
-            slug?: string;
-            authOrgId?: string;
-            featurePermissions?: string[];
-            error?: string;
-            message?: string;
-          }
-        | null = null;
+      let verified: {
+        name?: string;
+        slug?: string;
+        authOrgId?: string;
+        featurePermissions?: string[];
+        managerEmployeeId?: string | null;
+        error?: string;
+        message?: string;
+      } | null = null;
       let matchedBase: string | null = null;
 
       for (const apiBase of orderedBases) {
         try {
-          const response = await fetch(`${apiBase}/tenant-directory/admin-login`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              tenant: tenantInput.trim(),
-              username: username.trim(),
-              password,
-            }),
-          });
+          const response = await fetch(
+            `${apiBase}/tenant-directory/admin-login`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                tenant: tenantInput.trim(),
+                username: username.trim(),
+                password,
+              }),
+            },
+          );
           const data = (await response.json().catch(() => ({}))) as {
             name?: string;
             slug?: string;
             authOrgId?: string;
             featurePermissions?: string[];
+            managerEmployeeId?: string | null;
             error?: string;
             message?: string;
           };
 
           if (!response.ok || !data.authOrgId) {
-            lastError = new Error(
+            const responseError = new Error(
               data.message || data.error || "Invalid credentials.",
             );
-            continue;
+            if (!resolvedApiBase) {
+              setResolvedApiBase(apiBase);
+            }
+            if (response.status >= 500 || response.status === 429) {
+              lastError = responseError;
+              continue;
+            }
+            throw responseError;
           }
 
           verified = data;
@@ -1051,6 +1583,23 @@ export default function App() {
       setMultiLocationEnabled(false);
       setActiveLocationId("");
       setActiveTenant(verified.authOrgId.trim());
+      setSessionManagerEmployeeId(
+        typeof verified.managerEmployeeId === "string" &&
+          verified.managerEmployeeId.trim()
+          ? verified.managerEmployeeId.trim()
+          : null,
+      );
+      setManagerClockExempt(false);
+      setManagerPin("");
+      setManagerPunchStatus(null);
+      setManagerPendingTipWorkDate(null);
+      setManagerCashTips("0");
+      setManagerCreditCardTips("0");
+      const tenantForNextLogin = (verified.slug || tenantInput).trim();
+      if (tenantForNextLogin) {
+        setTenantInput(tenantForNextLogin);
+        void AsyncStorage.setItem(ADMIN_TENANT_STORAGE_KEY, tenantForNextLogin);
+      }
       setActiveTenantLabel(
         (verified.name || verified.slug || tenantInput).trim(),
       );
@@ -1072,10 +1621,26 @@ export default function App() {
       const data = (await fetchJson("/access/me")) as {
         multiLocationEnabled?: boolean;
         permissions?: Partial<AccessPermissions>;
+        actorType?: string;
+        employeeId?: string | null;
+        ownerClockExempt?: boolean;
       };
       setMultiLocationEnabled(Boolean(data.multiLocationEnabled));
       setPermissions((prev) => ({ ...prev, ...(data.permissions || {}) }));
-      if (!data.multiLocationEnabled || !data.permissions?.manageMultiLocation) {
+      if (data.actorType === "manager" && typeof data.employeeId === "string") {
+        setSessionManagerEmployeeId(data.employeeId);
+        setManagerClockExempt(Boolean(data.ownerClockExempt));
+      } else if (data.actorType === "tenant_admin") {
+        setSessionManagerEmployeeId(null);
+        setManagerClockExempt(false);
+      } else {
+        setSessionManagerEmployeeId(null);
+        setManagerClockExempt(false);
+      }
+      if (
+        !data.multiLocationEnabled ||
+        !data.permissions?.manageMultiLocation
+      ) {
         setActiveLocationId("");
       }
       setDataSyncError(null);
@@ -1104,9 +1669,9 @@ export default function App() {
 
   const loadEmployees = async () => {
     try {
-      const data = (await fetchJson(
-        appendOfficeScope("/employees"),
-      )) as { employees: Employee[] };
+      const data = (await fetchJson(appendOfficeScope("/employees"))) as {
+        employees: Employee[];
+      };
       setEmployees(data.employees || []);
       if (!scheduleEmployeeId && data.employees?.[0]) {
         setScheduleEmployeeId(data.employees[0].id);
@@ -1161,9 +1726,9 @@ export default function App() {
 
   const loadGroups = async () => {
     try {
-      const data = (await fetchJson(
-        appendOfficeScope("/groups"),
-      )) as { groups: Group[] };
+      const data = (await fetchJson(appendOfficeScope("/groups"))) as {
+        groups: Group[];
+      };
       setGroups(data.groups || []);
     } catch {
       // ignore
@@ -1176,10 +1741,57 @@ export default function App() {
         notifications: NotificationRow[];
       };
       setNotifications(data.notifications || []);
-    } catch {
-      // ignore
+      setDataSyncError(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to load alerts.";
+      setDataSyncError(message);
+      setAlertsStatus(message);
     }
   }, [fetchJson]);
+
+  const sendEmployeeMessage = async () => {
+    const targetEmployeeId = employeeMessageEmployeeId.trim();
+    const subject = employeeMessageSubject.trim();
+    const message = employeeMessageBody.trim();
+    if (!targetEmployeeId) {
+      setEmployeeMessageStatus("Select an employee.");
+      return;
+    }
+    if (!subject) {
+      setEmployeeMessageStatus("Subject is required.");
+      return;
+    }
+    if (!message) {
+      setEmployeeMessageStatus("Message is required.");
+      return;
+    }
+
+    setEmployeeMessageSending(true);
+    setEmployeeMessageStatus(null);
+    try {
+      await fetchJson("/notifications/employee-message", {
+        method: "POST",
+        body: JSON.stringify({
+          employeeId: targetEmployeeId,
+          subject,
+          message,
+        }),
+      });
+      setEmployeeMessageSubject("");
+      setEmployeeMessageBody("");
+      setEmployeeMessageStatus(
+        "Message sent. It will pop up when the employee clocks in.",
+      );
+      await loadNotifications();
+    } catch (error) {
+      setEmployeeMessageStatus(
+        error instanceof Error ? error.message : "Unable to send message.",
+      );
+    } finally {
+      setEmployeeMessageSending(false);
+    }
+  };
 
   useEffect(() => {
     if (!loggedIn) {
@@ -1209,9 +1821,13 @@ export default function App() {
       if (!approve) {
         setAlertsStatus("Clock-in override rejected.");
       } else if (data.autoClockIn?.clockedIn) {
-        setAlertsStatus("Clock-in override approved. Employee clocked in automatically.");
+        setAlertsStatus(
+          "Clock-in override approved. Employee clocked in automatically.",
+        );
       } else if (data.autoClockIn?.alreadyActive) {
-        setAlertsStatus("Clock-in override approved. Employee is already clocked in.");
+        setAlertsStatus(
+          "Clock-in override approved. Employee is already clocked in.",
+        );
       } else {
         setAlertsStatus("Clock-in override approved.");
       }
@@ -1235,14 +1851,14 @@ export default function App() {
       )) as {
         rows: { id: string; name: string; status: string | null }[];
       };
+      const mappedRows = (data.rows || []).map((row) => ({
+        id: row.id,
+        name: row.name,
+        status: (row.status || "OUT").toUpperCase(),
+      }));
+      setRecentPunchRows(mappedRows);
       setActiveNow(
-        (data.rows || [])
-          .map((row) => ({
-            id: row.id,
-            name: row.name,
-            status: (row.status || "OUT").toUpperCase(),
-          }))
-          .filter((row) => ["IN", "BREAK", "LUNCH"].includes(row.status)),
+        mappedRows.filter((row) => ["IN", "BREAK", "LUNCH"].includes(row.status)),
       );
       setDataSyncError(null);
     } catch (error) {
@@ -1267,19 +1883,25 @@ export default function App() {
           email: newUserEmail.trim() || undefined,
           pin: newUserPin.trim() || undefined,
           officeId: scopedLocationId || undefined,
+          isManager: newUserIsManager,
+          isOwnerManager: newUserIsManager ? newUserIsOwnerManager : false,
           isAdmin: newUserIsAdmin,
           isTimeAdmin: newUserIsTimeAdmin,
           isReports: newUserIsReports,
           isServer: newUserIsServer,
+          isKitchenManager: newUserIsKitchenManager,
         }),
       });
       setNewUserName("");
       setNewUserEmail("");
       setNewUserPin("");
+      setNewUserIsManager(false);
+      setNewUserIsOwnerManager(false);
       setNewUserIsAdmin(false);
       setNewUserIsTimeAdmin(false);
       setNewUserIsReports(false);
       setNewUserIsServer(false);
+      setNewUserIsKitchenManager(false);
       setUserStatus("User created.");
       loadEmployees();
       loadSummary();
@@ -1323,10 +1945,13 @@ export default function App() {
         hourlyRate?: number | null;
         officeId?: string | null;
         groupId?: string | null;
+        isManager?: boolean;
+        isOwnerManager?: boolean;
         isAdmin?: boolean;
         isTimeAdmin?: boolean;
         isReports?: boolean;
         isServer?: boolean;
+        isKitchenManager?: boolean;
         disabled?: boolean;
       };
       setEditingUserId(id);
@@ -1342,10 +1967,13 @@ export default function App() {
             : "",
         officeId: data.officeId || "",
         groupId: data.groupId || "",
+        isManager: Boolean(data.isManager),
+        isOwnerManager: Boolean(data.isOwnerManager),
         isAdmin: Boolean(data.isAdmin),
         isTimeAdmin: Boolean(data.isTimeAdmin),
         isReports: Boolean(data.isReports),
         isServer: Boolean(data.isServer),
+        isKitchenManager: Boolean(data.isKitchenManager),
         disabled: Boolean(data.disabled),
       });
       setEditUserStatus("Loaded user for editing.");
@@ -1402,10 +2030,15 @@ export default function App() {
         email: editUserForm.email.trim(),
         officeId: editUserForm.officeId,
         groupId: editUserForm.groupId,
+        isManager: editUserForm.isManager,
+        isOwnerManager: editUserForm.isManager
+          ? editUserForm.isOwnerManager
+          : false,
         isAdmin: editUserForm.isAdmin,
         isTimeAdmin: editUserForm.isTimeAdmin,
         isReports: editUserForm.isReports,
         isServer: editUserForm.isServer,
+        isKitchenManager: editUserForm.isKitchenManager,
         disabled: editUserForm.disabled,
       };
       if (hourlyRate !== undefined) {
@@ -1419,7 +2052,10 @@ export default function App() {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
-      setEditUserForm((prev) => ({ ...prev, pin: "" }));
+      setEditUserForm((prev) => ({
+        ...prev,
+        pin: "",
+      }));
       setEditUserStatus("User updated.");
       loadEmployees();
       loadSummary();
@@ -1439,12 +2075,46 @@ export default function App() {
       setOfficeStatus("Enter a location name.");
       return;
     }
+
+    const latitude = parseOptionalCoordinate(newOfficeLatitude);
+    const longitude = parseOptionalCoordinate(newOfficeLongitude);
+    const radius = parseOptionalRadius(newOfficeRadius);
+
+    if (
+      Number.isNaN(latitude) ||
+      Number.isNaN(longitude) ||
+      Number.isNaN(radius)
+    ) {
+      setOfficeStatus("Enter valid numeric geofence values.");
+      return;
+    }
+    const hasLatitude = latitude !== null;
+    const hasLongitude = longitude !== null;
+    if (hasLatitude !== hasLongitude) {
+      setOfficeStatus("Latitude and longitude are required together.");
+      return;
+    }
+
     try {
+      const payload: Record<string, unknown> = {
+        name: newOfficeName.trim(),
+      };
+      if (latitude !== null && longitude !== null) {
+        payload.latitude = latitude;
+        payload.longitude = longitude;
+        if (radius !== null) {
+          payload.geofenceRadiusMeters = radius;
+        }
+      }
+
       const created = (await fetchJson("/offices", {
         method: "POST",
-        body: JSON.stringify({ name: newOfficeName.trim() }),
+        body: JSON.stringify(payload),
       })) as Office;
       setNewOfficeName("");
+      setNewOfficeLatitude("");
+      setNewOfficeLongitude("");
+      setNewOfficeRadius("120");
       if (created?.id) {
         setActiveLocationId(created.id);
       }
@@ -1459,6 +2129,61 @@ export default function App() {
       setOfficeStatus(
         error instanceof Error ? error.message : "Unable to create location.",
       );
+    }
+  };
+
+  const handleSaveOfficeGeofence = async () => {
+    if (!officeGeoTarget?.id) {
+      setOfficeGeoStatus("Select a location first.");
+      return;
+    }
+
+    const latitude = parseOptionalCoordinate(officeGeoLatitude);
+    const longitude = parseOptionalCoordinate(officeGeoLongitude);
+    const radius = parseOptionalRadius(officeGeoRadius);
+
+    if (
+      Number.isNaN(latitude) ||
+      Number.isNaN(longitude) ||
+      Number.isNaN(radius)
+    ) {
+      setOfficeGeoStatus("Enter valid numeric geofence values.");
+      return;
+    }
+
+    const hasLatitude = latitude !== null;
+    const hasLongitude = longitude !== null;
+    if (hasLatitude !== hasLongitude) {
+      setOfficeGeoStatus("Latitude and longitude are required together.");
+      return;
+    }
+
+    setOfficeGeoSaving(true);
+    setOfficeGeoStatus(null);
+    try {
+      const payload: Record<string, unknown> = {};
+      if (hasLatitude && hasLongitude) {
+        payload.latitude = latitude;
+        payload.longitude = longitude;
+        payload.geofenceRadiusMeters = radius;
+      } else {
+        payload.latitude = null;
+        payload.longitude = null;
+        payload.geofenceRadiusMeters = null;
+      }
+
+      await fetchJson(`/offices/${officeGeoTarget.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      setOfficeGeoStatus("Location geofence updated.");
+      await loadOffices();
+    } catch (error) {
+      setOfficeGeoStatus(
+        error instanceof Error ? error.message : "Unable to update geofence.",
+      );
+    } finally {
+      setOfficeGeoSaving(false);
     }
   };
 
@@ -1727,6 +2452,422 @@ export default function App() {
     return statusById;
   }, [activeNow]);
 
+  const managerProfile = useMemo(() => {
+    if (!sessionManagerEmployeeId) {
+      return null;
+    }
+    return (
+      employees.find((employee) => employee.id === sessionManagerEmployeeId) ||
+      null
+    );
+  }, [employees, sessionManagerEmployeeId]);
+
+  const managerPunchRow = useMemo(() => {
+    if (!sessionManagerEmployeeId) {
+      return null;
+    }
+    return (
+      recentPunchRows.find((row) => row.id === sessionManagerEmployeeId) || null
+    );
+  }, [recentPunchRows, sessionManagerEmployeeId]);
+
+  const managerCurrentPunchStatus = managerPunchRow?.status || "OUT";
+  const managerCanClockOut = ["IN", "BREAK", "LUNCH"].includes(
+    managerCurrentPunchStatus,
+  );
+  const managerNextPunchType: "IN" | "OUT" = managerCanClockOut ? "OUT" : "IN";
+  const managerActionLabel = managerCanClockOut ? "Clock Out" : "Clock In";
+
+  const buildTodayScheduleFromLegacyEndpoints = async () => {
+    const today = new Date();
+    const weekday = today.getDay();
+    const weekdayLabel = weekDays[weekday] || "Unknown";
+    const date = `${today.getFullYear()}-${padDatePart(today.getMonth() + 1)}-${padDatePart(today.getDate())}`;
+    const timezone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "Local";
+
+    const scopedEmployees =
+      employees.length > 0
+        ? employees
+        : (
+            (await fetchJson(appendOfficeScope("/employees"))) as {
+              employees?: Employee[];
+            }
+          ).employees || [];
+
+    const activeEmployees = scopedEmployees.filter(
+      (employee) => employee.active,
+    );
+    if (activeEmployees.length === 0) {
+      return {
+        date,
+        weekday,
+        weekdayLabel,
+        timezone,
+        rows: [],
+      } satisfies TodayScheduleResponse;
+    }
+
+    const officeNameById = new Map(
+      offices.map((office) => [office.id, office.name]),
+    );
+    const groupNameById = new Map(
+      groups.map((group) => [group.id, group.name]),
+    );
+
+    const dayRows = await Promise.all(
+      activeEmployees.map(async (employee) => {
+        try {
+          const data = (await fetchJson(
+            `/employee-schedules/${employee.id}`,
+          )) as {
+            days?: ScheduleDay[];
+          };
+          const days = Array.isArray(data.days) ? data.days : [];
+          const day = days.find(
+            (item) => item.weekday === weekday && item.enabled,
+          );
+          if (!day) {
+            return null;
+          }
+
+          const groupName = employee.groupId
+            ? groupNameById.get(employee.groupId) || null
+            : null;
+          const roleLabel = employee.isServer
+            ? "Servers"
+            : groupName || "Unassigned";
+          const officeName = employee.officeId
+            ? officeNameById.get(employee.officeId) || null
+            : null;
+
+          return {
+            employeeId: employee.id,
+            employeeName: employee.name,
+            startTime: day.startTime || "",
+            endTime: day.endTime || "",
+            isServer: Boolean(employee.isServer),
+            officeName,
+            groupName,
+            roleLabel,
+          } satisfies TodayScheduleRow;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const rows = dayRows
+      .filter((row): row is TodayScheduleRow => Boolean(row))
+      .sort((a, b) => {
+        const aHasStart = Boolean(a.startTime);
+        const bHasStart = Boolean(b.startTime);
+        if (aHasStart && bHasStart) {
+          const byStart = a.startTime.localeCompare(b.startTime);
+          if (byStart !== 0) {
+            return byStart;
+          }
+        } else if (aHasStart !== bHasStart) {
+          return aHasStart ? -1 : 1;
+        }
+        return a.employeeName.localeCompare(b.employeeName);
+      });
+
+    return {
+      date,
+      weekday,
+      weekdayLabel,
+      timezone,
+      rows,
+    } satisfies TodayScheduleResponse;
+  };
+
+  const loadTodaySchedule = async () => {
+    setTodayScheduleLoading(true);
+    setTodayScheduleStatus(null);
+    try {
+      const data = (await fetchJson(
+        appendOfficeScope("/employee-schedules/today"),
+      )) as Partial<TodayScheduleResponse>;
+      const rows = Array.isArray(data.rows)
+        ? data.rows
+            .map((row) => {
+              if (!row || typeof row !== "object") {
+                return null;
+              }
+              const candidate = row as Partial<TodayScheduleRow>;
+              if (
+                typeof candidate.employeeId !== "string" ||
+                typeof candidate.employeeName !== "string"
+              ) {
+                return null;
+              }
+              return {
+                employeeId: candidate.employeeId,
+                employeeName: candidate.employeeName,
+                startTime:
+                  typeof candidate.startTime === "string"
+                    ? candidate.startTime
+                    : "",
+                endTime:
+                  typeof candidate.endTime === "string"
+                    ? candidate.endTime
+                    : "",
+                isServer: Boolean(candidate.isServer),
+                officeName:
+                  typeof candidate.officeName === "string"
+                    ? candidate.officeName
+                    : null,
+                groupName:
+                  typeof candidate.groupName === "string"
+                    ? candidate.groupName
+                    : null,
+                roleLabel:
+                  typeof candidate.roleLabel === "string" &&
+                  candidate.roleLabel.trim()
+                    ? candidate.roleLabel
+                    : "Unassigned",
+              } satisfies TodayScheduleRow;
+            })
+            .filter((row): row is TodayScheduleRow => Boolean(row))
+        : [];
+      setTodaySchedule({
+        date: typeof data.date === "string" ? data.date : "",
+        weekday: typeof data.weekday === "number" ? data.weekday : 0,
+        weekdayLabel:
+          typeof data.weekdayLabel === "string" ? data.weekdayLabel : "",
+        timezone: typeof data.timezone === "string" ? data.timezone : "UTC",
+        rows,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to load today's schedule.";
+      const shouldUseLegacyFallback =
+        message.toLowerCase().includes("employee not found") ||
+        message.includes("(404)");
+
+      if (shouldUseLegacyFallback) {
+        try {
+          const fallback = await buildTodayScheduleFromLegacyEndpoints();
+          setTodaySchedule(fallback);
+          setTodayScheduleStatus(null);
+          return;
+        } catch {
+          // fall through to original error below
+        }
+      }
+
+      setTodaySchedule(null);
+      setTodayScheduleStatus(message);
+    } finally {
+      setTodayScheduleLoading(false);
+    }
+  };
+
+  const loadCompanyOrderCatalog = async () => {
+    setCompanyOrderLoading(true);
+    setCompanyOrderStatus(null);
+    try {
+      const data = (await fetchJson("/company-orders/catalog")) as {
+        suppliers?: CompanyOrderCatalogSupplier[];
+      };
+      const suppliers = Array.isArray(data.suppliers) ? data.suppliers : [];
+      setCompanyOrderCatalog(suppliers);
+      setCompanyOrderSupplier((previous) => {
+        if (
+          previous &&
+          suppliers.some((supplier) => supplier.supplierName === previous)
+        ) {
+          return previous;
+        }
+        return suppliers[0]?.supplierName || "";
+      });
+    } catch (error) {
+      setCompanyOrderStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to load company catalog.",
+      );
+    } finally {
+      setCompanyOrderLoading(false);
+    }
+  };
+
+  const loadCompanyOrders = async () => {
+    setCompanyOrderLoading(true);
+    setCompanyOrderStatus(null);
+    try {
+      const query = new URLSearchParams();
+      query.set("limit", "40");
+      if (companyOrdersOfficeId) {
+        query.set("officeId", companyOrdersOfficeId);
+      }
+      const data = (await fetchJson(
+        `/company-orders?${query.toString()}`,
+      )) as { orders?: CompanyOrderRow[] };
+      const orders = Array.isArray(data.orders) ? data.orders : [];
+      setCompanyOrderRows(orders);
+      if (orders[0]?.weekStartDate) {
+        setLastSubmittedCompanyOrderWeekStart(orders[0].weekStartDate);
+      }
+    } catch (error) {
+      setCompanyOrderRows([]);
+      setCompanyOrderStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to load company orders.",
+      );
+    } finally {
+      setCompanyOrderLoading(false);
+    }
+  };
+
+  const setCompanyOrderDraftQuantity = (
+    supplierName: string,
+    key: string,
+    rawValue: string,
+  ) => {
+    const value = normalizeCompanyOrderQuantityInput(rawValue);
+    setCompanyOrderDrafts((prev) => {
+      const supplierDraft = prev[supplierName] || {};
+      if (!value) {
+        if (!(key in supplierDraft)) {
+          return prev;
+        }
+        const nextSupplierDraft = { ...supplierDraft };
+        delete nextSupplierDraft[key];
+        const next = { ...prev };
+        if (Object.keys(nextSupplierDraft).length === 0) {
+          delete next[supplierName];
+        } else {
+          next[supplierName] = nextSupplierDraft;
+        }
+        return next;
+      }
+      if (supplierDraft[key] === value) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [supplierName]: {
+          ...supplierDraft,
+          [key]: value,
+        },
+      };
+    });
+  };
+
+  const handleCompanyOrderAddItem = (item: CompanyOrderCatalogItem) => {
+    if (!selectedCompanyOrderSupplier) {
+      return;
+    }
+    const supplierName = selectedCompanyOrderSupplier.supplierName;
+    const key = companyOrderItemKey(item.nameEs, item.nameEn);
+    const current = Number(selectedCompanySupplierDraft[key] || "0");
+    const next = Number.isFinite(current) && current > 0 ? current + 1 : 1;
+    setCompanyOrderDraftQuantity(supplierName, key, String(next));
+  };
+
+  const handleCompanyOrderStepItem = (
+    supplierName: string,
+    key: string,
+    delta: number,
+  ) => {
+    const current = Number((companyOrderDrafts[supplierName] || {})[key] || "0");
+    const next = Number((current + delta).toFixed(2));
+    if (!Number.isFinite(next) || next <= 0) {
+      setCompanyOrderDraftQuantity(supplierName, key, "");
+      return;
+    }
+    setCompanyOrderDraftQuantity(supplierName, key, String(next));
+  };
+
+  const handleCompanyOrderRemoveItem = (supplierName: string, key: string) => {
+    setCompanyOrderDraftQuantity(supplierName, key, "");
+  };
+
+  const submitCompanyOrder = async () => {
+    setCompanyOrderStatus(null);
+    const payloadBySupplier = new Map<
+      string,
+      Array<{ nameEs: string; nameEn: string; quantity: number }>
+    >();
+    companyOrderCartItems.forEach((item) => {
+      const supplierItems = payloadBySupplier.get(item.supplierName) || [];
+      supplierItems.push({
+        nameEs: item.nameEs,
+        nameEn: item.nameEn,
+        quantity: item.quantity,
+      });
+      payloadBySupplier.set(item.supplierName, supplierItems);
+    });
+    const supplierPayloads = Array.from(payloadBySupplier.entries()).map(
+      ([supplierName, items]) => ({ supplierName, items }),
+    );
+
+    if (supplierPayloads.length === 0) {
+      setCompanyOrderStatus("Enter at least one item quantity.");
+      return;
+    }
+
+    setCompanyOrderSaving(true);
+    try {
+      let weekStartDate = lastSubmittedCompanyOrderWeekStart;
+      for (const payload of supplierPayloads) {
+        const createdOrder = (await fetchJson("/company-orders", {
+          method: "POST",
+          body: JSON.stringify({
+            supplierName: payload.supplierName,
+            officeId: companyOrdersOfficeId || undefined,
+            notes: companyOrderNotes.trim() || undefined,
+            items: payload.items,
+          }),
+        })) as { weekStartDate?: string };
+        if (typeof createdOrder.weekStartDate === "string") {
+          weekStartDate = createdOrder.weekStartDate;
+        }
+      }
+      setLastSubmittedCompanyOrderWeekStart(weekStartDate);
+      setCompanyOrderStatus(
+        `Company order submitted for ${supplierPayloads.length} suppliers.`,
+      );
+      setCompanyOrderDrafts({});
+      setCompanyOrderNotes("");
+      setCompanyOrderSearch("");
+      await loadCompanyOrders();
+    } catch (error) {
+      setCompanyOrderStatus(
+        error instanceof Error ? error.message : "Unable to submit order.",
+      );
+    } finally {
+      setCompanyOrderSaving(false);
+    }
+  };
+
+  const handleCompanyOrderExport = async (format: "pdf" | "csv" | "excel") => {
+    setCompanyOrderExportingFormat(format);
+    try {
+      const weekStartDate =
+        lastSubmittedCompanyOrderWeekStart || getCurrentWeekStartDateKey();
+      const ok = await fetchCompanyOrderExport(format, weekStartDate);
+      if (ok) {
+        setCompanyOrderStatus(
+          `${format.toUpperCase()} ready for week ${weekStartDate}.`,
+        );
+      } else {
+        setCompanyOrderStatus("Unable to export company order.");
+      }
+    } catch (error) {
+      setCompanyOrderStatus(
+        error instanceof Error ? error.message : "Unable to export company order.",
+      );
+    } finally {
+      setCompanyOrderExportingFormat(null);
+    }
+  };
+
   const loadSchedule = async (employeeId: string) => {
     try {
       const data = (await fetchJson(`/employee-schedules/${employeeId}`)) as {
@@ -1846,10 +2987,126 @@ export default function App() {
         body: JSON.stringify({ days: normalizedDays }),
       });
       setScheduleStatus("Schedule saved.");
+      void loadTodaySchedule();
     } catch (error) {
       setScheduleStatus(
         error instanceof Error ? error.message : "Unable to save schedule.",
       );
+    }
+  };
+
+  const handleSubmitManagerPendingTips = async () => {
+    if (!sessionManagerEmployeeId || !managerPendingTipWorkDate) {
+      return;
+    }
+
+    const cash = Number.parseFloat(managerCashTips || "0");
+    const credit = Number.parseFloat(managerCreditCardTips || "0");
+    if (
+      !Number.isFinite(cash) ||
+      cash < 0 ||
+      !Number.isFinite(credit) ||
+      credit < 0
+    ) {
+      setManagerPunchStatus("Tips must be valid non-negative amounts.");
+      return;
+    }
+
+    setManagerTipSaving(true);
+    setManagerPunchStatus(null);
+    try {
+      await fetchJson(`/employee-tips/${sessionManagerEmployeeId}`, {
+        method: "POST",
+        body: JSON.stringify({
+          cashTips: cash,
+          creditCardTips: credit,
+          workDate: managerPendingTipWorkDate,
+        }),
+      });
+      const submittedDate = managerPendingTipWorkDate;
+      setManagerPendingTipWorkDate(null);
+      setManagerCashTips("0");
+      setManagerCreditCardTips("0");
+      setManagerPunchStatus(
+        `Tips saved for ${submittedDate}. You can clock in now.`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to save tips.";
+      if (message.toLowerCase().includes("already submitted")) {
+        const submittedDate = managerPendingTipWorkDate;
+        setManagerPendingTipWorkDate(null);
+        setManagerCashTips("0");
+        setManagerCreditCardTips("0");
+        setManagerPunchStatus(
+          `Tips already submitted for ${submittedDate}. You can clock in now.`,
+        );
+      } else {
+        setManagerPunchStatus(message);
+      }
+    } finally {
+      setManagerTipSaving(false);
+    }
+  };
+
+  const handleManagerSelfPunch = async () => {
+    if (!sessionManagerEmployeeId) {
+      return;
+    }
+    if (managerClockExempt) {
+      setManagerPunchStatus(
+        "Owner privilege is active. Clock in/out is not required.",
+      );
+      return;
+    }
+    if (managerNextPunchType === "IN" && managerPendingTipWorkDate) {
+      setManagerPunchStatus(
+        `Submit tips for ${managerPendingTipWorkDate} before clocking in.`,
+      );
+      return;
+    }
+
+    setManagerPunchLoading(true);
+    setManagerPunchStatus(null);
+    try {
+      const pinValue = managerPin.trim();
+      await fetchJson(`/employee-punches/${sessionManagerEmployeeId}`, {
+        method: "POST",
+        body: JSON.stringify({
+          type: managerNextPunchType,
+          pin: pinValue || undefined,
+          notes:
+            managerNextPunchType === "OUT"
+              ? "Manager self clock-out"
+              : "Manager self clock-in",
+        }),
+      });
+
+      if (managerNextPunchType === "IN") {
+        setManagerPendingTipWorkDate(null);
+      }
+      setManagerPin("");
+      setManagerPunchStatus(
+        managerNextPunchType === "OUT"
+          ? "You are clocked out."
+          : "You are clocked in.",
+      );
+      await loadActiveNow();
+      await loadNotifications();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to record your punch.";
+      const pendingDate = extractPendingTipsWorkDate(message);
+      if (pendingDate) {
+        setManagerPendingTipWorkDate(pendingDate);
+        setManagerPunchStatus(
+          `Submit tips for ${pendingDate} before clocking in.`,
+        );
+      } else {
+        setManagerPunchStatus(message);
+      }
+    } finally {
+      setManagerPunchLoading(false);
     }
   };
 
@@ -1891,10 +3148,74 @@ export default function App() {
     const office = offices.find((item) => item.id === scopedLocationId);
     return office?.name || text.noLocationAssigned;
   }, [offices, scopedLocationId, text.allLocations, text.noLocationAssigned]);
+  const officeGeoTarget = useMemo(() => {
+    if (!offices.length) {
+      return null;
+    }
+    if (scopedLocationId) {
+      return offices.find((item) => item.id === scopedLocationId) || null;
+    }
+    return offices[0] || null;
+  }, [offices, scopedLocationId]);
+
+  useEffect(() => {
+    if (!officeGeoTarget) {
+      setOfficeGeoLatitude("");
+      setOfficeGeoLongitude("");
+      setOfficeGeoRadius("120");
+      setOfficeGeoStatus(null);
+      return;
+    }
+    setOfficeGeoLatitude(
+      officeGeoTarget.latitude !== null &&
+        officeGeoTarget.latitude !== undefined
+        ? String(officeGeoTarget.latitude)
+        : "",
+    );
+    setOfficeGeoLongitude(
+      officeGeoTarget.longitude !== null &&
+        officeGeoTarget.longitude !== undefined
+        ? String(officeGeoTarget.longitude)
+        : "",
+    );
+    setOfficeGeoRadius(
+      officeGeoTarget.geofenceRadiusMeters !== null &&
+        officeGeoTarget.geofenceRadiusMeters !== undefined
+        ? String(officeGeoTarget.geofenceRadiusMeters)
+        : "120",
+    );
+    setOfficeGeoStatus(null);
+  }, [
+    officeGeoTarget?.id,
+    officeGeoTarget?.latitude,
+    officeGeoTarget?.longitude,
+    officeGeoTarget?.geofenceRadiusMeters,
+  ]);
+
   const selectedScheduleEmployee = useMemo(
-    () => employees.find((employee) => employee.id === scheduleEmployeeId) || null,
+    () =>
+      employees.find((employee) => employee.id === scheduleEmployeeId) || null,
     [employees, scheduleEmployeeId],
   );
+  const activeMessageEmployees = useMemo(
+    () =>
+      employees
+        .filter((employee) => employee.active)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [employees],
+  );
+  useEffect(() => {
+    if (activeMessageEmployees.length === 0) {
+      setEmployeeMessageEmployeeId("");
+      return;
+    }
+    const stillValid = activeMessageEmployees.some(
+      (employee) => employee.id === employeeMessageEmployeeId,
+    );
+    if (!stillValid) {
+      setEmployeeMessageEmployeeId(activeMessageEmployees[0].id);
+    }
+  }, [activeMessageEmployees, employeeMessageEmployeeId]);
   const filteredScheduleEmployees = useMemo(() => {
     const lookup = scheduleEmployeeSearch.trim().toLowerCase();
     if (!lookup) {
@@ -1904,6 +3225,161 @@ export default function App() {
       employee.name.toLowerCase().includes(lookup),
     );
   }, [employees, scheduleEmployeeSearch]);
+  const selectedCompanyOrderSupplier = useMemo(
+    () =>
+      companyOrderCatalog.find(
+        (supplier) => supplier.supplierName === companyOrderSupplier,
+      ) || null,
+    [companyOrderCatalog, companyOrderSupplier],
+  );
+  const filteredCompanyOrderItems = useMemo(() => {
+    const source = selectedCompanyOrderSupplier?.items || [];
+    const lookup = companyOrderSearch.trim().toLowerCase();
+    if (!lookup) {
+      return source;
+    }
+    return source.filter((item) => {
+      const es = item.nameEs.toLowerCase();
+      const en = item.nameEn.toLowerCase();
+      return es.includes(lookup) || en.includes(lookup);
+    });
+  }, [companyOrderSearch, selectedCompanyOrderSupplier]);
+  const companyOrderHasSearch = companyOrderSearch.trim().length > 0;
+  const baseCompanyOrderItems = useMemo(() => {
+    if (!selectedCompanyOrderSupplier) {
+      return [] as CompanyOrderCatalogItem[];
+    }
+    if (!companyOrderShowOnlyAdded) {
+      return filteredCompanyOrderItems;
+    }
+    const supplierDraft =
+      companyOrderDrafts[selectedCompanyOrderSupplier.supplierName] || {};
+    return filteredCompanyOrderItems.filter((item) => {
+      const key = companyOrderItemKey(item.nameEs, item.nameEn);
+      return Number(supplierDraft[key] || "0") > 0;
+    });
+  }, [
+    companyOrderDrafts,
+    companyOrderShowOnlyAdded,
+    filteredCompanyOrderItems,
+    selectedCompanyOrderSupplier,
+  ]);
+  const visibleCompanyOrderItems = useMemo(() => {
+    if (companyOrderHasSearch || companyOrderShowOnlyAdded) {
+      return baseCompanyOrderItems;
+    }
+    return baseCompanyOrderItems.slice(0, companyOrderVisibleCount);
+  }, [
+    baseCompanyOrderItems,
+    companyOrderHasSearch,
+    companyOrderShowOnlyAdded,
+    companyOrderVisibleCount,
+  ]);
+  const hasMoreCompanyOrderItems = useMemo(() => {
+    if (companyOrderHasSearch || companyOrderShowOnlyAdded) {
+      return false;
+    }
+    return baseCompanyOrderItems.length > visibleCompanyOrderItems.length;
+  }, [
+    baseCompanyOrderItems.length,
+    companyOrderHasSearch,
+    companyOrderShowOnlyAdded,
+    visibleCompanyOrderItems.length,
+  ]);
+  useEffect(() => {
+    setCompanyOrderVisibleCount(16);
+  }, [companyOrderHasSearch, companyOrderShowOnlyAdded, companyOrderSupplier]);
+  const selectedCompanySupplierDraft = useMemo(
+    () => companyOrderDrafts[companyOrderSupplier] || {},
+    [companyOrderDrafts, companyOrderSupplier],
+  );
+  const companyOrderCartItems = useMemo(
+    () =>
+      companyOrderCatalog.flatMap((supplier) => {
+        const supplierDraft = companyOrderDrafts[supplier.supplierName] || {};
+        return supplier.items
+          .map((item) => {
+            const key = companyOrderItemKey(item.nameEs, item.nameEn);
+            const quantity = Number(supplierDraft[key] || "");
+            if (!Number.isFinite(quantity) || quantity <= 0) {
+              return null;
+            }
+            return {
+              supplierName: supplier.supplierName,
+              key,
+              nameEs: item.nameEs,
+              nameEn: item.nameEn,
+              quantity,
+            };
+          })
+          .filter(
+            (
+              entry,
+            ): entry is {
+              supplierName: string;
+              key: string;
+              nameEs: string;
+              nameEn: string;
+              quantity: number;
+            } => Boolean(entry),
+          );
+      }),
+    [companyOrderCatalog, companyOrderDrafts],
+  );
+  const selectedCompanyOrderCount = useMemo(
+    () =>
+      Object.values(companyOrderDrafts)
+        .flatMap((draft) => Object.values(draft))
+        .filter((value) => Number(value) > 0).length,
+    [companyOrderDrafts],
+  );
+  const selectedCompanyOrderTotalUnits = useMemo(
+    () =>
+      Number(
+        companyOrderCartItems
+          .reduce((sum, item) => sum + item.quantity, 0)
+          .toFixed(2),
+      ),
+    [companyOrderCartItems],
+  );
+  const selectedCompanyOrderSupplierCount = useMemo(
+    () =>
+      Object.values(companyOrderDrafts).filter((draft) =>
+        Object.values(draft).some((value) => Number(value) > 0),
+      ).length,
+    [companyOrderDrafts],
+  );
+  const todayRoleTabs = useMemo(() => {
+    const labels = new Set<string>();
+    (todaySchedule?.rows || []).forEach((row) => {
+      const label = row.roleLabel.trim() || "Unassigned";
+      labels.add(label);
+    });
+    return ["All", ...Array.from(labels).sort((a, b) => a.localeCompare(b))];
+  }, [todaySchedule]);
+  const activeTodayRoleFilter = todayRoleTabs.includes(todayRoleFilter)
+    ? todayRoleFilter
+    : "All";
+  const filteredTodayScheduleRows = useMemo(() => {
+    const rows = todaySchedule?.rows || [];
+    if (activeTodayRoleFilter === "All") {
+      return rows;
+    }
+    return rows.filter((row) => row.roleLabel === activeTodayRoleFilter);
+  }, [activeTodayRoleFilter, todaySchedule]);
+  const todayScheduleLabel = useMemo(() => {
+    if (!todaySchedule) {
+      return "Who should work today, filtered by role.";
+    }
+    const weekdayLabel = todaySchedule.weekdayLabel || "Today";
+    const dateLabel = todaySchedule.date
+      ? formatDisplayDate(todaySchedule.date)
+      : "Today";
+    const timezoneLabel = todaySchedule.timezone
+      ? ` (${todaySchedule.timezone})`
+      : "";
+    return `${weekdayLabel}, ${dateLabel}${timezoneLabel}`;
+  }, [todaySchedule]);
   const pendingScheduleOverrides = useMemo(
     () =>
       notifications
@@ -1914,21 +3390,26 @@ export default function App() {
           }
           return {
             requestId: parsed.requestId,
-            employeeName: parsed.employeeName || notice.employeeName || "Employee",
+            employeeName:
+              parsed.employeeName || notice.employeeName || "Employee",
             message: notice.message,
             reasonMessage: parsed.reasonMessage,
             attemptedAt: parsed.attemptedAt,
             workDate: parsed.workDate,
           };
         })
-        .filter((row): row is {
-          requestId: string;
-          employeeName: string;
-          message: string;
-          reasonMessage: string;
-          attemptedAt: string;
-          workDate: string;
-        } => Boolean(row)),
+        .filter(
+          (
+            row,
+          ): row is {
+            requestId: string;
+            employeeName: string;
+            message: string;
+            reasonMessage: string;
+            attemptedAt: string;
+            workDate: string;
+          } => Boolean(row),
+        ),
     [notifications],
   );
   const canAccessTab = useCallback(
@@ -1939,6 +3420,7 @@ export default function App() {
         return permissions.locations || permissions.manageMultiLocation;
       if (tab === "groups") return permissions.groups;
       if (tab === "schedules") return permissions.schedules;
+      if (tab === "companyOrders") return permissions.companyOrders;
       if (tab === "capture") return permissions.salesCapture;
       if (tab === "reports") return permissions.reports;
       if (tab === "alerts") return permissions.notifications;
@@ -2120,6 +3602,121 @@ export default function App() {
             </Text>
           </LinearGradient>
         </View>
+        {dataSyncError ? (
+          <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+            API sync: {dataSyncError}
+          </Text>
+        ) : null}
+        {sessionManagerEmployeeId ? (
+          <>
+            <View style={[styles.divider, isLight && styles.dividerLight]} />
+            <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
+              My Shift
+            </Text>
+            <View style={[styles.workingCard, isLight && styles.workingCardLight]}>
+              <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                {managerProfile?.name || activeAdminUsername || "Manager"}
+              </Text>
+              {managerClockExempt ? (
+                <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                  Owner privilege is active for this manager account. Clock in/out
+                  is not required.
+                </Text>
+              ) : (
+                <>
+                  <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                    Current status: {managerCurrentPunchStatus}
+                  </Text>
+                  <TextInput
+                    style={[styles.input, styles.inputCompact]}
+                    placeholder="PIN (if required)"
+                    secureTextEntry
+                    keyboardType="number-pad"
+                    value={managerPin}
+                    onChangeText={(value) =>
+                      setManagerPin(value.replace(/\D+/g, "").slice(0, 4))
+                    }
+                    maxLength={4}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      managerCanClockOut
+                        ? styles.inlineButton
+                        : styles.inlineButtonIn,
+                      isLight &&
+                        (managerCanClockOut
+                          ? styles.inlineButtonLight
+                          : styles.inlineButtonInLight),
+                      managerPunchLoading && styles.inlineButtonDisabled,
+                    ]}
+                    onPress={handleManagerSelfPunch}
+                    disabled={managerPunchLoading}
+                  >
+                    <Text
+                      style={[
+                        managerCanClockOut
+                          ? styles.inlineButtonText
+                          : styles.inlineButtonTextIn,
+                        isLight &&
+                          (managerCanClockOut
+                            ? styles.inlineButtonTextLight
+                            : styles.inlineButtonTextInLight),
+                      ]}
+                    >
+                      {managerPunchLoading ? "Working..." : managerActionLabel}
+                    </Text>
+                  </TouchableOpacity>
+                  {managerPendingTipWorkDate ? (
+                    <View style={styles.tipCard}>
+                      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                        Pending tips required for {managerPendingTipWorkDate}.
+                      </Text>
+                      <TextInput
+                        style={[styles.input, styles.inputCompact]}
+                        placeholder="Cash tips"
+                        keyboardType="decimal-pad"
+                        value={managerCashTips}
+                        onChangeText={setManagerCashTips}
+                      />
+                      <TextInput
+                        style={[styles.input, styles.inputCompact]}
+                        placeholder="Credit card tips"
+                        keyboardType="decimal-pad"
+                        value={managerCreditCardTips}
+                        onChangeText={setManagerCreditCardTips}
+                      />
+                      <TouchableOpacity
+                        style={[
+                          styles.inlineButtonIn,
+                          isLight && styles.inlineButtonInLight,
+                          managerTipSaving && styles.inlineButtonDisabled,
+                        ]}
+                        onPress={handleSubmitManagerPendingTips}
+                        disabled={managerTipSaving}
+                      >
+                        <Text
+                          style={[
+                            styles.inlineButtonTextIn,
+                            isLight && styles.inlineButtonTextInLight,
+                          ]}
+                        >
+                          {managerTipSaving
+                            ? "Saving tips..."
+                            : "Submit Pending Tips"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </>
+              )}
+              {managerPunchStatus ? (
+                <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+                  {managerPunchStatus}
+                </Text>
+              ) : null}
+            </View>
+          </>
+        ) : null}
         <View style={[styles.divider, isLight && styles.dividerLight]} />
         <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
           Working Now
@@ -2229,25 +3826,36 @@ export default function App() {
                 style={[styles.workingCard, isLight && styles.workingCardLight]}
               >
                 <View style={styles.reportRowMain}>
-                  <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                  <Text
+                    style={[styles.listName, isLight && styles.listNameLight]}
+                  >
                     {request.employeeName}
                   </Text>
-                  <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                  <Text
+                    style={[styles.listMeta, isLight && styles.listMetaLight]}
+                  >
                     {request.message}
                   </Text>
                   {request.reasonMessage ? (
-                    <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                    <Text
+                      style={[styles.listMeta, isLight && styles.listMetaLight]}
+                    >
                       {request.reasonMessage}
                     </Text>
                   ) : null}
                   {request.workDate ? (
-                    <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                    <Text
+                      style={[styles.listMeta, isLight && styles.listMetaLight]}
+                    >
                       Work date: {formatDisplayDate(request.workDate)}
                     </Text>
                   ) : null}
                   {request.attemptedAt ? (
-                    <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-                      Attempted: {new Date(request.attemptedAt).toLocaleString()}
+                    <Text
+                      style={[styles.listMeta, isLight && styles.listMetaLight]}
+                    >
+                      Attempted:{" "}
+                      {new Date(request.attemptedAt).toLocaleString()}
                     </Text>
                   ) : null}
                 </View>
@@ -2318,7 +3926,6 @@ export default function App() {
           Powered by Websys Workforce
         </Text>
       </View>
-
     </>
   );
 
@@ -2358,7 +3965,9 @@ export default function App() {
           No users loaded yet. Tap Refresh.
         </Text>
       ) : (
-        <View style={[styles.userQuickList, isLight && styles.userQuickListLight]}>
+        <View
+          style={[styles.userQuickList, isLight && styles.userQuickListLight]}
+        >
           {employees.slice(0, 8).map((employee) => {
             const status = employee.active ? "Active" : "Disabled";
             return (
@@ -2373,7 +3982,12 @@ export default function App() {
         </View>
       )}
       {dataSyncError ? (
-        <Text style={[styles.statusText, { color: isLight ? "#b91c1c" : "#fca5a5" }]}>
+        <Text
+          style={[
+            styles.statusText,
+            { color: isLight ? "#b91c1c" : "#fca5a5" },
+          ]}
+        >
           API sync: {dataSyncError}
         </Text>
       ) : null}
@@ -2403,6 +4017,60 @@ export default function App() {
         maxLength={4}
       />
       <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            newUserIsManager && styles.toggleActive,
+            newUserIsManager && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() =>
+            setNewUserIsManager((prev) => {
+              const enabled = !prev;
+              if (!enabled) {
+                setNewUserIsOwnerManager(false);
+              }
+              return enabled;
+            })
+          }
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              newUserIsManager && isLight && styles.toggleTextLightActive,
+            ]}
+          >
+            Manager
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            newUserIsOwnerManager && styles.toggleActive,
+            newUserIsOwnerManager && isLight && styles.toggleActiveLight,
+            !newUserIsManager && styles.inlineButtonDisabled,
+          ]}
+          onPress={() =>
+            setNewUserIsOwnerManager((prev) =>
+              newUserIsManager ? !prev : false,
+            )
+          }
+          disabled={!newUserIsManager}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              newUserIsOwnerManager &&
+                isLight &&
+                styles.toggleTextLightActive,
+            ]}
+          >
+            Manager Owner
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[
             styles.togglePill,
@@ -2458,6 +4126,27 @@ export default function App() {
             ]}
           >
             Reports
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            newUserIsKitchenManager && styles.toggleActive,
+            newUserIsKitchenManager && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() => setNewUserIsKitchenManager((prev) => !prev)}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              newUserIsKitchenManager &&
+                isLight &&
+                styles.toggleTextLightActive,
+            ]}
+          >
+            Kitchen Manager
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -2683,7 +4372,72 @@ export default function App() {
             ))}
           </View>
 
+          <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+            Owner status:{" "}
+            {editUserForm.isManager
+              ? editUserForm.isOwnerManager
+                ? "Yes"
+                : "No"
+              : "N/A"}
+          </Text>
           <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                editUserForm.isManager && styles.toggleActive,
+                editUserForm.isManager && isLight && styles.toggleActiveLight,
+              ]}
+              onPress={() =>
+                setEditUserForm((prev) => ({
+                  ...prev,
+                  isManager: !prev.isManager,
+                  isOwnerManager: !prev.isManager ? prev.isOwnerManager : false,
+                }))
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  editUserForm.isManager &&
+                    isLight &&
+                    styles.toggleTextLightActive,
+                ]}
+              >
+                Manager
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                editUserForm.isOwnerManager && styles.toggleActive,
+                editUserForm.isOwnerManager &&
+                  isLight &&
+                  styles.toggleActiveLight,
+                !editUserForm.isManager && styles.inlineButtonDisabled,
+              ]}
+              onPress={() =>
+                setEditUserForm((prev) => ({
+                  ...prev,
+                  isOwnerManager: prev.isManager ? !prev.isOwnerManager : false,
+                }))
+              }
+              disabled={!editUserForm.isManager}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  editUserForm.isOwnerManager &&
+                    isLight &&
+                    styles.toggleTextLightActive,
+                ]}
+              >
+                Manager Owner
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[
                 styles.togglePill,
@@ -2757,6 +4511,34 @@ export default function App() {
                 ]}
               >
                 Reports
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                editUserForm.isKitchenManager && styles.toggleActive,
+                editUserForm.isKitchenManager &&
+                  isLight &&
+                  styles.toggleActiveLight,
+              ]}
+              onPress={() =>
+                setEditUserForm((prev) => ({
+                  ...prev,
+                  isKitchenManager: !prev.isKitchenManager,
+                }))
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  editUserForm.isKitchenManager &&
+                    isLight &&
+                    styles.toggleTextLightActive,
+                ]}
+              >
+                Kitchen Manager
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -2880,8 +4662,8 @@ export default function App() {
           );
 
           return (
-            <View key={employee.id} style={styles.listRow}>
-              <View>
+            <View key={employee.id} style={[styles.listRow, styles.userListRow]}>
+              <View style={styles.userListMain}>
                 <Text
                   style={[styles.listName, isLight && styles.listNameLight]}
                 >
@@ -2894,8 +4676,15 @@ export default function App() {
                   {employee.active ? "Active" : "Disabled"} • Punch:{" "}
                   {currentPunchStatus}
                 </Text>
+                {employee.isManager && (
+                  <Text
+                    style={[styles.listMeta, isLight && styles.listMetaLight]}
+                  >
+                    Manager Owner: {employee.isOwnerManager ? "Yes" : "No"}
+                  </Text>
+                )}
               </View>
-              <View style={styles.rowActions}>
+              <View style={[styles.rowActions, styles.userRowActions]}>
                 <TouchableOpacity
                   style={[
                     styles.secondaryButton,
@@ -3033,11 +4822,37 @@ export default function App() {
             value={newOfficeName}
             onChangeText={setNewOfficeName}
           />
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            placeholder="Latitude (optional)"
+            value={newOfficeLatitude}
+            onChangeText={setNewOfficeLatitude}
+            keyboardType="decimal-pad"
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            placeholder="Longitude (optional)"
+            value={newOfficeLongitude}
+            onChangeText={setNewOfficeLongitude}
+            keyboardType="decimal-pad"
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            placeholder="Radius meters (optional, default 120)"
+            value={newOfficeRadius}
+            onChangeText={setNewOfficeRadius}
+            keyboardType="number-pad"
+            autoCapitalize="none"
+          />
           <TouchableOpacity
             style={[styles.button, styles.primary]}
             onPress={handleCreateOffice}
           >
-            <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+            <Text
+              style={[styles.primaryText, isLight && styles.primaryTextLight]}
+            >
               Create Location
             </Text>
           </TouchableOpacity>
@@ -3052,6 +4867,64 @@ export default function App() {
           {officeStatus}
         </Text>
       )}
+      {officeGeoTarget ? (
+        <>
+          <View style={[styles.divider, isLight && styles.dividerLight]} />
+          <Text style={[styles.listName, isLight && styles.listNameLight]}>
+            Geofence: {officeGeoTarget.name}
+          </Text>
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            placeholder="Latitude"
+            value={officeGeoLatitude}
+            onChangeText={setOfficeGeoLatitude}
+            keyboardType="decimal-pad"
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            placeholder="Longitude"
+            value={officeGeoLongitude}
+            onChangeText={setOfficeGeoLongitude}
+            keyboardType="decimal-pad"
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={[styles.input, isLight && styles.inputLight]}
+            placeholder="Radius meters (25-5000)"
+            value={officeGeoRadius}
+            onChangeText={setOfficeGeoRadius}
+            keyboardType="number-pad"
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={[
+              styles.button,
+              styles.secondaryButton,
+              isLight && styles.secondaryButtonLight,
+              officeGeoSaving && styles.inlineButtonDisabled,
+            ]}
+            onPress={handleSaveOfficeGeofence}
+            disabled={officeGeoSaving}
+          >
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                isLight && styles.secondaryButtonTextLight,
+              ]}
+            >
+              {officeGeoSaving ? "Saving..." : "Save Geofence"}
+            </Text>
+          </TouchableOpacity>
+          {officeGeoStatus && (
+            <Text
+              style={[styles.statusText, isLight && styles.statusTextLight]}
+            >
+              {officeGeoStatus}
+            </Text>
+          )}
+        </>
+      ) : null}
       <View style={[styles.divider, isLight && styles.dividerLight]} />
       {offices.length === 0 ? (
         <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
@@ -3068,6 +4941,16 @@ export default function App() {
                 {scopedLocationId === office.id
                   ? "Current location panel"
                   : "Tap switch to open this location panel"}
+              </Text>
+              <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                {office.latitude !== null &&
+                office.latitude !== undefined &&
+                office.longitude !== null &&
+                office.longitude !== undefined
+                  ? `Geofence: ${office.latitude.toFixed(5)}, ${office.longitude.toFixed(5)} • ${
+                      office.geofenceRadiusMeters || 120
+                    }m`
+                  : "Geofence: not configured"}
               </Text>
             </View>
             <TouchableOpacity
@@ -3434,11 +5317,15 @@ export default function App() {
             ) : null}
           </View>
           {salesExpenseReceipt ? (
-            <Text style={[styles.helperText, isLight && styles.helperTextLight]}>
+            <Text
+              style={[styles.helperText, isLight && styles.helperTextLight]}
+            >
               {text.attached} {salesExpenseReceipt.fileName}
             </Text>
           ) : (
-            <Text style={[styles.helperText, isLight && styles.helperTextLight]}>
+            <Text
+              style={[styles.helperText, isLight && styles.helperTextLight]}
+            >
               {text.noPhoto}
             </Text>
           )}
@@ -3657,6 +5544,93 @@ export default function App() {
         Push notifications include punches, schedule override requests, 6-hour
         no-break alerts, and 7-day tip summaries.
       </Text>
+      <View style={[styles.divider, isLight && styles.dividerLight]} />
+      <Text style={[styles.listName, isLight && styles.listNameLight]}>
+        Send Employee Message
+      </Text>
+      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+        This message appears as a pop-up the next time the employee clocks in.
+      </Text>
+      {activeMessageEmployees.length === 0 ? (
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          No active employees available.
+        </Text>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.toggleRow, styles.employeeMessageTabs]}
+        >
+          {activeMessageEmployees.map((employee) => {
+            const isActive = employee.id === employeeMessageEmployeeId;
+            return (
+              <TouchableOpacity
+                key={`message-employee-${employee.id}`}
+                style={[
+                  styles.togglePill,
+                  isLight && styles.togglePillLight,
+                  isActive && styles.toggleActive,
+                  isActive && isLight && styles.toggleActiveLight,
+                ]}
+                onPress={() => setEmployeeMessageEmployeeId(employee.id)}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    isLight && styles.toggleTextLight,
+                    isActive && isLight && styles.toggleTextLightActive,
+                  ]}
+                >
+                  {employee.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+      <Text style={[styles.label, isLight && styles.labelLight]}>Subject</Text>
+      <TextInput
+        value={employeeMessageSubject}
+        onChangeText={setEmployeeMessageSubject}
+        style={[styles.input, isLight && styles.inputLight]}
+        placeholder="Subject"
+        placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
+        maxLength={120}
+      />
+      <Text style={[styles.label, isLight && styles.labelLight]}>Message</Text>
+      <TextInput
+        value={employeeMessageBody}
+        onChangeText={setEmployeeMessageBody}
+        style={[
+          styles.input,
+          styles.employeeMessageInput,
+          isLight && styles.inputLight,
+        ]}
+        placeholder="Message for employee"
+        placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
+        multiline
+        maxLength={2000}
+      />
+      <TouchableOpacity
+        style={[
+          styles.button,
+          styles.primary,
+          employeeMessageSending && styles.inlineButtonDisabled,
+        ]}
+        onPress={() => {
+          void sendEmployeeMessage();
+        }}
+        disabled={employeeMessageSending}
+      >
+        <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+          {employeeMessageSending ? "Sending..." : "Send Employee Message"}
+        </Text>
+      </TouchableOpacity>
+      {employeeMessageStatus && (
+        <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+          {employeeMessageStatus}
+        </Text>
+      )}
       <TouchableOpacity
         style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
         onPress={loadNotifications}
@@ -3796,6 +5770,125 @@ export default function App() {
         Enable days an employee is allowed to clock in. Optional start/end times
         can restrict clock-ins to a window.
       </Text>
+
+      <View
+        style={[
+          styles.scheduleTodayCard,
+          isLight && styles.scheduleTodayCardLight,
+        ]}
+      >
+        <View style={styles.scheduleTodayHeader}>
+          <View style={styles.scheduleTodayTitleWrap}>
+            <Text
+              style={[
+                styles.scheduleTodayTitle,
+                isLight && styles.scheduleTodayTitleLight,
+              ]}
+            >
+              Today's Team
+            </Text>
+            <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+              {todayScheduleLabel}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.secondaryButton,
+              isLight && styles.secondaryButtonLight,
+              styles.actionButtonCompact,
+              todayScheduleLoading && styles.inlineButtonDisabled,
+            ]}
+            onPress={() => {
+              void loadTodaySchedule();
+            }}
+            disabled={todayScheduleLoading}
+          >
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                isLight && styles.secondaryButtonTextLight,
+              ]}
+            >
+              {todayScheduleLoading ? "Refreshing..." : "Refresh"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {todayScheduleStatus ? (
+          <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+            {todayScheduleStatus}
+          </Text>
+        ) : (
+          <>
+            <View style={[styles.toggleRow, styles.scheduleRoleTabs]}>
+              {todayRoleTabs.map((role) => (
+                <TouchableOpacity
+                  key={`schedule-role-${role}`}
+                  style={[
+                    styles.togglePill,
+                    isLight && styles.togglePillLight,
+                    activeTodayRoleFilter === role && styles.toggleActive,
+                    activeTodayRoleFilter === role &&
+                      isLight &&
+                      styles.toggleActiveLight,
+                  ]}
+                  onPress={() => setTodayRoleFilter(role)}
+                >
+                  <Text
+                    style={[
+                      styles.toggleText,
+                      isLight && styles.toggleTextLight,
+                      activeTodayRoleFilter === role &&
+                        isLight &&
+                        styles.toggleTextLightActive,
+                    ]}
+                  >
+                    {role}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {filteredTodayScheduleRows.length === 0 ? (
+              <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                No employees are scheduled for this role today.
+              </Text>
+            ) : (
+              filteredTodayScheduleRows.map((row) => (
+                <View
+                  key={`today-${row.employeeId}`}
+                  style={[
+                    styles.scheduleTodayRow,
+                    isLight && styles.scheduleTodayRowLight,
+                  ]}
+                >
+                  <View style={styles.scheduleTodayRowMain}>
+                    <Text
+                      style={[styles.listName, isLight && styles.listNameLight]}
+                    >
+                      {row.employeeName}
+                    </Text>
+                    <Text
+                      style={[styles.listMeta, isLight && styles.listMetaLight]}
+                    >
+                      {row.roleLabel} • {row.officeName || "All locations"}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.scheduleTodayShift,
+                      isLight && styles.scheduleTodayShiftLight,
+                    ]}
+                  >
+                    {formatScheduleShiftLabel(row.startTime, row.endTime)}
+                  </Text>
+                </View>
+              ))
+            )}
+          </>
+        )}
+      </View>
+
       <Text style={[styles.label, isLight && styles.labelLight]}>Employee</Text>
       <TouchableOpacity
         style={[
@@ -3803,9 +5896,7 @@ export default function App() {
           isLight && styles.scheduleEmployeePickerLight,
         ]}
         disabled={employees.length === 0}
-        onPress={() =>
-          setScheduleEmployeePickerOpen((previous) => !previous)
-        }
+        onPress={() => setScheduleEmployeePickerOpen((previous) => !previous)}
       >
         <Text
           style={[
@@ -3920,51 +6011,97 @@ export default function App() {
                 ]}
               >
                 <Text
-                  style={[styles.scheduleTimeLabel, isLight && styles.listMetaLight]}
+                  style={[
+                    styles.scheduleTimeLabel,
+                    isLight && styles.listMetaLight,
+                  ]}
                 >
                   Start
                 </Text>
                 <Text
-                  style={[styles.scheduleTimeValue, isLight && styles.listNameLight]}
+                  style={[
+                    styles.scheduleTimeValue,
+                    isLight && styles.listNameLight,
+                  ]}
                 >
                   {formatScheduleTimeLabel(day.startTime || "09:00")}
                 </Text>
                 <View style={styles.scheduleControlRow}>
                   <TouchableOpacity
-                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    style={[
+                      styles.scheduleStepButton,
+                      isLight && styles.scheduleStepButtonLight,
+                    ]}
                     disabled={!day.enabled}
                     onPress={() =>
                       adjustScheduleTime(day.weekday, "startTime", "hour", -1)
                     }
                   >
-                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>-H</Text>
+                    <Text
+                      style={[
+                        styles.scheduleStepButtonText,
+                        isLight && styles.scheduleStepButtonTextLight,
+                      ]}
+                    >
+                      -H
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    style={[
+                      styles.scheduleStepButton,
+                      isLight && styles.scheduleStepButtonLight,
+                    ]}
                     disabled={!day.enabled}
                     onPress={() =>
                       adjustScheduleTime(day.weekday, "startTime", "hour", 1)
                     }
                   >
-                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>+H</Text>
+                    <Text
+                      style={[
+                        styles.scheduleStepButtonText,
+                        isLight && styles.scheduleStepButtonTextLight,
+                      ]}
+                    >
+                      +H
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    style={[
+                      styles.scheduleStepButton,
+                      isLight && styles.scheduleStepButtonLight,
+                    ]}
                     disabled={!day.enabled}
                     onPress={() =>
                       adjustScheduleTime(day.weekday, "startTime", "minute", -1)
                     }
                   >
-                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>-M</Text>
+                    <Text
+                      style={[
+                        styles.scheduleStepButtonText,
+                        isLight && styles.scheduleStepButtonTextLight,
+                      ]}
+                    >
+                      -M
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    style={[
+                      styles.scheduleStepButton,
+                      isLight && styles.scheduleStepButtonLight,
+                    ]}
                     disabled={!day.enabled}
                     onPress={() =>
                       adjustScheduleTime(day.weekday, "startTime", "minute", 1)
                     }
                   >
-                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>+M</Text>
+                    <Text
+                      style={[
+                        styles.scheduleStepButtonText,
+                        isLight && styles.scheduleStepButtonTextLight,
+                      ]}
+                    >
+                      +M
+                    </Text>
                   </TouchableOpacity>
                   <View style={styles.scheduleMeridiemGroup}>
                     {(["AM", "PM"] as const).map((option) => (
@@ -4007,51 +6144,97 @@ export default function App() {
                 ]}
               >
                 <Text
-                  style={[styles.scheduleTimeLabel, isLight && styles.listMetaLight]}
+                  style={[
+                    styles.scheduleTimeLabel,
+                    isLight && styles.listMetaLight,
+                  ]}
                 >
                   End
                 </Text>
                 <Text
-                  style={[styles.scheduleTimeValue, isLight && styles.listNameLight]}
+                  style={[
+                    styles.scheduleTimeValue,
+                    isLight && styles.listNameLight,
+                  ]}
                 >
                   {formatScheduleTimeLabel(day.endTime || "17:00")}
                 </Text>
                 <View style={styles.scheduleControlRow}>
                   <TouchableOpacity
-                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    style={[
+                      styles.scheduleStepButton,
+                      isLight && styles.scheduleStepButtonLight,
+                    ]}
                     disabled={!day.enabled}
                     onPress={() =>
                       adjustScheduleTime(day.weekday, "endTime", "hour", -1)
                     }
                   >
-                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>-H</Text>
+                    <Text
+                      style={[
+                        styles.scheduleStepButtonText,
+                        isLight && styles.scheduleStepButtonTextLight,
+                      ]}
+                    >
+                      -H
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    style={[
+                      styles.scheduleStepButton,
+                      isLight && styles.scheduleStepButtonLight,
+                    ]}
                     disabled={!day.enabled}
                     onPress={() =>
                       adjustScheduleTime(day.weekday, "endTime", "hour", 1)
                     }
                   >
-                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>+H</Text>
+                    <Text
+                      style={[
+                        styles.scheduleStepButtonText,
+                        isLight && styles.scheduleStepButtonTextLight,
+                      ]}
+                    >
+                      +H
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    style={[
+                      styles.scheduleStepButton,
+                      isLight && styles.scheduleStepButtonLight,
+                    ]}
                     disabled={!day.enabled}
                     onPress={() =>
                       adjustScheduleTime(day.weekday, "endTime", "minute", -1)
                     }
                   >
-                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>-M</Text>
+                    <Text
+                      style={[
+                        styles.scheduleStepButtonText,
+                        isLight && styles.scheduleStepButtonTextLight,
+                      ]}
+                    >
+                      -M
+                    </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.scheduleStepButton, isLight && styles.scheduleStepButtonLight]}
+                    style={[
+                      styles.scheduleStepButton,
+                      isLight && styles.scheduleStepButtonLight,
+                    ]}
                     disabled={!day.enabled}
                     onPress={() =>
                       adjustScheduleTime(day.weekday, "endTime", "minute", 1)
                     }
                   >
-                    <Text style={[styles.scheduleStepButtonText, isLight && styles.scheduleStepButtonTextLight]}>+M</Text>
+                    <Text
+                      style={[
+                        styles.scheduleStepButtonText,
+                        isLight && styles.scheduleStepButtonTextLight,
+                      ]}
+                    >
+                      +M
+                    </Text>
                   </TouchableOpacity>
                   <View style={styles.scheduleMeridiemGroup}>
                     {(["AM", "PM"] as const).map((option) => (
@@ -4106,6 +6289,435 @@ export default function App() {
     </View>
   );
 
+  const renderCompanyOrders = () => (
+    <View style={[styles.card, isLight && styles.cardLight]}>
+      <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
+        Company Orders
+      </Text>
+      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+        Supplier catalog imported from your Excel. Kitchen managers and
+        managers can submit orders here.
+      </Text>
+      <View style={styles.companyOrderExportRow}>
+        <TouchableOpacity
+          style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
+          disabled={companyOrderExportingFormat !== null}
+          onPress={() => {
+            void handleCompanyOrderExport("pdf");
+          }}
+        >
+          <Text
+            style={[
+              styles.secondaryButtonText,
+              isLight && styles.secondaryButtonTextLight,
+            ]}
+          >
+            {companyOrderExportingFormat === "pdf"
+              ? "Preparing..."
+              : "Download PDF"}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
+          disabled={companyOrderExportingFormat !== null}
+          onPress={() => {
+            void handleCompanyOrderExport("csv");
+          }}
+        >
+          <Text
+            style={[
+              styles.secondaryButtonText,
+              isLight && styles.secondaryButtonTextLight,
+            ]}
+          >
+            {companyOrderExportingFormat === "csv"
+              ? "Preparing..."
+              : "Download CSV"}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
+          disabled={companyOrderExportingFormat !== null}
+          onPress={() => {
+            void handleCompanyOrderExport("excel");
+          }}
+        >
+          <Text
+            style={[
+              styles.secondaryButtonText,
+              isLight && styles.secondaryButtonTextLight,
+            ]}
+          >
+            {companyOrderExportingFormat === "excel"
+              ? "Preparing..."
+              : "Download Excel"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={[styles.label, isLight && styles.labelLight]}>Supplier</Text>
+      <View style={styles.toggleRow}>
+        {companyOrderCatalog.map((supplier) => {
+          const isActive = supplier.supplierName === companyOrderSupplier;
+          const supplierSelectedCount = Object.values(
+            companyOrderDrafts[supplier.supplierName] || {},
+          ).filter((value) => Number(value) > 0).length;
+          return (
+            <TouchableOpacity
+              key={`company-supplier-${supplier.supplierName}`}
+              style={[
+                styles.togglePill,
+                isLight && styles.togglePillLight,
+                isActive && styles.toggleActive,
+                isActive && isLight && styles.toggleActiveLight,
+              ]}
+              onPress={() => setCompanyOrderSupplier(supplier.supplierName)}
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isLight && styles.toggleTextLight,
+                  isActive && isLight && styles.toggleTextLightActive,
+                ]}
+              >
+                {supplier.supplierName}
+                {supplierSelectedCount > 0
+                  ? ` (${supplierSelectedCount})`
+                  : ""}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={[styles.label, isLight && styles.labelLight]}>
+        Search Item
+      </Text>
+      <TextInput
+        style={[styles.input, isLight && styles.inputLight]}
+        value={companyOrderSearch}
+        onChangeText={setCompanyOrderSearch}
+        placeholder="Search Spanish or English name"
+      />
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            !companyOrderShowOnlyAdded && styles.toggleActive,
+            !companyOrderShowOnlyAdded && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() => setCompanyOrderShowOnlyAdded(false)}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              !companyOrderShowOnlyAdded && isLight && styles.toggleTextLightActive,
+            ]}
+          >
+            All Items
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            companyOrderShowOnlyAdded && styles.toggleActive,
+            companyOrderShowOnlyAdded && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() => setCompanyOrderShowOnlyAdded(true)}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              companyOrderShowOnlyAdded && isLight && styles.toggleTextLightActive,
+            ]}
+          >
+            In Cart
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {selectedCompanyOrderSupplier ? (
+        <View style={styles.companyOrderItemsWrap}>
+          {visibleCompanyOrderItems.length === 0 ? (
+            <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+              No matching catalog items.
+            </Text>
+          ) : (
+            visibleCompanyOrderItems.map((item) => {
+              const key = companyOrderItemKey(item.nameEs, item.nameEn);
+              return (
+                <View key={`company-item-${key}`} style={styles.listRow}>
+                  <View style={styles.reportRowMain}>
+                    <Text
+                      style={[styles.listName, isLight && styles.listNameLight]}
+                    >
+                      {item.nameEs}
+                    </Text>
+                    <Text
+                      style={[styles.listMeta, isLight && styles.listMetaLight]}
+                    >
+                      {item.nameEn}
+                    </Text>
+                  </View>
+                  {Number(selectedCompanySupplierDraft[key] || "0") > 0 ? (
+                    <Text
+                      style={[styles.listMeta, isLight && styles.listMetaLight]}
+                    >
+                      Qty {selectedCompanySupplierDraft[key]}
+                    </Text>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[
+                      styles.companyOrderAddButton,
+                      isLight && styles.companyOrderAddButtonLight,
+                    ]}
+                    onPress={() => handleCompanyOrderAddItem(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.companyOrderAddButtonText,
+                        isLight && styles.companyOrderAddButtonTextLight,
+                      ]}
+                    >
+                      Add
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })
+          )}
+          {hasMoreCompanyOrderItems ? (
+            <TouchableOpacity
+              style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
+              onPress={() =>
+                setCompanyOrderVisibleCount((current) => current + 16)
+              }
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  isLight && styles.secondaryButtonTextLight,
+                ]}
+              >
+                Show More
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : (
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          No suppliers loaded.
+        </Text>
+      )}
+      <View style={styles.companyOrderCartSection}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <Text style={[styles.listName, isLight && styles.listNameLight]}>
+            Order Summary
+          </Text>
+          <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+            {selectedCompanyOrderCount} items • Qty {selectedCompanyOrderTotalUnits}
+          </Text>
+        </View>
+        {companyOrderCartItems.length === 0 ? (
+          <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+            No items added yet.
+          </Text>
+        ) : (
+          companyOrderCartItems.map((item) => (
+            <View
+              key={`company-cart-${item.supplierName}-${item.key}`}
+              style={styles.companyOrderCartRow}
+            >
+              <View style={styles.reportRowMain}>
+                <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                  {item.nameEs}
+                </Text>
+                <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                  {item.nameEn} • {item.supplierName}
+                </Text>
+              </View>
+              <View style={styles.companyOrderCartActions}>
+                <TouchableOpacity
+                  style={[
+                    styles.companyOrderStepButton,
+                    isLight && styles.companyOrderStepButtonLight,
+                  ]}
+                  onPress={() =>
+                    handleCompanyOrderStepItem(item.supplierName, item.key, -1)
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.companyOrderStepButtonText,
+                      isLight && styles.companyOrderStepButtonTextLight,
+                    ]}
+                  >
+                    -
+                  </Text>
+                </TouchableOpacity>
+                <View
+                  style={[
+                    styles.companyOrderQtyBadge,
+                    isLight && styles.companyOrderQtyBadgeLight,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.companyOrderQtyBadgeText,
+                      isLight && styles.companyOrderQtyBadgeTextLight,
+                    ]}
+                  >
+                    {Number(item.quantity.toFixed(2))}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.companyOrderStepButton,
+                    isLight && styles.companyOrderStepButtonLight,
+                  ]}
+                  onPress={() =>
+                    handleCompanyOrderStepItem(item.supplierName, item.key, 1)
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.companyOrderStepButtonText,
+                      isLight && styles.companyOrderStepButtonTextLight,
+                    ]}
+                  >
+                    +
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.companyOrderRemoveButton,
+                    isLight && styles.companyOrderRemoveButtonLight,
+                  ]}
+                  onPress={() =>
+                    handleCompanyOrderRemoveItem(item.supplierName, item.key)
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.companyOrderRemoveButtonText,
+                      isLight && styles.companyOrderRemoveButtonTextLight,
+                    ]}
+                  >
+                    Remove
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+      <Text style={[styles.label, isLight && styles.labelLight]}>Notes</Text>
+      <TextInput
+        style={[
+          styles.input,
+          styles.employeeMessageInput,
+          isLight && styles.inputLight,
+        ]}
+        value={companyOrderNotes}
+        onChangeText={setCompanyOrderNotes}
+        placeholder="Order notes"
+        multiline
+      />
+      <TouchableOpacity
+        style={[
+          styles.button,
+          styles.primary,
+          companyOrderSaving && styles.inlineButtonDisabled,
+        ]}
+        onPress={() => {
+          void submitCompanyOrder();
+        }}
+        disabled={companyOrderSaving}
+      >
+        <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+          {companyOrderSaving
+            ? "Submitting..."
+            : `Submit Company Order (${selectedCompanyOrderSupplierCount} suppliers / ${selectedCompanyOrderCount} items)`}
+        </Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
+        onPress={() => {
+          void loadCompanyOrders();
+        }}
+      >
+        <Text
+          style={[
+            styles.secondaryButtonText,
+            isLight && styles.secondaryButtonTextLight,
+          ]}
+        >
+          {companyOrderLoading ? "Refreshing..." : "Refresh Orders"}
+        </Text>
+      </TouchableOpacity>
+      {companyOrderStatus && (
+        <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+          {companyOrderStatus}
+        </Text>
+      )}
+      <View style={[styles.divider, isLight && styles.dividerLight]} />
+      <Text style={[styles.listName, isLight && styles.listNameLight]}>
+        Recent Orders
+      </Text>
+      {companyOrderRows.length === 0 ? (
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          No orders yet.
+        </Text>
+      ) : (
+        companyOrderRows.map((order) => (
+          <View key={`company-order-${order.id}`} style={styles.listRow}>
+            <View style={styles.reportRowMain}>
+              <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                {order.supplierName}
+              </Text>
+              {order.orderLabel ? (
+                <Text
+                  style={[styles.listMeta, isLight && styles.listMetaLight]}
+                >
+                  {order.orderLabel}
+                </Text>
+              ) : null}
+              <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                {formatDisplayDate(order.orderDate.slice(0, 10))} •{" "}
+                {order.itemCount} items
+              </Text>
+              {Array.isArray(order.contributors) &&
+              order.contributors.length > 0 ? (
+                <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                  Contributors: {order.contributors.join(", ")}
+                </Text>
+              ) : null}
+              <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                Qty {order.totalQuantity} •{" "}
+                {order.officeName || "All locations"}
+              </Text>
+              {order.notes ? (
+                <Text
+                  style={[styles.listMeta, isLight && styles.listMetaLight]}
+                >
+                  {order.notes}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        ))
+      )}
+    </View>
+  );
+
   const renderContent = () => {
     if (!loggedIn) return renderLogin();
     switch (screen) {
@@ -4125,6 +6737,8 @@ export default function App() {
         return renderAlerts();
       case "schedules":
         return renderSchedules();
+      case "companyOrders":
+        return renderCompanyOrders();
       default:
         return renderDashboard();
     }
@@ -4137,190 +6751,226 @@ export default function App() {
     return ["#0c121d", "#141b2a", "#1c2334"] as const;
   }, [theme]);
   const isLight = theme === "light";
+  const activeApiLabel = useMemo(
+    () => formatApiBaseLabel(resolvedApiBase || apiBaseCandidates[0] || ""),
+    [resolvedApiBase],
+  );
 
   return (
     <LinearGradient colors={themeColors} style={styles.gradient}>
       <SafeAreaView style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.container}>
-          <View style={styles.brandRow}>
-            <Image source={BRAND_LOGO} style={styles.brandLogo} resizeMode="contain" />
-            <View style={styles.brandTextBlock}>
-              <Text style={[styles.title, isLight && styles.titleLight]}>
-                ClockIn Admin
-              </Text>
-              <Text style={[styles.subtitle, isLight && styles.subtitleLight]}>
-                {text.subtitle}
-              </Text>
-            </View>
-            <View style={styles.headerActions}>
-              <View
-                style={[
-                  styles.languageSelector,
-                  isLight && styles.languageSelectorLight,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.languageLabel,
-                    isLight && styles.languageLabelLight,
-                  ]}
-                >
-                  {text.language}
+        <KeyboardAvoidingView
+          style={styles.keyboardWrap}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+        >
+          <ScrollView
+            contentContainerStyle={styles.container}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={
+              Platform.OS === "ios" ? "interactive" : "on-drag"
+            }
+            automaticallyAdjustKeyboardInsets
+          >
+            <View style={styles.brandRow}>
+              <Image
+                source={BRAND_LOGO}
+                style={styles.brandLogo}
+                resizeMode="contain"
+              />
+              <View style={styles.brandTextBlock}>
+                <Text style={[styles.title, isLight && styles.titleLight]}>
+                  ClockIn Admin
                 </Text>
-                {(["en", "es"] as Lang[]).map((langOption) => (
-                  <TouchableOpacity
-                    key={langOption}
-                    style={[
-                      styles.languageOption,
-                      isLight && styles.languageOptionLight,
-                      language === langOption &&
-                        (isLight
-                          ? styles.languageOptionActiveLight
-                          : styles.languageOptionActive),
-                    ]}
-                    onPress={() => setLanguage(langOption)}
-                  >
-                    <Text
-                      style={[
-                        styles.languageOptionText,
-                        isLight && styles.languageOptionTextLight,
-                        language === langOption &&
-                          styles.languageOptionTextActive,
-                      ]}
-                    >
-                      {langOption.toUpperCase()}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                <Text
+                  style={[styles.subtitle, isLight && styles.subtitleLight]}
+                >
+                  {text.subtitle}
+                </Text>
               </View>
-              <TouchableOpacity
-                style={[styles.themeToggle, isLight && styles.themeToggleLight]}
-                onPress={() =>
-                  setTheme((prev) => (prev === "dark" ? "light" : "dark"))
-                }
-              >
-                <Text
+              <View style={styles.headerActions}>
+                <View
                   style={[
-                    styles.themeToggleText,
-                    isLight && styles.themeToggleTextLight,
+                    styles.languageSelector,
+                    isLight && styles.languageSelectorLight,
                   ]}
                 >
-                  {theme === "dark" ? text.light : text.dark}
-                </Text>
-              </TouchableOpacity>
-              {loggedIn && (
+                  <Text
+                    style={[
+                      styles.languageLabel,
+                      isLight && styles.languageLabelLight,
+                    ]}
+                  >
+                    {text.language}
+                  </Text>
+                  {(["en", "es"] as Lang[]).map((langOption) => (
+                    <TouchableOpacity
+                      key={langOption}
+                      style={[
+                        styles.languageOption,
+                        isLight && styles.languageOptionLight,
+                        language === langOption &&
+                          (isLight
+                            ? styles.languageOptionActiveLight
+                            : styles.languageOptionActive),
+                      ]}
+                      onPress={() => setLanguage(langOption)}
+                    >
+                      <Text
+                        style={[
+                          styles.languageOptionText,
+                          isLight && styles.languageOptionTextLight,
+                          language === langOption &&
+                            styles.languageOptionTextActive,
+                        ]}
+                      >
+                        {langOption.toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
                 <TouchableOpacity
                   style={[
                     styles.themeToggle,
-                    styles.headerLogoutButton,
-                    isLight && styles.headerLogoutButtonLight,
+                    isLight && styles.themeToggleLight,
                   ]}
-                  onPress={clearAdminSession}
+                  onPress={() =>
+                    setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+                  }
                 >
                   <Text
                     style={[
                       styles.themeToggleText,
-                      styles.headerLogoutText,
-                      isLight && styles.headerLogoutTextLight,
+                      isLight && styles.themeToggleTextLight,
                     ]}
                   >
-                    {text.logout}
+                    {theme === "dark" ? text.light : text.dark}
                   </Text>
                 </TouchableOpacity>
-              )}
+                {loggedIn && (
+                  <TouchableOpacity
+                    style={[
+                      styles.themeToggle,
+                      styles.headerLogoutButton,
+                      isLight && styles.headerLogoutButtonLight,
+                    ]}
+                    onPress={clearAdminSession}
+                  >
+                    <Text
+                      style={[
+                        styles.themeToggleText,
+                        styles.headerLogoutText,
+                        isLight && styles.headerLogoutTextLight,
+                      ]}
+                    >
+                      {text.logout}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-          </View>
 
-      {loggedIn && (
-        <View style={[styles.tabShell, isLight && styles.tabShellLight]}>
-          <View style={styles.tenantPill}>
-              <Text
-                style={[
-                  styles.tenantPillText,
-                  isLight && styles.tenantPillTextLight,
-                ]}
-              >
-              {text.tenant}: {activeTenantLabel || activeTenant}
-              </Text>
-            </View>
-          {canManageMultiLocation ? (
-            <View style={styles.tenantPill}>
-              <Text
-                style={[
-                  styles.tenantPillText,
-                  isLight && styles.tenantPillTextLight,
-                ]}
-              >
-                {text.activeLocation}: {activeLocationLabel}
-              </Text>
-            </View>
-          ) : null}
-          {visibleTabs.map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[
-                styles.tab,
-                isLight && styles.tabLight,
-                screen === tab &&
-                  (isLight ? styles.tabActiveLight : styles.tabActive),
-              ]}
-              onPress={() => setScreen(tab)}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  isLight && styles.tabTextLight,
-                  screen === tab && isLight && styles.tabTextLightActive,
-                ]}
-              >
-                {tabLabels[language][tab]}
-              </Text>
-            </TouchableOpacity>
-          ))}
-          {canManageMultiLocation ? (
-            <TouchableOpacity
-              style={[
-                styles.tab,
-                styles.tabLocationSwitch,
-                isLight && styles.tabLocationSwitchLight,
-              ]}
-              onPress={() => setScreen("offices")}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  isLight && styles.tabTextLight,
-                  isLight && styles.tabTextLightActive,
-                ]}
-              >
-                {text.switchLocation}
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[
-                styles.tab,
-                styles.tabDanger,
-                isLight && styles.tabDangerLight,
-              ]}
-              onPress={clearAdminSession}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  isLight && styles.tabTextLight,
-                  isLight && styles.tabTextLightDanger,
-                ]}
-              >
-                {text.logout}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+            {loggedIn && (
+              <View style={[styles.tabShell, isLight && styles.tabShellLight]}>
+                <View style={styles.tenantPill}>
+                  <Text
+                    style={[
+                      styles.tenantPillText,
+                      isLight && styles.tenantPillTextLight,
+                    ]}
+                  >
+                    {text.tenant}: {activeTenantLabel || activeTenant}
+                  </Text>
+                </View>
+                <View style={styles.tenantPill}>
+                  <Text
+                    style={[
+                      styles.tenantPillText,
+                      isLight && styles.tenantPillTextLight,
+                    ]}
+                  >
+                    API: {activeApiLabel}
+                  </Text>
+                </View>
+                {canManageMultiLocation ? (
+                  <View style={styles.tenantPill}>
+                    <Text
+                      style={[
+                        styles.tenantPillText,
+                        isLight && styles.tenantPillTextLight,
+                      ]}
+                    >
+                      {text.activeLocation}: {activeLocationLabel}
+                    </Text>
+                  </View>
+                ) : null}
+                {visibleTabs.map((tab) => (
+                  <TouchableOpacity
+                    key={tab}
+                    style={[
+                      styles.tab,
+                      isLight && styles.tabLight,
+                      screen === tab &&
+                        (isLight ? styles.tabActiveLight : styles.tabActive),
+                    ]}
+                    onPress={() => setScreen(tab)}
+                  >
+                    <Text
+                      style={[
+                        styles.tabText,
+                        isLight && styles.tabTextLight,
+                        screen === tab && isLight && styles.tabTextLightActive,
+                      ]}
+                    >
+                      {tabLabels[language][tab]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {canManageMultiLocation ? (
+                  <TouchableOpacity
+                    style={[
+                      styles.tab,
+                      styles.tabLocationSwitch,
+                      isLight && styles.tabLocationSwitchLight,
+                    ]}
+                    onPress={() => setScreen("offices")}
+                  >
+                    <Text
+                      style={[
+                        styles.tabText,
+                        isLight && styles.tabTextLight,
+                        isLight && styles.tabTextLightActive,
+                      ]}
+                    >
+                      {text.switchLocation}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.tab,
+                      styles.tabDanger,
+                      isLight && styles.tabDangerLight,
+                    ]}
+                    onPress={clearAdminSession}
+                  >
+                    <Text
+                      style={[
+                        styles.tabText,
+                        isLight && styles.tabTextLight,
+                        isLight && styles.tabTextLightDanger,
+                      ]}
+                    >
+                      {text.logout}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
 
-      {renderContent()}
-        </ScrollView>
+            {renderContent()}
+          </ScrollView>
+        </KeyboardAvoidingView>
         <StatusBar style={theme === "dark" ? "light" : "dark"} />
       </SafeAreaView>
     </LinearGradient>
@@ -4330,6 +6980,7 @@ export default function App() {
 const styles = StyleSheet.create({
   gradient: { flex: 1 },
   safe: { flex: 1 },
+  keyboardWrap: { flex: 1 },
   container: { padding: 20, paddingBottom: 40, gap: 16 },
   brandRow: {
     flexDirection: "row",
@@ -4493,6 +7144,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     color: "#e2e8f0",
   },
+  inputCompact: {
+    marginTop: 8,
+    marginBottom: 0,
+  },
+  tipCard: {
+    marginTop: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.24)",
+    backgroundColor: "rgba(15, 23, 42, 0.35)",
+    padding: 10,
+    gap: 8,
+  },
+  employeeMessageTabs: {
+    paddingRight: 8,
+  },
+  employeeMessageInput: {
+    minHeight: 96,
+    textAlignVertical: "top",
+    paddingTop: 10,
+  },
   statusText: { marginTop: 8, color: "#cbd5f5" },
   helperText: { color: "#94a3b8", marginTop: 8, fontSize: 12 },
   inputLight: {
@@ -4530,6 +7202,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     flexWrap: "wrap",
+  },
+  userRowActions: {
+    width: "100%",
+    justifyContent: "flex-start",
   },
   actionButtonCompact: {
     marginTop: 0,
@@ -4606,11 +7282,146 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "rgba(148, 163, 184, 0.14)",
   },
+  userListRow: {
+    flexDirection: "column",
+    alignItems: "stretch",
+    gap: 8,
+  },
+  userListMain: {
+    width: "100%",
+  },
   listActions: { flexDirection: "row", alignItems: "center", gap: 10 },
   listName: { fontSize: 14, fontWeight: "600", color: "#e2e8f0" },
   listMeta: { fontSize: 12, color: "#94a3b8" },
   listNameLight: { color: "#0f172a" },
   listMetaLight: { color: "#64748b" },
+  companyOrderItemsWrap: {
+    gap: 4,
+    marginTop: 8,
+  },
+  companyOrderCartSection: {
+    marginTop: 10,
+    gap: 8,
+  },
+  companyOrderCartRow: {
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.2)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.25)",
+    gap: 8,
+  },
+  companyOrderCartActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  companyOrderStepButton: {
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.3)",
+    borderRadius: 8,
+    minWidth: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+    backgroundColor: "rgba(59, 130, 246, 0.18)",
+  },
+  companyOrderStepButtonLight: {
+    borderColor: "rgba(37, 99, 235, 0.35)",
+    backgroundColor: "#eff6ff",
+  },
+  companyOrderStepButtonText: {
+    color: "#dbeafe",
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  companyOrderStepButtonTextLight: {
+    color: "#1d4ed8",
+  },
+  companyOrderQtyBadge: {
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.3)",
+    borderRadius: 8,
+    minWidth: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: "rgba(15, 23, 42, 0.2)",
+  },
+  companyOrderQtyBadgeLight: {
+    borderColor: "rgba(15, 23, 42, 0.18)",
+    backgroundColor: "#f8fafc",
+  },
+  companyOrderQtyBadgeText: {
+    color: "#e2e8f0",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  companyOrderQtyBadgeTextLight: {
+    color: "#0f172a",
+  },
+  companyOrderRemoveButton: {
+    marginLeft: "auto",
+    borderWidth: 1,
+    borderColor: "rgba(248, 113, 113, 0.4)",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "rgba(248, 113, 113, 0.12)",
+  },
+  companyOrderRemoveButtonLight: {
+    borderColor: "rgba(220, 38, 38, 0.3)",
+    backgroundColor: "#fef2f2",
+  },
+  companyOrderRemoveButtonText: {
+    color: "#fecaca",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  companyOrderRemoveButtonTextLight: {
+    color: "#b91c1c",
+  },
+  companyOrderExportRow: {
+    marginTop: 10,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  companyOrderQtyInput: {
+    width: 82,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.25)",
+    backgroundColor: "rgba(15, 23, 42, 0.2)",
+    color: "#e2e8f0",
+    paddingHorizontal: 10,
+    textAlign: "center",
+    fontWeight: "700",
+  },
+  companyOrderAddButton: {
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.3)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: "rgba(59, 130, 246, 0.18)",
+  },
+  companyOrderAddButtonLight: {
+    borderColor: "rgba(37, 99, 235, 0.35)",
+    backgroundColor: "#eff6ff",
+  },
+  companyOrderAddButtonText: {
+    color: "#dbeafe",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  companyOrderAddButtonTextLight: {
+    color: "#1d4ed8",
+  },
   userQuickList: {
     gap: 4,
     padding: 10,
@@ -4665,6 +7476,70 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 8,
     gap: 2,
+  },
+  scheduleTodayCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.22)",
+    backgroundColor: "rgba(15, 23, 42, 0.42)",
+    padding: 10,
+    gap: 8,
+  },
+  scheduleTodayCardLight: {
+    borderColor: "rgba(15, 23, 42, 0.14)",
+    backgroundColor: "#f8fafc",
+  },
+  scheduleTodayHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  scheduleTodayTitleWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  scheduleTodayTitle: {
+    color: "#e2e8f0",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  scheduleTodayTitleLight: {
+    color: "#0f172a",
+  },
+  scheduleRoleTabs: {
+    marginBottom: 0,
+  },
+  scheduleTodayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.2)",
+    backgroundColor: "rgba(148, 163, 184, 0.1)",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  scheduleTodayRowLight: {
+    borderColor: "rgba(15, 23, 42, 0.12)",
+    backgroundColor: "#ffffff",
+  },
+  scheduleTodayRowMain: {
+    flex: 1,
+    gap: 2,
+    paddingRight: 8,
+  },
+  scheduleTodayShift: {
+    color: "#dbeafe",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "right",
+  },
+  scheduleTodayShiftLight: {
+    color: "#1e40af",
   },
   scheduleEmployeePicker: {
     marginTop: 2,

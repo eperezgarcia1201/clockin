@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 
 type CompanySettings = {
@@ -49,6 +51,8 @@ const translations: Record<
     addressLine2Placeholder: string;
     save: string;
     saving: string;
+    detailsTab: string;
+    ordersTab: string;
   }
 > = {
   en: {
@@ -79,6 +83,8 @@ const translations: Record<
     addressLine2Placeholder: "Building, floor, optional",
     save: "Save Company Info",
     saving: "Saving...",
+    detailsTab: "Details",
+    ordersTab: "Orders",
   },
   es: {
     title: "Información de la Empresa",
@@ -108,6 +114,8 @@ const translations: Record<
     addressLine2Placeholder: "Edificio, piso, opcional",
     save: "Guardar Información",
     saving: "Guardando...",
+    detailsTab: "Detalles",
+    ordersTab: "Ordenes",
   },
 };
 
@@ -142,6 +150,7 @@ const hashHue = (value: string) => {
 };
 
 export default function CompanyInfoPage() {
+  const pathname = usePathname();
   const [form, setForm] = useState<CompanySettings>(defaults);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -239,6 +248,17 @@ export default function CompanyInfoPage() {
     <div className="d-flex flex-column gap-4 company-info-page">
       <div className="admin-header">
         <h1>{t.title}</h1>
+      </div>
+
+      <div className="admin-card p-2">
+        <div className="d-flex gap-2 flex-wrap">
+          <Link
+            className={`btn btn-sm ${pathname === "/admin/company" ? "btn-primary" : "btn-outline-secondary"}`}
+            href="/admin/company"
+          >
+            {t.detailsTab}
+          </Link>
+        </div>
       </div>
 
       <div className="admin-card company-info-card">

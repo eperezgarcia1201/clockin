@@ -6,6 +6,7 @@ import type { CreateEmployeeDto } from './dto/create-employee.dto';
 import { hash } from 'bcryptjs';
 import type { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { normalizeManagerFeatures } from '../tenancy/manager-features';
+import { OWNER_MANAGER_PERMISSION } from '../tenancy/owner-manager';
 
 @Injectable()
 export class EmployeesService {
@@ -59,11 +60,15 @@ export class EmployeesService {
       officeId: employee.officeId,
       groupId: employee.groupId,
       isManager: employee.isManager,
-      managerPermissions: employee.managerPermissions,
+      managerPermissions: normalizeManagerFeatures(employee.managerPermissions),
       isAdmin: employee.isAdmin,
       isTimeAdmin: employee.isTimeAdmin,
       isReports: employee.isReports,
       isServer: employee.isServer,
+      isKitchenManager: employee.isKitchenManager,
+      isOwnerManager:
+        employee.isManager &&
+        this.hasOwnerManagerPermission(employee.managerPermissions),
       deletedAt: employee.deletedAt ? employee.deletedAt.toISOString() : null,
       deletedBy: employee.deletedBy || null,
       hoursRecordCount: employee._count.punches || 0,
@@ -78,9 +83,12 @@ export class EmployeesService {
 
     const pinHash = dto.pin ? await hash(dto.pin, 10) : null;
     const isManager = dto.isManager ?? false;
-    const managerPermissions = isManager
-      ? normalizeManagerFeatures(dto.managerPermissions)
-      : [];
+    const isOwnerManager = dto.isOwnerManager ?? false;
+    const managerPermissions = this.composeManagerPermissions({
+      managerEnabled: isManager,
+      managerPermissionsInput: dto.managerPermissions,
+      ownerManagerEnabled: isOwnerManager,
+    });
     const isAdmin = dto.isAdmin ?? isManager;
 
     return this.prisma.employee.create({
@@ -99,6 +107,7 @@ export class EmployeesService {
         isTimeAdmin: dto.isTimeAdmin ?? false,
         isReports: dto.isReports ?? false,
         isServer: dto.isServer ?? false,
+        isKitchenManager: dto.isKitchenManager ?? false,
         disabled: dto.disabled ?? false,
         deletedAt: null,
         deletedBy: null,
@@ -126,11 +135,15 @@ export class EmployeesService {
       officeId: employee.officeId,
       groupId: employee.groupId,
       isManager: employee.isManager,
-      managerPermissions: employee.managerPermissions,
+      managerPermissions: normalizeManagerFeatures(employee.managerPermissions),
       isAdmin: employee.isAdmin,
       isTimeAdmin: employee.isTimeAdmin,
       isReports: employee.isReports,
       isServer: employee.isServer,
+      isKitchenManager: employee.isKitchenManager,
+      isOwnerManager:
+        employee.isManager &&
+        this.hasOwnerManagerPermission(employee.managerPermissions),
       disabled: employee.disabled,
     };
   }
@@ -170,20 +183,33 @@ export class EmployeesService {
     if (dto.groupId !== undefined) {
       data.groupId = dto.groupId || null;
     }
+
+    const existingOwnerManager = this.hasOwnerManagerPermission(
+      existing.managerPermissions,
+    );
+    const managerEnabled = dto.isManager ?? existing.isManager;
     if (dto.isManager !== undefined) {
       data.isManager = dto.isManager;
-      if (dto.isManager === false) {
-        data.managerPermissions = [];
-      }
       if (dto.isAdmin === undefined && dto.isManager === true) {
         data.isAdmin = true;
       }
     }
-    if (dto.managerPermissions !== undefined) {
-      const managerEnabled = dto.isManager ?? existing.isManager;
-      data.managerPermissions = managerEnabled
-        ? normalizeManagerFeatures(dto.managerPermissions)
-        : [];
+    if (
+      dto.managerPermissions !== undefined ||
+      dto.isOwnerManager !== undefined ||
+      dto.isManager !== undefined
+    ) {
+      data.managerPermissions = this.composeManagerPermissions({
+        managerEnabled,
+        managerPermissionsInput:
+          dto.managerPermissions !== undefined
+            ? dto.managerPermissions
+            : existing.managerPermissions,
+        ownerManagerEnabled:
+          dto.isOwnerManager !== undefined
+            ? dto.isOwnerManager
+            : existingOwnerManager,
+      });
     }
     if (dto.isAdmin !== undefined) {
       data.isAdmin = dto.isAdmin;
@@ -196,6 +222,9 @@ export class EmployeesService {
     }
     if (dto.isServer !== undefined) {
       data.isServer = dto.isServer;
+    }
+    if (dto.isKitchenManager !== undefined) {
+      data.isKitchenManager = dto.isKitchenManager;
     }
     if (dto.disabled !== undefined) {
       data.disabled = dto.disabled;
@@ -383,5 +412,27 @@ export class EmployeesService {
     ]);
 
     return { total, admins, timeAdmins, reports };
+  }
+
+  private composeManagerPermissions(input: {
+    managerEnabled: boolean;
+    managerPermissionsInput?: unknown;
+    ownerManagerEnabled: boolean;
+  }) {
+    if (!input.managerEnabled) {
+      return [];
+    }
+    const normalized = normalizeManagerFeatures(input.managerPermissionsInput);
+    if (!input.ownerManagerEnabled) {
+      return normalized;
+    }
+    return [...normalized, OWNER_MANAGER_PERMISSION];
+  }
+
+  private hasOwnerManagerPermission(permissions?: string[] | null) {
+    if (!Array.isArray(permissions)) {
+      return false;
+    }
+    return permissions.includes(OWNER_MANAGER_PERMISSION);
   }
 }

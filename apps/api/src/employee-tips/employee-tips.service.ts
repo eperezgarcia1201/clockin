@@ -63,7 +63,7 @@ export class EmployeeTipsService {
     const cashTips = toCurrency(dto.cashTips);
     const creditCardTips = toCurrency(dto.creditCardTips);
 
-    const tip = await this.prisma.employeeTip.upsert({
+    const existingTip = await this.prisma.employeeTip.findUnique({
       where: {
         tenantId_employeeId_workDate: {
           tenantId: tenant.id,
@@ -71,11 +71,14 @@ export class EmployeeTipsService {
           workDate: workDateUtc,
         },
       },
-      update: {
-        cashTips,
-        creditCardTips,
-      },
-      create: {
+      select: { id: true },
+    });
+    if (existingTip) {
+      throw new ForbiddenException('Tips already submitted for this work date.');
+    }
+
+    const tip = await this.prisma.employeeTip.create({
+      data: {
         tenantId: tenant.id,
         employeeId: employee.id,
         workDate: workDateUtc,

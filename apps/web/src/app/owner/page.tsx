@@ -8,6 +8,7 @@ type TenantFeatures = {
   reportsEnabled: boolean;
   allowManualTimeEdits: boolean;
   dailySalesReportingEnabled: boolean;
+  companyOrdersEnabled: boolean;
   multiLocationEnabled: boolean;
 };
 
@@ -117,6 +118,13 @@ export default function OwnerDashboardPage() {
         label: "Daily Sales Reporting",
         enabledCount: tenants.filter(
           (tenant) => tenant.features.dailySalesReportingEnabled,
+        ).length,
+      },
+      {
+        key: "companyOrdersEnabled",
+        label: "Company Orders",
+        enabledCount: tenants.filter(
+          (tenant) => tenant.features.companyOrdersEnabled,
         ).length,
       },
       {

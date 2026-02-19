@@ -7,6 +7,7 @@ type TenantFeatures = {
   reportsEnabled: boolean;
   allowManualTimeEdits: boolean;
   dailySalesReportingEnabled: boolean;
+  companyOrdersEnabled: boolean;
   multiLocationEnabled: boolean;
 };
 
@@ -46,6 +47,21 @@ type TenantDraft = {
 
 type CreateForm = TenantDraft;
 type PendingTenantDelete = TenantAccount | null;
+type TenantDeleteDataItem = {
+  key: string;
+  label: string;
+  count: number;
+};
+type TenantDeletionReport = {
+  tenantId: string;
+  tenantName: string;
+  hasData: boolean;
+  totalRecords: number;
+  blockers: TenantDeleteDataItem[];
+  generatedAt: string;
+};
+type TenantExportFormat = "summary" | "excel" | "sql";
+type TenantDeleteDownloads = Record<TenantExportFormat, boolean>;
 type ApiErrorPayload = {
   error?: unknown;
   message?: unknown;
@@ -67,6 +83,7 @@ const defaultFeatures: TenantFeatures = {
   reportsEnabled: true,
   allowManualTimeEdits: true,
   dailySalesReportingEnabled: false,
+  companyOrdersEnabled: false,
   multiLocationEnabled: false,
 };
 
@@ -149,6 +166,7 @@ const buildTenantPayload = (
     reportsEnabled: source.features.reportsEnabled,
     allowManualTimeEdits: source.features.allowManualTimeEdits,
     dailySalesReportingEnabled: source.features.dailySalesReportingEnabled,
+    companyOrdersEnabled: source.features.companyOrdersEnabled,
   };
 
   if (includeMultiLocation) {
@@ -169,6 +187,12 @@ const buildTenantPayload = (
   };
 };
 
+const emptyDeleteDownloads = (): TenantDeleteDownloads => ({
+  summary: false,
+  excel: false,
+  sql: false,
+});
+
 export default function TenantAccountsPage() {
   const [tenants, setTenants] = useState<TenantAccount[]>([]);
   const [drafts, setDrafts] = useState<Record<string, TenantDraft>>({});
@@ -183,6 +207,13 @@ export default function TenantAccountsPage() {
   const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
   const [pendingDeleteTenant, setPendingDeleteTenant] =
     useState<PendingTenantDelete>(null);
+  const [pendingDeleteReport, setPendingDeleteReport] =
+    useState<TenantDeletionReport | null>(null);
+  const [pendingDeleteLoading, setPendingDeleteLoading] = useState(false);
+  const [pendingDeleteDownloads, setPendingDeleteDownloads] =
+    useState<TenantDeleteDownloads>(emptyDeleteDownloads);
+  const [pendingDeleteExporting, setPendingDeleteExporting] =
+    useState<TenantExportFormat | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
   const syncDrafts = useCallback((items: TenantAccount[]) => {
@@ -442,24 +473,32 @@ export default function TenantAccountsPage() {
     }
   };
 
-  const handleDelete = async (tenant: TenantAccount) => {
+  const handleDelete = async (
+    tenant: TenantAccount,
+    options?: { force?: boolean },
+  ) => {
     setDeletingTenantId(tenant.id);
     setStatus(null);
     try {
-      const response = await fetch(`/api/tenant-accounts/${tenant.id}`, {
+      const query = options?.force ? "?force=true" : "";
+      const response = await fetch(`/api/tenant-accounts/${tenant.id}${query}`, {
         method: "DELETE",
       });
       const data = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
         message?: string;
+        summary?: TenantDeletionReport;
       };
 
       if (!response.ok || !data.ok) {
+        if (data.summary) {
+          setPendingDeleteReport(data.summary);
+        }
         setStatus(
           resolveApiError(data, "Unable to delete tenant account."),
         );
-        return;
+        return false;
       }
 
       const nextTenants = tenants.filter((item) => item.id !== tenant.id);
@@ -469,10 +508,98 @@ export default function TenantAccountsPage() {
         setEditingTenantId(null);
       }
       setStatus("Tenant account deleted.");
+      return true;
     } catch {
       setStatus("Unable to delete tenant account.");
+      return false;
     } finally {
       setDeletingTenantId(null);
+    }
+  };
+
+  const closePendingDeleteDialog = () => {
+    if (pendingDeleteBusy || pendingDeleteLoading || pendingDeleteExporting) {
+      return;
+    }
+    setPendingDeleteTenant(null);
+    setPendingDeleteReport(null);
+    setPendingDeleteDownloads(emptyDeleteDownloads);
+    setPendingDeleteLoading(false);
+    setPendingDeleteExporting(null);
+  };
+
+  const openPendingDeleteDialog = async (tenant: TenantAccount) => {
+    setPendingDeleteTenant(tenant);
+    setPendingDeleteReport(null);
+    setPendingDeleteDownloads(emptyDeleteDownloads);
+    setPendingDeleteLoading(true);
+    setStatus(null);
+    try {
+      const response = await fetch(
+        `/api/tenant-accounts/${tenant.id}/deletion-report`,
+        { cache: "no-store" },
+      );
+      const data = (await response.json().catch(() => ({}))) as
+        | TenantDeletionReport
+        | ApiErrorPayload;
+      if (!response.ok) {
+        setStatus(
+          resolveApiError(data as ApiErrorPayload, "Unable to inspect tenant data."),
+        );
+        return;
+      }
+      setPendingDeleteReport(data as TenantDeletionReport);
+    } catch {
+      setStatus("Unable to inspect tenant data.");
+    } finally {
+      setPendingDeleteLoading(false);
+    }
+  };
+
+  const downloadPendingDeleteExport = async (format: TenantExportFormat) => {
+    if (!pendingDeleteTenant) {
+      return;
+    }
+
+    setPendingDeleteExporting(format);
+    setStatus(null);
+    try {
+      const response = await fetch(
+        `/api/tenant-accounts/${pendingDeleteTenant.id}/deletion-export?format=${format}`,
+      );
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as ApiErrorPayload;
+        setStatus(
+          resolveApiError(data, "Unable to export tenant data."),
+        );
+        return;
+      }
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get("content-disposition") || "";
+      const filenameMatch = /filename="?([^";]+)"?/i.exec(contentDisposition);
+      const fallbackExtension =
+        format === "excel" ? "xls" : format === "sql" ? "sql" : "txt";
+      const filename =
+        filenameMatch?.[1] || `tenant-data-${pendingDeleteTenant.id}.${fallbackExtension}`;
+
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = downloadUrl;
+      anchor.download = filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => {
+        window.URL.revokeObjectURL(downloadUrl);
+      }, 1200);
+
+      setPendingDeleteDownloads((prev) => ({ ...prev, [format]: true }));
+    } catch {
+      setStatus("Unable to export tenant data.");
+    } finally {
+      setPendingDeleteExporting(null);
     }
   };
 
@@ -480,13 +607,24 @@ export default function TenantAccountsPage() {
     if (!pendingDeleteTenant) {
       return;
     }
-    await handleDelete(pendingDeleteTenant);
-    setPendingDeleteTenant(null);
+    const deleted = await handleDelete(pendingDeleteTenant, {
+      force: Boolean(pendingDeleteReport?.hasData),
+    });
+    if (deleted) {
+      closePendingDeleteDialog();
+    }
   };
 
   const pendingDeleteBusy =
     pendingDeleteTenant !== null &&
     deletingTenantId === pendingDeleteTenant.id;
+  const pendingDeleteRequiresExports = Boolean(pendingDeleteReport?.hasData);
+  const pendingDeleteReadyToDelete =
+    pendingDeleteReport !== null &&
+    (!pendingDeleteRequiresExports ||
+      (pendingDeleteDownloads.summary &&
+        pendingDeleteDownloads.excel &&
+        pendingDeleteDownloads.sql));
 
   return (
     <div className="d-flex flex-column gap-4">
@@ -659,6 +797,22 @@ export default function TenantAccountsPage() {
               </select>
             </div>
             <div className="col-12 col-md-3">
+              <label className="form-label">Company Orders</label>
+              <select
+                className="form-select"
+                value={createForm.features.companyOrdersEnabled ? "yes" : "no"}
+                onChange={(event) =>
+                  updateCreateFeatures(
+                    "companyOrdersEnabled",
+                    event.target.value === "yes",
+                  )
+                }
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+            <div className="col-12 col-md-3">
               <label className="form-label">Multi-Location</label>
               <select
                 className="form-select"
@@ -725,6 +879,11 @@ export default function TenantAccountsPage() {
                           Manual Edits {featureState.allowManualTimeEdits ? "On" : "Off"}
                         </span>
                         <span
+                          className={`badge ${featureState.companyOrdersEnabled ? "text-bg-success" : "text-bg-secondary"}`}
+                        >
+                          Company Orders {featureState.companyOrdersEnabled ? "On" : "Off"}
+                        </span>
+                        <span
                           className={`badge ${featureState.multiLocationEnabled ? "text-bg-success" : "text-bg-secondary"}`}
                         >
                           Multi-Location {featureState.multiLocationEnabled ? "On" : "Off"}
@@ -767,7 +926,9 @@ export default function TenantAccountsPage() {
                         type="button"
                         className="btn btn-sm btn-outline-danger"
                         disabled={deletingTenantId === tenant.id}
-                        onClick={() => setPendingDeleteTenant(tenant)}
+                        onClick={() => {
+                          void openPendingDeleteDialog(tenant);
+                        }}
                       >
                         {deletingTenantId === tenant.id ? "Deleting..." : "Delete"}
                       </button>
@@ -859,6 +1020,23 @@ export default function TenantAccountsPage() {
                             updateDraftFeatures(
                               tenant.id,
                               "multiLocationEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">Company Orders</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.companyOrdersEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "companyOrdersEnabled",
                               event.target.value === "yes",
                             )
                           }
@@ -1065,6 +1243,23 @@ export default function TenantAccountsPage() {
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
+                        <label className="form-label">Company Orders</label>
+                        <select
+                          className="form-select"
+                          value={draft.features.companyOrdersEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "companyOrdersEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">Yes</option>
+                          <option value="no">No</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
                         <label className="form-label">Multi-Location</label>
                         <select
                           className="form-select"
@@ -1110,11 +1305,7 @@ export default function TenantAccountsPage() {
       {pendingDeleteTenant && (
         <div
           className="embedded-confirm-backdrop"
-          onClick={() => {
-            if (!pendingDeleteBusy) {
-              setPendingDeleteTenant(null);
-            }
-          }}
+          onClick={closePendingDeleteDialog}
         >
           <div
             className="embedded-confirm-dialog"
@@ -1122,25 +1313,120 @@ export default function TenantAccountsPage() {
           >
             <h2 className="embedded-confirm-title">Delete Tenant</h2>
             <p className="embedded-confirm-message">
-              Delete tenant "{pendingDeleteTenant.name}"? This action cannot be
-              undone.
+              Review tenant "{pendingDeleteTenant.name}" data before deleting. This
+              action is permanent.
             </p>
+
+            {pendingDeleteLoading ? (
+              <div className="text-muted small mb-3">Inspecting tenant data...</div>
+            ) : pendingDeleteReport ? (
+              <>
+                {pendingDeleteReport.hasData ? (
+                  <div className="alert alert-warning py-2 mb-3">
+                    <div className="fw-semibold">Data detected</div>
+                    <div className="small">
+                      {pendingDeleteReport.totalRecords} records found. Download all
+                      exports below before permanent delete.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="alert alert-success py-2 mb-3">
+                    <div className="small">
+                      No related tenant data found. This tenant can be deleted now.
+                    </div>
+                  </div>
+                )}
+
+                {pendingDeleteReport.blockers.length > 0 ? (
+                  <div className="mb-3">
+                    <div className="fw-semibold small mb-1">Data present</div>
+                    <ul className="mb-0 small">
+                      {pendingDeleteReport.blockers.map((item) => (
+                        <li key={`delete-data-${item.key}`}>
+                          {item.label}: {item.count}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div className="small text-muted mb-2">
+                  Snapshot generated{" "}
+                  {new Date(pendingDeleteReport.generatedAt).toLocaleString()}.
+                </div>
+
+                {pendingDeleteReport.hasData ? (
+                  <div className="d-flex flex-wrap gap-2 mb-3">
+                    <button
+                      type="button"
+                      className="btn btn-outline-primary btn-sm"
+                      disabled={pendingDeleteExporting !== null}
+                      onClick={() => void downloadPendingDeleteExport("summary")}
+                    >
+                      {pendingDeleteExporting === "summary"
+                        ? "Downloading..."
+                        : pendingDeleteDownloads.summary
+                          ? "Summary Downloaded"
+                          : "Download Friendly Report"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline-primary btn-sm"
+                      disabled={pendingDeleteExporting !== null}
+                      onClick={() => void downloadPendingDeleteExport("excel")}
+                    >
+                      {pendingDeleteExporting === "excel"
+                        ? "Downloading..."
+                        : pendingDeleteDownloads.excel
+                          ? "Excel Downloaded"
+                          : "Download Excel"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-outline-primary btn-sm"
+                      disabled={pendingDeleteExporting !== null}
+                      onClick={() => void downloadPendingDeleteExport("sql")}
+                    >
+                      {pendingDeleteExporting === "sql"
+                        ? "Downloading..."
+                        : pendingDeleteDownloads.sql
+                          ? "SQL Downloaded"
+                          : "Download SQL"}
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="text-muted small mb-3">
+                Unable to load tenant data summary.
+              </div>
+            )}
+
             <div className="embedded-confirm-actions">
               <button
                 type="button"
                 className="btn btn-outline-secondary"
-                disabled={pendingDeleteBusy}
-                onClick={() => setPendingDeleteTenant(null)}
+                disabled={pendingDeleteBusy || pendingDeleteLoading}
+                onClick={closePendingDeleteDialog}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 className="btn btn-danger"
-                disabled={pendingDeleteBusy}
+                disabled={
+                  pendingDeleteBusy ||
+                  pendingDeleteLoading ||
+                  pendingDeleteExporting !== null ||
+                  !pendingDeleteReadyToDelete
+                }
                 onClick={() => void onConfirmPendingDelete()}
               >
-                {pendingDeleteBusy ? "Deleting..." : "Confirm Delete"}
+                {pendingDeleteBusy
+                  ? "Deleting..."
+                  : pendingDeleteRequiresExports && !pendingDeleteReadyToDelete
+                    ? "Download All Files First"
+                    : "Confirm Delete"}
               </button>
             </div>
           </div>

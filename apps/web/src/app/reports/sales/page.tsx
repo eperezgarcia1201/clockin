@@ -998,7 +998,7 @@ export default function SalesReportPage() {
       </section>
 
       <div className="sales-middle-grid">
-        <section className="admin-card sales-card">
+        <section id="expenses-section" className="admin-card sales-card">
           <div className="sales-card-head">
             <h3>{t.expensesOfTheDay}</h3>
           </div>

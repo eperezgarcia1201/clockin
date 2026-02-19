@@ -122,10 +122,10 @@ export default function AdminDashboard() {
       <div className="admin-page-title">
         <span className="admin-page-icon">
           <Image
-            src="/websys-logo.png"
+            src="/websys-mark.png"
             alt="Websys logo"
-            width={34}
-            height={34}
+            width={40}
+            height={40}
             className="admin-page-icon-image"
             priority
           />
@@ -137,10 +137,10 @@ export default function AdminDashboard() {
         <div className="admin-hero-brand">
           <div className="admin-hero-logo">
             <Image
-              src="/websys-logo.png"
+              src="/websys-mark.png"
               alt="Websys logo"
-              width={44}
-              height={44}
+              width={56}
+              height={56}
               className="admin-hero-logo-image"
               priority
             />

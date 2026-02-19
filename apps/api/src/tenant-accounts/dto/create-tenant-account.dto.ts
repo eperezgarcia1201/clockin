@@ -32,6 +32,10 @@ export class TenantFeaturesDto {
 
   @IsOptional()
   @IsBoolean()
+  companyOrdersEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   multiLocationEnabled?: boolean;
 }
 

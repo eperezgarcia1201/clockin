@@ -20,6 +20,7 @@ import { EmployeeSchedulesModule } from './employee-schedules/employee-schedules
 import { TenantAccountsModule } from './tenant-accounts/tenant-accounts.module';
 import { TenantDirectoryModule } from './tenant-directory/tenant-directory.module';
 import { EmployeeTipsModule } from './employee-tips/employee-tips.module';
+import { CompanyOrdersModule } from './company-orders/company-orders.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { EmployeeTipsModule } from './employee-tips/employee-tips.module';
     TenantAccountsModule,
     TenantDirectoryModule,
     EmployeeTipsModule,
+    CompanyOrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

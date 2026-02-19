@@ -55,6 +55,10 @@ export class UpdateEmployeeDto {
   isManager?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  isOwnerManager?: boolean;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   @IsIn(MANAGER_FEATURE_KEYS, { each: true })
@@ -75,6 +79,10 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsBoolean()
   isServer?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isKitchenManager?: boolean;
 
   @IsOptional()
   @IsBoolean()

@@ -12,6 +12,7 @@ import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
 
 const WORKING_TYPES = new Set<PunchType>([PunchType.IN]);
+const AUTO_SCHEDULE_OUT_TOKEN = '[AUTO_SCHEDULE_OUT]';
 const MAX_RECEIPT_SIZE_BYTES = 6 * 1024 * 1024;
 const ALLOWED_RECEIPT_MIME_TYPES = new Set([
   'image/jpeg',
@@ -1189,7 +1190,7 @@ function buildDailySummary({
   roundTo,
   includeInOutTimes,
 }: {
-  punches: Array<{ occurredAt: Date; type: PunchType }>;
+  punches: Array<{ occurredAt: Date; type: PunchType; notes?: string | null }>;
   before?: { type: PunchType } | null;
   rangeStartUtc: number;
   rangeEndUtc: number;
@@ -1225,6 +1226,7 @@ function buildDailySummary({
   }
 
   const minutesByDay = new Map<string, number>();
+  const penaltyByDay = new Map<string, number>();
 
   for (const interval of intervals) {
     let cursor = interval.start;
@@ -1244,6 +1246,22 @@ function buildDailySummary({
     const list = punchesByDay.get(dayKey) || [];
     list.push(punch);
     punchesByDay.set(dayKey, list);
+
+    if (punch.type !== PunchType.OUT || !punch.notes) {
+      continue;
+    }
+    if (!punch.notes.includes(AUTO_SCHEDULE_OUT_TOKEN)) {
+      continue;
+    }
+    const penaltyMatch = /\[PENALTY_MINUTES:(\d+)\]/i.exec(punch.notes);
+    if (!penaltyMatch) {
+      continue;
+    }
+    const penaltyMinutes = Number(penaltyMatch[1] || '0');
+    if (!Number.isFinite(penaltyMinutes) || penaltyMinutes <= 0) {
+      continue;
+    }
+    penaltyByDay.set(dayKey, (penaltyByDay.get(dayKey) || 0) + penaltyMinutes);
   }
 
   const dayKeys = new Set<string>();
@@ -1254,7 +1272,9 @@ function buildDailySummary({
     .sort()
     .map((date) => {
       const minutes = minutesByDay.get(date) || 0;
-      const roundedMinutes = roundMinutes(minutes, roundTo);
+      const penaltyMinutes = penaltyByDay.get(date) || 0;
+      const adjustedMinutes = Math.max(0, minutes - penaltyMinutes);
+      const roundedMinutes = roundMinutes(adjustedMinutes, roundTo);
 
       let firstIn: string | null = null;
       let lastOut: string | null = null;

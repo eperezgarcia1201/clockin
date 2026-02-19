@@ -1152,18 +1152,18 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 220px;
+  min-width: 240px;
 }
 
 .admin-logo {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 8px 16px rgba(20, 30, 60, 0.4);
+  box-shadow: 0 10px 20px rgba(20, 30, 60, 0.45);
   overflow: hidden;
 }
 
@@ -1175,7 +1175,7 @@ body {
 
 .admin-brand-name {
   font-family: var(--font-display), "Trebuchet MS", sans-serif;
-  font-size: 18px;
+  font-size: 20px;
   letter-spacing: 0.04em;
   font-weight: 700;
 }
@@ -1189,21 +1189,31 @@ body {
   flex: 1;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 24px;
-  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.admin-topnav::-webkit-scrollbar {
+  display: none;
 }
 
 .topnav-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #d7e1ff;
   text-decoration: none;
-  padding: 6px 10px;
+  padding: 6px 9px;
   border-radius: 999px;
+  white-space: nowrap;
   transition:
     background 0.2s ease,
     color 0.2s ease;
@@ -1373,9 +1383,9 @@ body {
 }
 
 .admin-page-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1405,9 +1415,9 @@ body {
 }
 
 .admin-hero-logo {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -23,6 +23,16 @@ const ACTIVE_WORK_STATUSES = new Set<PunchType>([
   PunchType.BREAK,
   PunchType.LUNCH,
 ]);
+const LOCAL_DAY_SCAN_WINDOW_MS = 36 * 60 * 60 * 1000;
+const DEFAULT_GEOFENCE_RADIUS_METERS = 120;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const AUTO_SCHEDULE_OUT_TOKEN = '[AUTO_SCHEDULE_OUT]';
+const AUTO_OUT_GRACE_MINUTES = 30;
+const AUTO_OUT_WEEKLY_STRIKE_THRESHOLD = 3;
+const AUTO_OUT_PENALTY_MINUTES = 90;
+const AUTO_OUT_TIPS_PENDING_NONE = 'NONE';
+const AUTO_OUT_LOOKBACK_DAYS = 14;
+const TIP_PENDING_LOOKBACK_DAYS = 7;
 
 type ScheduleViolation = {
   reason: ScheduleOverrideReason;
@@ -64,6 +74,13 @@ export class EmployeePunchesService {
         deletedAt: null,
         disabled: false,
       },
+      include: {
+        group: {
+          select: {
+            name: true,
+          },
+        },
+      },
     });
 
     if (!employee) {
@@ -85,16 +102,34 @@ export class EmployeePunchesService {
     }
 
     if (dto.type === PunchType.IN) {
-      scheduleOverrideRequestId = await this.enforceScheduleWithOverride(
+      await this.enforceClockInGeofence(tenant.id, employee.officeId, dto);
+      await this.enforcePendingAutoClockOutTipsBeforeClockIn(
         tenant.id,
         {
           id: employee.id,
-          fullName: employee.fullName,
-          displayName: employee.displayName,
+          isServer: employee.isServer,
         },
         occurredAt,
         settings?.timezone,
       );
+      const ownerClockExempt = await this.tenancy.isOwnerManagerEmployee(
+        tenant.id,
+        employee.id,
+      );
+      if (ownerClockExempt || this.shouldBypassScheduleOverrideForEmployee(employee)) {
+        await this.enforceNoActiveShift(tenant.id, employee.id);
+      } else {
+        scheduleOverrideRequestId = await this.enforceScheduleWithOverride(
+          tenant.id,
+          {
+            id: employee.id,
+            fullName: employee.fullName,
+            displayName: employee.displayName,
+          },
+          occurredAt,
+          settings?.timezone,
+        );
+      }
     }
 
     if (dto.type === PunchType.OUT) {
@@ -117,6 +152,8 @@ export class EmployeePunchesService {
         occurredAt,
         notes: dto.notes,
         ipAddress: dto.ipAddress,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
       },
     });
 
@@ -141,7 +178,18 @@ export class EmployeePunchesService {
       occurredAt,
     );
 
-    return punch;
+    const managerMessage =
+      dto.type === PunchType.IN
+        ? await this.notifications.consumeManagerMessageForEmployee(
+            tenant.id,
+            employee.id,
+          )
+        : null;
+
+    return {
+      ...punch,
+      managerMessage,
+    };
   }
 
   async getRecent(authUser: AuthUser, options?: { officeId?: string }) {
@@ -150,6 +198,10 @@ export class EmployeePunchesService {
       where: { tenantId: tenant.id },
       select: { timezone: true },
     });
+    await this.notifications.ensureOperationalAlerts(
+      tenant.id,
+      settings?.timezone,
+    );
     await this.autoClockOutAfterSchedule(tenant.id, settings?.timezone);
 
     const employees = await this.prisma.employee.findMany({
@@ -249,6 +301,8 @@ export class EmployeePunchesService {
         type: punch.type,
         occurredAt: punch.occurredAt.toISOString(),
         notes: punch.notes ?? '',
+        latitude: punch.latitude ?? null,
+        longitude: punch.longitude ?? null,
       })),
     };
   }
@@ -277,6 +331,8 @@ export class EmployeePunchesService {
         type: dto.type,
         occurredAt: new Date(dto.occurredAt),
         notes: dto.notes,
+        latitude: null,
+        longitude: null,
       },
     });
 
@@ -688,6 +744,10 @@ export class EmployeePunchesService {
   private async autoClockOutAfterSchedule(tenantId: string, timeZone?: string) {
     const now = new Date();
     const current = this.getLocalDayInfo(now, timeZone);
+    const workDate = this.toLocalDateKey(now, timeZone);
+    const weekStartDate = this.getWeekStartDateKey(workDate, 1);
+    const weekEndDate = this.shiftDateKey(weekStartDate, 6);
+    const lookbackStart = new Date(now.getTime() - AUTO_OUT_LOOKBACK_DAYS * DAY_MS);
 
     const latestPunches = await this.prisma.employeePunch.findMany({
       where: { tenantId },
@@ -700,6 +760,7 @@ export class EmployeePunchesService {
             fullName: true,
             displayName: true,
             disabled: true,
+            isServer: true,
           },
         },
       },
@@ -711,8 +772,15 @@ export class EmployeePunchesService {
         !punch.employee.disabled &&
         ACTIVE_WORK_STATUSES.has(punch.type),
     );
+    const ownerManagerIds = await this.tenancy.getOwnerManagerEmployeeIds(
+      tenantId,
+      candidates.map((punch) => punch.employeeId),
+    );
+    const filteredCandidates = candidates.filter(
+      (punch) => !ownerManagerIds.has(punch.employeeId),
+    );
 
-    if (!candidates.length) {
+    if (!filteredCandidates.length) {
       return;
     }
 
@@ -720,7 +788,7 @@ export class EmployeePunchesService {
       where: {
         tenantId,
         weekday: current.weekday,
-        employeeId: { in: candidates.map((punch) => punch.employeeId) },
+        employeeId: { in: filteredCandidates.map((punch) => punch.employeeId) },
       },
       select: {
         employeeId: true,
@@ -731,14 +799,17 @@ export class EmployeePunchesService {
       schedules.map((schedule) => [schedule.employeeId, schedule]),
     );
 
-    for (const punch of candidates) {
+    for (const punch of filteredCandidates) {
       const schedule = scheduleByEmployee.get(punch.employeeId);
       if (!schedule) {
         continue;
       }
 
       const endMinutes = this.parseTime(schedule.endTime);
-      if (endMinutes === null || current.minutes < endMinutes) {
+      if (
+        endMinutes === null ||
+        current.minutes < endMinutes + AUTO_OUT_GRACE_MINUTES
+      ) {
         continue;
       }
 
@@ -751,6 +822,59 @@ export class EmployeePunchesService {
         continue;
       }
 
+      const priorAutoOutPunches = await this.prisma.employeePunch.findMany({
+        where: {
+          tenantId,
+          employeeId: punch.employeeId,
+          type: PunchType.OUT,
+          occurredAt: {
+            gte: lookbackStart,
+            lte: now,
+          },
+          notes: {
+            contains: AUTO_SCHEDULE_OUT_TOKEN,
+          },
+        },
+        select: {
+          occurredAt: true,
+        },
+      });
+      const priorWeekStrikeCount = priorAutoOutPunches.filter((entry) => {
+        const key = this.toLocalDateKey(entry.occurredAt, timeZone);
+        return key >= weekStartDate && key <= weekEndDate;
+      }).length;
+      const weeklyStrikeCount = priorWeekStrikeCount + 1;
+      const penaltyMinutes =
+        weeklyStrikeCount > AUTO_OUT_WEEKLY_STRIKE_THRESHOLD
+          ? AUTO_OUT_PENALTY_MINUTES
+          : 0;
+
+      let tipsPendingWorkDate: string | null = null;
+      if (punch.employee?.isServer) {
+        const tip = await this.prisma.employeeTip.findUnique({
+          where: {
+            tenantId_employeeId_workDate: {
+              tenantId,
+              employeeId: punch.employeeId,
+              workDate: this.dateKeyToUtc(workDate),
+            },
+          },
+          select: { id: true },
+        });
+        if (!tip) {
+          tipsPendingWorkDate = workDate;
+        }
+      }
+
+      const autoOutNotes = [
+        `Auto clock-out: schedule ended +${AUTO_OUT_GRACE_MINUTES}m.`,
+        AUTO_SCHEDULE_OUT_TOKEN,
+        `[WORK_DATE:${workDate}]`,
+        `[AUTO_OUT_WEEKLY_COUNT:${weeklyStrikeCount}]`,
+        `[PENALTY_MINUTES:${penaltyMinutes}]`,
+        `[TIPS_PENDING:${tipsPendingWorkDate || AUTO_OUT_TIPS_PENDING_NONE}]`,
+      ].join(' ');
+
       const autoOutAt = new Date();
       await this.prisma.employeePunch.create({
         data: {
@@ -758,16 +882,117 @@ export class EmployeePunchesService {
           employeeId: punch.employeeId,
           type: PunchType.OUT,
           occurredAt: autoOutAt,
-          notes: 'Auto clock-out: schedule ended.',
+          notes: autoOutNotes,
         },
       });
+
+      const employeeName =
+        punch.employee.displayName || punch.employee.fullName || 'Employee';
+      const strikeMessage = `${employeeName} was auto clocked out ${AUTO_OUT_GRACE_MINUTES} minutes after schedule end (strike ${weeklyStrikeCount} this week).`;
+      const policyMessage =
+        penaltyMinutes > 0
+          ? `${strikeMessage} Policy alert: 1h 30m deduction applies.`
+          : strikeMessage;
+
       await this.notifications.notifyPunch(
         tenantId,
         punch.employee,
         PunchType.OUT,
         autoOutAt,
+        {
+          message: policyMessage,
+          metadata: {
+            kind: 'AUTO_CLOCK_OUT_30M',
+            workDate,
+            weeklyAutoClockOutCount: weeklyStrikeCount,
+            penaltyMinutes,
+            tipsPendingWorkDate,
+          },
+        },
       );
     }
+  }
+
+  private async enforcePendingAutoClockOutTipsBeforeClockIn(
+    tenantId: string,
+    employee: { id: string; isServer: boolean },
+    occurredAt: Date,
+    timeZone?: string,
+  ) {
+    if (!employee.isServer) {
+      return;
+    }
+
+    const lookbackStart = new Date(
+      occurredAt.getTime() - TIP_PENDING_LOOKBACK_DAYS * DAY_MS,
+    );
+    const autoOutPunches = await this.prisma.employeePunch.findMany({
+      where: {
+        tenantId,
+        employeeId: employee.id,
+        type: PunchType.OUT,
+        occurredAt: {
+          gte: lookbackStart,
+          lte: occurredAt,
+        },
+        notes: {
+          contains: AUTO_SCHEDULE_OUT_TOKEN,
+        },
+      },
+      orderBy: {
+        occurredAt: 'desc',
+      },
+      select: {
+        notes: true,
+      },
+    });
+
+    if (!autoOutPunches.length) {
+      return;
+    }
+
+    const pendingWorkDates: string[] = [];
+    const seen = new Set<string>();
+    autoOutPunches.forEach((punch) => {
+      const parsed = this.parsePendingTipsWorkDate(punch.notes || '');
+      if (!parsed || seen.has(parsed)) {
+        return;
+      }
+      seen.add(parsed);
+      pendingWorkDates.push(parsed);
+    });
+
+    if (!pendingWorkDates.length) {
+      return;
+    }
+
+    const submittedTips = await this.prisma.employeeTip.findMany({
+      where: {
+        tenantId,
+        employeeId: employee.id,
+        workDate: {
+          in: pendingWorkDates.map((dateKey) => this.dateKeyToUtc(dateKey)),
+        },
+      },
+      select: {
+        workDate: true,
+      },
+    });
+    const submitted = new Set(
+      submittedTips.map((tip) => tip.workDate.toISOString().slice(0, 10)),
+    );
+    const currentDate = this.toLocalDateKey(occurredAt, timeZone);
+    const missing = pendingWorkDates
+      .filter((dateKey) => dateKey <= currentDate && !submitted.has(dateKey))
+      .sort()[0];
+
+    if (!missing) {
+      return;
+    }
+
+    throw new UnauthorizedException(
+      `Pending tips required for work date ${missing} before clocking in.`,
+    );
   }
 
   private async enforceScheduleWithOverride(
@@ -852,6 +1077,187 @@ export class EmployeePunchesService {
     throw new UnauthorizedException(
       'You are not scheduled right now. Admin approval request sent.',
     );
+  }
+
+  private shouldBypassScheduleOverrideForEmployee(employee: {
+    group?: { name: string | null } | null;
+    isKitchenManager?: boolean;
+  }) {
+    if (employee.isKitchenManager) {
+      return true;
+    }
+    const groupName = employee.group?.name?.trim().toLowerCase() || '';
+    if (!groupName) {
+      return false;
+    }
+    return (
+      groupName.includes('cook') ||
+      groupName.includes('kitchen') ||
+      groupName.includes('cocina')
+    );
+  }
+
+  private async enforceNoActiveShift(tenantId: string, employeeId: string) {
+    const latestPunch = await this.prisma.employeePunch.findFirst({
+      where: { tenantId, employeeId },
+      orderBy: { occurredAt: 'desc' },
+      select: { type: true },
+    });
+    if (latestPunch && ACTIVE_WORK_STATUSES.has(latestPunch.type)) {
+      throw new UnauthorizedException(
+        'Employee already has an active shift. Clock out before clocking in again.',
+      );
+    }
+  }
+
+  private async enforceSingleClockInForScheduledDay(
+    tenantId: string,
+    employeeId: string,
+    occurredAt: Date,
+    timeZone?: string,
+  ) {
+    const scheduleDay = this.getLocalDayInfo(occurredAt, timeZone);
+    const scheduleForDay = await this.prisma.employeeSchedule.findFirst({
+      where: {
+        tenantId,
+        employeeId,
+        weekday: scheduleDay.weekday,
+      },
+      select: { id: true },
+    });
+
+    if (!scheduleForDay) {
+      return;
+    }
+
+    const workDate = this.toLocalDateKey(occurredAt, timeZone);
+    const punches = await this.prisma.employeePunch.findMany({
+      where: {
+        tenantId,
+        employeeId,
+        type: PunchType.IN,
+        occurredAt: {
+          gte: new Date(occurredAt.getTime() - LOCAL_DAY_SCAN_WINDOW_MS),
+          lte: new Date(occurredAt.getTime() + LOCAL_DAY_SCAN_WINDOW_MS),
+        },
+      },
+      select: { occurredAt: true },
+    });
+
+    const alreadyClockedIn = punches.some(
+      (punch) => this.toLocalDateKey(punch.occurredAt, timeZone) === workDate,
+    );
+    if (alreadyClockedIn) {
+      throw new UnauthorizedException(
+        'Scheduled employees can only clock in once per day.',
+      );
+    }
+  }
+
+  private async enforceClockInGeofence(
+    tenantId: string,
+    employeeOfficeId: string | null,
+    dto: CreateEmployeePunchDto,
+  ) {
+    const fallbackOfficeId = dto.officeId?.trim() || undefined;
+    const officeId = employeeOfficeId || fallbackOfficeId;
+    if (!officeId) {
+      return;
+    }
+
+    const office = await this.prisma.office.findFirst({
+      where: {
+        id: officeId,
+        tenantId,
+      },
+      select: {
+        name: true,
+        latitude: true,
+        longitude: true,
+        geofenceRadiusMeters: true,
+      },
+    });
+
+    if (!office || office.latitude === null || office.longitude === null) {
+      return;
+    }
+
+    if (dto.latitude === undefined || dto.longitude === undefined) {
+      throw new UnauthorizedException(
+        `Location is required to clock in at ${office.name}.`,
+      );
+    }
+
+    const distanceMeters = this.distanceMeters(
+      office.latitude,
+      office.longitude,
+      dto.latitude,
+      dto.longitude,
+    );
+    const allowedRadius =
+      office.geofenceRadiusMeters || DEFAULT_GEOFENCE_RADIUS_METERS;
+    if (distanceMeters > allowedRadius) {
+      throw new UnauthorizedException(
+        `You are outside the allowed radius for ${office.name} (${Math.round(distanceMeters)}m / ${allowedRadius}m).`,
+      );
+    }
+  }
+
+  private distanceMeters(
+    latitudeA: number,
+    longitudeA: number,
+    latitudeB: number,
+    longitudeB: number,
+  ) {
+    const earthRadius = 6371000;
+    const toRadians = (value: number) => (value * Math.PI) / 180;
+
+    const dLatitude = toRadians(latitudeB - latitudeA);
+    const dLongitude = toRadians(longitudeB - longitudeA);
+    const lat1 = toRadians(latitudeA);
+    const lat2 = toRadians(latitudeB);
+
+    const a =
+      Math.sin(dLatitude / 2) * Math.sin(dLatitude / 2) +
+      Math.cos(lat1) *
+        Math.cos(lat2) *
+        Math.sin(dLongitude / 2) *
+        Math.sin(dLongitude / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadius * c;
+  }
+
+  private parsePendingTipsWorkDate(notes: string): string | null {
+    const match = /\[TIPS_PENDING:(\d{4}-\d{2}-\d{2}|NONE)\]/i.exec(notes);
+    if (!match) {
+      return null;
+    }
+    const value = (match[1] || '').trim().toUpperCase();
+    if (value === AUTO_OUT_TIPS_PENDING_NONE) {
+      return null;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return null;
+    }
+    return value;
+  }
+
+  private dateKeyToUtc(dateKey: string) {
+    return new Date(`${dateKey}T00:00:00.000Z`);
+  }
+
+  private shiftDateKey(dateKey: string, deltaDays: number) {
+    const shifted = this.dateKeyToUtc(dateKey);
+    shifted.setUTCDate(shifted.getUTCDate() + deltaDays);
+    return shifted.toISOString().slice(0, 10);
+  }
+
+  private getWeekStartDateKey(dateKey: string, weekStartsOn: number) {
+    const date = this.dateKeyToUtc(dateKey);
+    const day = date.getUTCDay();
+    const diff = (day - weekStartsOn + 7) % 7;
+    date.setUTCDate(date.getUTCDate() - diff);
+    return date.toISOString().slice(0, 10);
   }
 
   private async getScheduleViolation(
