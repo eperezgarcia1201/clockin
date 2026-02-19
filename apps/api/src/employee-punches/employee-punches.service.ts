@@ -102,6 +102,7 @@ export class EmployeePunchesService {
     }
 
     if (dto.type === PunchType.IN) {
+      await this.enforceNoActiveShift(tenant.id, employee.id);
       await this.enforceClockInGeofence(tenant.id, employee.officeId, dto);
       await this.enforcePendingAutoClockOutTipsBeforeClockIn(
         tenant.id,
@@ -117,7 +118,6 @@ export class EmployeePunchesService {
         employee.id,
       );
       if (ownerClockExempt || this.shouldBypassScheduleOverrideForEmployee(employee)) {
-        await this.enforceNoActiveShift(tenant.id, employee.id);
       } else {
         scheduleOverrideRequestId = await this.enforceScheduleWithOverride(
           tenant.id,
@@ -1266,20 +1266,6 @@ export class EmployeePunchesService {
     occurredAt: Date,
     timeZone?: string,
   ): Promise<ScheduleViolation | null> {
-    const latestPunch = await this.prisma.employeePunch.findFirst({
-      where: { tenantId, employeeId },
-      orderBy: { occurredAt: 'desc' },
-      select: { type: true },
-    });
-
-    if (latestPunch && ACTIVE_WORK_STATUSES.has(latestPunch.type)) {
-      return {
-        reason: ScheduleOverrideReason.OUTSIDE_SCHEDULE_HOURS,
-        message:
-          'Employee already has an active shift. Admin approval required to allow another clock-in.',
-      };
-    }
-
     const scheduleDay = this.getLocalDayInfo(occurredAt, timeZone);
     const scheduleForDay = await this.prisma.employeeSchedule.findFirst({
       where: {

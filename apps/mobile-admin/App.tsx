@@ -1192,11 +1192,10 @@ export default function App() {
             ) {
               continue;
             }
+            throw error;
           }
-          if (error instanceof TypeError) {
-            lastError = error;
-            continue;
-          }
+          lastError = new Error("Request failed");
+          throw lastError;
         }
       }
 
