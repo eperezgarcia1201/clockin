@@ -194,7 +194,7 @@ export class TenantDirectoryService {
       };
     }
 
-    if (this.safeEqual(username, expectedUsername)) {
+    if (this.safeEqualInsensitive(username, expectedUsername)) {
       throw new UnauthorizedException('Invalid administrator credentials.');
     }
 
@@ -230,7 +230,7 @@ export class TenantDirectoryService {
     username: string,
     password: string,
   ) {
-    if (!this.safeEqual(username, expectedUsername)) {
+    if (!this.safeEqualInsensitive(username, expectedUsername)) {
       return false;
     }
 
@@ -403,6 +403,10 @@ export class TenantDirectoryService {
       return false;
     }
     return timingSafeEqual(left, right);
+  }
+
+  private safeEqualInsensitive(a: string, b: string) {
+    return this.safeEqual(a.trim().toLowerCase(), b.trim().toLowerCase());
   }
 
   private filterTenantFeaturePermissions(
