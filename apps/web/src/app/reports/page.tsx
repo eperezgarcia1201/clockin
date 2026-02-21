@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useUiLanguage } from "../../lib/ui-language";
 
 type Lang = "en" | "es";
@@ -21,6 +21,15 @@ const copy: Record<Lang, Record<string, string>> = {
     tipsDesc: "Review cash and credit card tips per server by day.",
     salesTitle: "Daily Sales Report",
     salesDesc: "Managers enter food/liquor sales and payment method totals.",
+    liquorControlTitle: "Liquor Control Sheet",
+    liquorControlDesc:
+      "Track opening/closing liquor inventory, sales, and monthly variance by location.",
+    liquorSpreadsheetTitle: "Liquor Spreadsheet",
+    liquorSpreadsheetDesc:
+      "Open the full inventory spreadsheet with Company, Price, Qty/ML, Bar, Bodega, and Total.",
+    liquorAiTitle: "AI Bottle Scan",
+    liquorAiDesc:
+      "Jump directly to photo scan to estimate fill level and spent ML from previous scan.",
   },
   es: {
     title: "Ejecutar Reportes",
@@ -37,12 +46,45 @@ const copy: Record<Lang, Record<string, string>> = {
     tipsDesc: "Revisa propinas en efectivo y tarjeta por mesero y día.",
     salesTitle: "Reporte Diario de Ventas",
     salesDesc: "Gerentes capturan ventas de comida/licor y totales de pago.",
+    liquorControlTitle: "Control Mensual de Licor",
+    liquorControlDesc:
+      "Controla inventario inicial/final, ventas y variación mensual por ubicación.",
+    liquorSpreadsheetTitle: "Hoja de Inventario Licor",
+    liquorSpreadsheetDesc:
+      "Abre la hoja completa con Compañía, Precio, Cant/ML, Bar, Bodega y Total.",
+    liquorAiTitle: "Escaneo AI de Botella",
+    liquorAiDesc:
+      "Ir directo al escaneo por foto para estimar nivel y ML consumido vs escaneo anterior.",
   },
 };
 
 export default function ReportsHome() {
   const lang = useUiLanguage();
   const t = useMemo(() => copy[lang] ?? copy.en, [lang]);
+  const [canViewLiquorControl, setCanViewLiquorControl] = useState(false);
+
+  useEffect(() => {
+    const loadAccess = async () => {
+      try {
+        const response = await fetch("/api/access/me", { cache: "no-store" });
+        if (!response.ok) {
+          setCanViewLiquorControl(false);
+          return;
+        }
+        const data = (await response.json()) as {
+          liquorInventoryEnabled?: boolean;
+          permissions?: { reports?: boolean };
+        };
+        setCanViewLiquorControl(
+          Boolean(data.permissions?.reports) &&
+            Boolean(data.liquorInventoryEnabled),
+        );
+      } catch {
+        setCanViewLiquorControl(false);
+      }
+    };
+    void loadAccess();
+  }, []);
 
   return (
     <div className="reports-home">
@@ -129,6 +171,51 @@ export default function ReportsHome() {
             <i className="fa-solid fa-chevron-right" aria-hidden="true" />
           </div>
         </a>
+
+        {canViewLiquorControl && (
+          <a className="report-tile" href="/reports/liquor-control">
+            <div className="report-icon report-icon--audit">
+              <i className="fa-solid fa-wine-bottle" aria-hidden="true" />
+            </div>
+            <div className="report-copy">
+              <h2>{t.liquorControlTitle}</h2>
+              <p>{t.liquorControlDesc}</p>
+            </div>
+            <div className="report-action">
+              <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+            </div>
+          </a>
+        )}
+
+        {canViewLiquorControl && (
+          <a className="report-tile" href="/reports/liquor-control#liquor-spreadsheet">
+            <div className="report-icon report-icon--hours">
+              <i className="fa-solid fa-table" aria-hidden="true" />
+            </div>
+            <div className="report-copy">
+              <h2>{t.liquorSpreadsheetTitle}</h2>
+              <p>{t.liquorSpreadsheetDesc}</p>
+            </div>
+            <div className="report-action">
+              <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+            </div>
+          </a>
+        )}
+
+        {canViewLiquorControl && (
+          <a className="report-tile" href="/reports/liquor-control#liquor-ai-scan">
+            <div className="report-icon report-icon--daily">
+              <i className="fa-solid fa-camera" aria-hidden="true" />
+            </div>
+            <div className="report-copy">
+              <h2>{t.liquorAiTitle}</h2>
+              <p>{t.liquorAiDesc}</p>
+            </div>
+            <div className="report-action">
+              <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+            </div>
+          </a>
+        )}
       </div>
     </div>
   );

@@ -2,14 +2,17 @@
 
 import { useUser } from "@auth0/nextjs-auth0/client";
 
-function AuthActionsInner() {
+function AuthActionsInner({ showSignIn }: { showSignIn: boolean }) {
   const { user, isLoading } = useUser();
 
   if (isLoading) {
-    return <span className="auth-status">Loading session…</span>;
+    return showSignIn ? <span className="auth-status">Loading session…</span> : null;
   }
 
   if (!user) {
+    if (!showSignIn) {
+      return null;
+    }
     return (
       <a className="button primary" href="/auth/login">
         Sign in with SSO
@@ -29,14 +32,14 @@ function AuthActionsInner() {
   );
 }
 
-export function AuthActions() {
+export function AuthActions({ showSignIn = true }: { showSignIn?: boolean }) {
   const enabled =
     Boolean(process.env.NEXT_PUBLIC_AUTH0_DOMAIN) &&
     Boolean(process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID);
 
   if (!enabled) {
-    return <span className="button primary is-disabled">Sign in with SSO</span>;
+    return showSignIn ? <span className="button primary is-disabled">Sign in with SSO</span> : null;
   }
 
-  return <AuthActionsInner />;
+  return <AuthActionsInner showSignIn={showSignIn} />;
 }

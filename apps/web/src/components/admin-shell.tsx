@@ -62,6 +62,9 @@ const translations: Record<Lang, Record<string, string>> = {
     auditReports: "Audit Reports",
     tipsReports: "Tips Reports",
     salesReports: "Sales Reports",
+    liquorControl: "Liquor Control",
+    liquorSpreadsheet: "Liquor Spreadsheet",
+    liquorAiScan: "AI Bottle Scan",
     dailySales: "Daily Sales",
     expensesReport: "Expenses",
     notifications: "Notifications",
@@ -109,6 +112,9 @@ const translations: Record<Lang, Record<string, string>> = {
     auditReports: "Reporte de Auditoría",
     tipsReports: "Reporte de Propinas",
     salesReports: "Reporte de Ventas",
+    liquorControl: "Control de Licor",
+    liquorSpreadsheet: "Hoja de Licor",
+    liquorAiScan: "Escaneo AI",
     dailySales: "Ventas Diarias",
     expensesReport: "Gastos",
     notifications: "Notificaciones",
@@ -165,6 +171,7 @@ export function AdminShell({
   const [hydrated, setHydrated] = useState(false);
   const [accessLoaded, setAccessLoaded] = useState(false);
   const [multiLocationEnabled, setMultiLocationEnabled] = useState(false);
+  const [liquorInventoryEnabled, setLiquorInventoryEnabled] = useState(false);
   const [offices, setOffices] = useState<Office[]>([]);
   const [officesLoaded, setOfficesLoaded] = useState(false);
   const [officesLoadSucceeded, setOfficesLoadSucceeded] = useState(false);
@@ -222,9 +229,11 @@ export function AdminShell({
         }
         const data = (await response.json()) as {
           multiLocationEnabled?: boolean;
+          liquorInventoryEnabled?: boolean;
           permissions?: Partial<AccessPermissions>;
         };
         setMultiLocationEnabled(Boolean(data.multiLocationEnabled));
+        setLiquorInventoryEnabled(Boolean(data.liquorInventoryEnabled));
         if (data.permissions) {
           setPermissions((prev) => ({ ...prev, ...data.permissions }));
         }
@@ -241,6 +250,7 @@ export function AdminShell({
   const can = (feature: keyof AccessPermissions) => permissions[feature];
   const canManageMultiLocation =
     multiLocationEnabled && can("manageMultiLocation");
+  const canAccessLiquorControl = can("reports") && liquorInventoryEnabled;
   const isCompanyOrdersCatalog =
     pathname?.startsWith("/admin/company-orders/catalog") || false;
 
@@ -485,6 +495,17 @@ export function AdminShell({
               {t.dailySales}
             </Link>
           )}
+          {canAccessLiquorControl && (
+            <Link
+              className={`topnav-link ${
+                pathname?.startsWith("/reports/liquor-control") ? "is-active" : ""
+              }`}
+              href="/reports/liquor-control"
+            >
+              <i className="fa-solid fa-wine-bottle" aria-hidden="true" />
+              {t.liquorControl}
+            </Link>
+          )}
           {can("salesCapture") && (
             <Link className="topnav-link" href="/reports/sales#expenses-section">
               <i className="fa-solid fa-file-invoice-dollar" aria-hidden="true" />
@@ -574,7 +595,7 @@ export function AdminShell({
               {t.logout}
             </button>
           </div>
-          <AuthActions />
+          <AuthActions showSignIn={false} />
         </div>
       </header>
 
@@ -727,6 +748,22 @@ export function AdminShell({
                       {t.salesReports}
                     </Link>
                   )}
+                  {canAccessLiquorControl && (
+                    <>
+                      <Link className="admin-link" href="/reports/liquor-control#liquor-spreadsheet">
+                        <i className="fa-solid fa-table" aria-hidden="true" />
+                        {t.liquorSpreadsheet}
+                      </Link>
+                      <Link className="admin-link" href="/reports/liquor-control#liquor-ai-scan">
+                        <i className="fa-solid fa-camera" aria-hidden="true" />
+                        {t.liquorAiScan}
+                      </Link>
+                      <Link className="admin-link" href="/reports/liquor-control#liquor-ai-history">
+                        <i className="fa-solid fa-wine-bottle" aria-hidden="true" />
+                        {t.liquorControl}
+                      </Link>
+                    </>
+                  )}
                 </div>
               )}
             </>
@@ -771,6 +808,22 @@ export function AdminShell({
                   <i className="fa-solid fa-cash-register" aria-hidden="true" />
                   {t.salesReports}
                 </Link>
+                {canAccessLiquorControl && (
+                  <>
+                    <Link className="admin-link" href="/reports/liquor-control#liquor-spreadsheet">
+                      <i className="fa-solid fa-table" aria-hidden="true" />
+                      {t.liquorSpreadsheet}
+                    </Link>
+                    <Link className="admin-link" href="/reports/liquor-control#liquor-ai-scan">
+                      <i className="fa-solid fa-camera" aria-hidden="true" />
+                      {t.liquorAiScan}
+                    </Link>
+                    <Link className="admin-link" href="/reports/liquor-control#liquor-ai-history">
+                      <i className="fa-solid fa-wine-bottle" aria-hidden="true" />
+                      {t.liquorControl}
+                    </Link>
+                  </>
+                )}
               </div>
               <div className="admin-section">
                 <div className="admin-section-title">{t.admin}</div>
