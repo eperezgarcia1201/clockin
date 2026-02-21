@@ -1,0 +1,42 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.websysclockin.com/api"
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "channel": "production",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.websysclockin.com/api"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "/Users/elmerperez/Downloads/project-a5f23ccc-c47c-4427-a5e-ea1caed2ea12.json",
+        "track": "internal"
+      },
+      "ios": {
+        "appleId": "usai551perez@hotmail.com",
+        "ascAppId": "6759073839",
+        "appleTeamId": "CALGHMZY25"
+      }
+    }
+  }
+}

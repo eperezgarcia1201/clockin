@@ -1,0 +1,31 @@
+{
+  "name": "clockin-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev:api": "npm --workspace apps/api run start:dev",
+    "dev:mobile": "npm --workspace apps/mobile run start",
+    "dev:mobile-admin": "npm --workspace apps/mobile-admin run start -- --port 8083",
+    "lint": "npm --workspace apps/web run lint && npm --workspace apps/api run lint",
+    "format": "prettier -w .",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "expo": "~54.0.33",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5"
+  },
+  "overrides": {
+    "@types/react": "19.1.17",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "version": "1.0.0"
+}

@@ -1,0 +1,36 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "version": "1.0",
+    "copyright": "© 2026 <Legal Entity Name>",
+    "release": {
+      "automaticRelease": true
+    },
+    "info": {
+      "en-US": {
+        "description": "Admins can track their employees",
+        "keywords": [
+          "Admin",
+          "Tracking",
+          "employees"
+        ],
+        "supportUrl": "https://websysclockin.com/support",
+        "title": "ClockIn Admin",
+        "subtitle": "Admins time tracking",
+        "privacyPolicyUrl": "https://websysclockin.com/privacy"
+      }
+    },
+    "categories": [
+      "BUSINESS"
+    ],
+    "review": {
+      "firstName": "elmer",
+      "lastName": "perez",
+      "email": "elmerperez1201@gmail.com",
+      "phone": "+19204616022",
+      "demoUsername": "admin",
+      "demoPassword": "1234qwer",
+      "demoRequired": true
+    }
+  }
+}

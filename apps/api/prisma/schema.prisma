@@ -1,0 +1,491 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum PunchType {
+  IN
+  OUT
+  BREAK
+  LUNCH
+}
+
+enum NotificationType {
+  PUNCH_IN
+  PUNCH_OUT
+  PUNCH_BREAK
+  PUNCH_LUNCH
+  NO_BREAK_6H
+  TIPS_7D_SUMMARY
+  SCHEDULE_OVERRIDE_REQUEST
+  LATE_CLOCK_IN_5M
+}
+
+enum ScheduleOverrideStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ScheduleOverrideReason {
+  NOT_SCHEDULED_TODAY
+  OUTSIDE_SCHEDULE_HOURS
+}
+
+enum ExpensePaymentMethod {
+  CHECK
+  DEBIT_CARD
+  CASH
+}
+
+model Tenant {
+  id         String   @id @default(cuid())
+  authOrgId  String   @unique
+  name       String
+  slug       String   @unique
+  ownerEmail String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  memberships              Membership[]
+  locations                Location[]
+  offices                  Office[]
+  groups                   Group[]
+  employees                Employee[]
+  statuses                 PunchStatus[]
+  punches                  Punch[]
+  employeePunches          EmployeePunch[]
+  timeEntries              TimeEntry[]
+  notifications            Notification[]
+  adminDevices             AdminDevice[]
+  employeeSchedules        EmployeeSchedule[]
+  scheduleOverrideRequests ScheduleOverrideRequest[]
+  employeeTips             EmployeeTip[]
+  dailySalesReports        DailySalesReport[]
+  dailyExpenses            DailyExpense[]
+  companyOrders            CompanyOrder[]
+  settings                 TenantSettings?
+
+  @@index([isActive])
+}
+
+model User {
+  id         String   @id @default(cuid())
+  authUserId String   @unique
+  email      String   @unique
+  name       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  memberships                      Membership[]
+  punches                          Punch[]
+  timeEntries                      TimeEntry[]
+  dailySalesReportsSubmitted       DailySalesReport[]
+  dailyExpensesSubmitted           DailyExpense[]
+  approvedScheduleOverrideRequests ScheduleOverrideRequest[] @relation("ScheduleOverrideApprovedBy")
+  rejectedScheduleOverrideRequests ScheduleOverrideRequest[] @relation("ScheduleOverrideRejectedBy")
+}
+
+model Membership {
+  id        String           @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      Role
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  address   String?
+  city      String?
+  state     String?
+  postal    String?
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+model Office {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  name                 String
+  latitude             Float?
+  longitude            Float?
+  geofenceRadiusMeters Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id])
+  groups        Group[]
+  employees     Employee[]
+  companyOrders CompanyOrder[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Group {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  officeId  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  office    Office?    @relation(fields: [officeId], references: [id])
+  employees Employee[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Employee {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  fullName           String
+  displayName        String?
+  email              String?
+  pinHash            String?
+  hourlyRate         Float?
+  officeId           String?
+  groupId            String?
+  isManager          Boolean   @default(false)
+  managerPermissions String[]  @default([])
+  isAdmin            Boolean   @default(false)
+  isTimeAdmin        Boolean   @default(false)
+  isReports          Boolean   @default(false)
+  isServer           Boolean   @default(false)
+  isKitchenManager   Boolean   @default(false)
+  disabled           Boolean   @default(false)
+  deletedAt          DateTime?
+  deletedBy          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant                   Tenant                    @relation(fields: [tenantId], references: [id])
+  office                   Office?                   @relation(fields: [officeId], references: [id])
+  group                    Group?                    @relation(fields: [groupId], references: [id])
+  punches                  EmployeePunch[]
+  tips                     EmployeeTip[]
+  companyOrdersCreated     CompanyOrder[]            @relation("CompanyOrderCreatedBy")
+  notifications            Notification[]
+  schedules                EmployeeSchedule[]
+  scheduleOverrideRequests ScheduleOverrideRequest[]
+
+  @@index([tenantId])
+  @@index([tenantId, deletedAt])
+}
+
+model EmployeeSchedule {
+  id         String   @id @default(cuid())
+  tenantId   String
+  employeeId String
+  weekday    Int
+  startTime  String?
+  endTime    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, weekday])
+  @@index([tenantId, employeeId])
+}
+
+model ScheduleOverrideRequest {
+  id               String                 @id @default(cuid())
+  tenantId         String
+  employeeId       String
+  workDate         DateTime
+  attemptedAt      DateTime
+  reason           ScheduleOverrideReason
+  reasonMessage    String?
+  status           ScheduleOverrideStatus @default(PENDING)
+  approvedByUserId String?
+  approvedAt       DateTime?
+  rejectedByUserId String?
+  rejectedAt       DateTime?
+  consumedAt       DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  approvedBy User?    @relation("ScheduleOverrideApprovedBy", fields: [approvedByUserId], references: [id])
+  rejectedBy User?    @relation("ScheduleOverrideRejectedBy", fields: [rejectedByUserId], references: [id])
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, employeeId, workDate])
+  @@index([tenantId, workDate])
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  tenantId   String
+  employeeId String?
+  type       NotificationType
+  message    String
+  metadata   Json?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
+  employee Employee? @relation(fields: [employeeId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, employeeId])
+}
+
+model AdminDevice {
+  id            String   @id @default(cuid())
+  tenantId      String
+  expoPushToken String   @unique
+  label         String?
+  platform      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId])
+}
+
+model EmployeePunch {
+  id         String    @id @default(cuid())
+  tenantId   String
+  employeeId String
+  type       PunchType
+  occurredAt DateTime
+  notes      String?
+  ipAddress  String?
+  latitude   Float?
+  longitude  Float?
+  createdAt  DateTime  @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([tenantId, employeeId, occurredAt])
+}
+
+model PunchStatus {
+  id        String   @id @default(cuid())
+  tenantId  String
+  label     String
+  color     String
+  isIn      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, label])
+  @@index([tenantId])
+}
+
+model Punch {
+  id          String    @id @default(cuid())
+  tenantId    String
+  userId      String
+  type        PunchType
+  occurredAt  DateTime
+  notes       String?
+  ipAddress   String?
+  latitude    Float?
+  longitude   Float?
+  deviceLabel String?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, userId])
+  @@index([tenantId, occurredAt])
+}
+
+model TimeEntry {
+  id              String    @id @default(cuid())
+  tenantId        String
+  userId          String
+  startedAt       DateTime
+  endedAt         DateTime?
+  durationMinutes Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, userId])
+  @@index([tenantId, startedAt])
+}
+
+model TenantSettings {
+  id                         String   @id @default(cuid())
+  tenantId                   String   @unique
+  adminUsername              String   @default("admin")
+  adminPasswordHash          String   @default("")
+  companyName                String   @default("")
+  companyLegalName           String   @default("")
+  companyAddressLine1        String   @default("")
+  companyAddressLine2        String   @default("")
+  companyCity                String   @default("")
+  companyState               String   @default("")
+  companyPostalCode          String   @default("")
+  companyCountry             String   @default("")
+  companyPhone               String   @default("")
+  companyEmail               String   @default("")
+  companyWebsite             String   @default("")
+  companyTaxId               String   @default("")
+  timezone                   String
+  roundingMinutes            Int
+  requirePin                 Boolean  @default(true)
+  ipRestrictions             String?
+  reportsEnabled             Boolean  @default(true)
+  allowManualTimeEdits       Boolean  @default(true)
+  dailySalesReportingEnabled Boolean  @default(false)
+  companyOrdersEnabled       Boolean  @default(false)
+  multiLocationEnabled       Boolean  @default(false)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+model EmployeeTip {
+  id             String   @id @default(cuid())
+  tenantId       String
+  employeeId     String
+  workDate       DateTime
+  cashTips       Float    @default(0)
+  creditCardTips Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([tenantId, employeeId, workDate])
+  @@index([tenantId, workDate])
+  @@index([tenantId, employeeId])
+}
+
+model CompanyOrder {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  officeId            String?
+  supplierName        String
+  orderDate           DateTime
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant            Tenant             @relation(fields: [tenantId], references: [id])
+  office            Office?            @relation(fields: [officeId], references: [id])
+  createdByEmployee Employee?          @relation("CompanyOrderCreatedBy", fields: [createdByEmployeeId], references: [id])
+  items             CompanyOrderItem[]
+
+  @@index([tenantId, orderDate])
+  @@index([tenantId, supplierName])
+  @@index([tenantId, officeId, orderDate])
+}
+
+model CompanyOrderItem {
+  id             String   @id @default(cuid())
+  companyOrderId String
+  nameEs         String
+  nameEn         String
+  quantity       Float
+  createdAt      DateTime @default(now())
+
+  companyOrder CompanyOrder @relation(fields: [companyOrderId], references: [id], onDelete: Cascade)
+
+  @@index([companyOrderId])
+}
+
+model DailySalesReport {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  reportDate         DateTime
+  foodSales          Float    @default(0)
+  liquorSales        Float    @default(0)
+  cashPayments       Float    @default(0)
+  bankDepositBatch   String?
+  checkPayments      Float    @default(0)
+  creditCardPayments Float    @default(0)
+  otherPayments      Float    @default(0)
+  notes              String?
+  submittedByUserId  String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id])
+  submittedBy User?  @relation(fields: [submittedByUserId], references: [id])
+
+  @@unique([tenantId, reportDate])
+  @@index([tenantId, reportDate])
+  @@index([tenantId, submittedByUserId])
+}
+
+model DailyExpense {
+  id                String               @id @default(cuid())
+  tenantId          String
+  expenseDate       DateTime
+  companyName       String
+  paymentMethod     ExpensePaymentMethod
+  invoiceNumber     String
+  amount            Float                @default(0)
+  checkNumber       String?
+  payToCompany      String?
+  notes             String?
+  receiptData       Bytes?
+  receiptMimeType   String?
+  receiptFileName   String?
+  receiptUploadedAt DateTime?
+  submittedByUserId String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id])
+  submittedBy User?  @relation(fields: [submittedByUserId], references: [id])
+
+  @@index([tenantId, expenseDate])
+  @@index([tenantId, paymentMethod])
+  @@index([tenantId, submittedByUserId])
+}
