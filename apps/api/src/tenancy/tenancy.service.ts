@@ -40,6 +40,7 @@ type AdminAccess = {
     adminUsername: string;
     multiLocationEnabled: boolean;
     companyOrdersEnabled: boolean;
+    liquorInventoryEnabled: boolean;
   };
   ownerClockExempt: boolean;
 };
@@ -127,6 +128,7 @@ export class TenancyService {
         adminUsername: true,
         multiLocationEnabled: true,
         companyOrdersEnabled: true,
+        liquorInventoryEnabled: true,
       },
     });
 
@@ -134,6 +136,7 @@ export class TenancyService {
       settings?.adminUsername || DEFAULT_ADMIN_USERNAME
     ).trim();
     const companyOrdersEnabled = settings?.companyOrdersEnabled ?? false;
+    const liquorInventoryEnabled = settings?.liquorInventoryEnabled ?? false;
     const loginIdentifier = (
       authUser.name ||
       authUser.email ||
@@ -157,6 +160,7 @@ export class TenancyService {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
           companyOrdersEnabled,
+          liquorInventoryEnabled,
         },
         ownerClockExempt: false,
       };
@@ -182,6 +186,7 @@ export class TenancyService {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
           companyOrdersEnabled,
+          liquorInventoryEnabled,
         },
         ownerClockExempt:
           manager.isManager &&
@@ -204,6 +209,7 @@ export class TenancyService {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
           companyOrdersEnabled,
+          liquorInventoryEnabled,
         },
         ownerClockExempt: false,
       };
@@ -219,6 +225,7 @@ export class TenancyService {
         adminUsername,
         multiLocationEnabled: settings?.multiLocationEnabled ?? false,
         companyOrdersEnabled,
+        liquorInventoryEnabled,
       },
       ownerClockExempt: false,
     };
