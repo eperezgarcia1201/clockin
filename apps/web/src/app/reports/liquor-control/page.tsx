@@ -514,10 +514,20 @@ export default function LiquorControlPage() {
         .sort((a, b) => a.name.localeCompare(b.name))
         .map((item) => {
           const latestCount = latestCountByItem.get(item.id);
-          const barQuantity =
-            latestCount?.barQuantity ?? latestCount?.quantity ?? 0;
-          const bodegaQuantity = latestCount?.bodegaQuantity ?? 0;
-          const inventory = barQuantity + bodegaQuantity;
+          const hasSplitCount = Boolean(
+            latestCount &&
+              (latestCount.barQuantity !== null ||
+                latestCount.bodegaQuantity !== null),
+          );
+          const barQuantity = hasSplitCount
+            ? latestCount?.barQuantity ?? 0
+            : latestCount?.quantity ?? 0;
+          const bodegaQuantity = hasSplitCount
+            ? latestCount?.bodegaQuantity ?? 0
+            : 0;
+          const inventory = hasSplitCount
+            ? barQuantity + bodegaQuantity
+            : latestCount?.quantity ?? 0;
           const total =
             item.sizeMl && item.sizeMl > 0
               ? (item.unitCost * inventory) / item.sizeMl

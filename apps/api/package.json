@@ -12,6 +12,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "bootstrap:lasdelicias:liquor": "ts-node scripts/bootstrap-lasdelicias-liquor.ts",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:docker": "ts-node src/main.ts",
