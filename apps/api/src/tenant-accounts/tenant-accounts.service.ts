@@ -35,6 +35,8 @@ type TenantAccountRecord = {
     dailySalesReportingEnabled: boolean;
     companyOrdersEnabled: boolean;
     multiLocationEnabled: boolean;
+    liquorInventoryEnabled: boolean;
+    premiumFeaturesEnabled: boolean;
   } | null;
   memberships: {
     user: {
@@ -67,6 +69,8 @@ type TenantAccountResponse = {
     dailySalesReportingEnabled: boolean;
     companyOrdersEnabled: boolean;
     multiLocationEnabled: boolean;
+    liquorInventoryEnabled: boolean;
+    premiumFeaturesEnabled: boolean;
   };
   counts: {
     employees: number;
@@ -95,6 +99,10 @@ type TenantDataKey =
   | 'dailyExpenses'
   | 'companyOrders'
   | 'companyOrderItems'
+  | 'liquorInventoryItems'
+  | 'liquorInventoryMovements'
+  | 'liquorInventoryCounts'
+  | 'liquorBottleScans'
   | 'companyOrderCatalogOverrides';
 
 type TenantDataSummaryItem = {
@@ -146,6 +154,10 @@ const TENANT_DATA_LABELS: Record<TenantDataKey, string> = {
   dailyExpenses: 'Daily Expenses',
   companyOrders: 'Company Orders',
   companyOrderItems: 'Company Order Items',
+  liquorInventoryItems: 'Liquor Inventory Items',
+  liquorInventoryMovements: 'Liquor Inventory Movements',
+  liquorInventoryCounts: 'Liquor Inventory Counts',
+  liquorBottleScans: 'Liquor Bottle Scans',
   companyOrderCatalogOverrides: 'Company Order Catalog Overrides',
 };
 
@@ -161,6 +173,8 @@ const defaultFeatures = () => ({
   dailySalesReportingEnabled: false,
   companyOrdersEnabled: false,
   multiLocationEnabled: false,
+  liquorInventoryEnabled: false,
+  premiumFeaturesEnabled: false,
 });
 
 const slugify = (value: string): string =>
@@ -194,6 +208,8 @@ export class TenantAccountsService {
             dailySalesReportingEnabled: true,
             companyOrdersEnabled: true,
             multiLocationEnabled: true,
+            liquorInventoryEnabled: true,
+            premiumFeaturesEnabled: true,
           },
         },
         memberships: {
@@ -290,6 +306,8 @@ export class TenantAccountsService {
           dailySalesReportingEnabled: features.dailySalesReportingEnabled,
           companyOrdersEnabled: features.companyOrdersEnabled,
           multiLocationEnabled: features.multiLocationEnabled,
+          liquorInventoryEnabled: features.liquorInventoryEnabled,
+          premiumFeaturesEnabled: features.premiumFeaturesEnabled,
           ipRestrictions: null,
         },
       });
@@ -384,7 +402,9 @@ export class TenantAccountsService {
       dto.features?.allowManualTimeEdits !== undefined ||
       dto.features?.dailySalesReportingEnabled !== undefined ||
       dto.features?.companyOrdersEnabled !== undefined ||
-      dto.features?.multiLocationEnabled !== undefined;
+      dto.features?.multiLocationEnabled !== undefined ||
+      dto.features?.liquorInventoryEnabled !== undefined ||
+      dto.features?.premiumFeaturesEnabled !== undefined;
 
     const hasSettingsUpdate =
       hasFeaturesUpdate ||
@@ -434,6 +454,14 @@ export class TenantAccountsService {
               dto.features?.multiLocationEnabled !== undefined
                 ? dto.features.multiLocationEnabled
                 : undefined,
+            liquorInventoryEnabled:
+              dto.features?.liquorInventoryEnabled !== undefined
+                ? dto.features.liquorInventoryEnabled
+                : undefined,
+            premiumFeaturesEnabled:
+              dto.features?.premiumFeaturesEnabled !== undefined
+                ? dto.features.premiumFeaturesEnabled
+                : undefined,
           },
           create: {
             tenantId,
@@ -450,6 +478,8 @@ export class TenantAccountsService {
             dailySalesReportingEnabled: features.dailySalesReportingEnabled,
             companyOrdersEnabled: features.companyOrdersEnabled,
             multiLocationEnabled: features.multiLocationEnabled,
+            liquorInventoryEnabled: features.liquorInventoryEnabled,
+            premiumFeaturesEnabled: features.premiumFeaturesEnabled,
             ipRestrictions: null,
           },
         });
@@ -621,6 +651,10 @@ export class TenantAccountsService {
       dailyExpenses,
       companyOrders,
       companyOrderItems,
+      liquorInventoryItems,
+      liquorInventoryMovements,
+      liquorInventoryCounts,
+      liquorBottleScans,
       companyOrderCatalogOverrides,
     ] = await Promise.all([
       tx.membership.count({ where: { tenantId } }),
@@ -641,6 +675,10 @@ export class TenantAccountsService {
       tx.dailyExpense.count({ where: { tenantId } }),
       tx.companyOrder.count({ where: { tenantId } }),
       tx.companyOrderItem.count({ where: { companyOrder: { tenantId } } }),
+      tx.liquorInventoryItem.count({ where: { tenantId } }),
+      tx.liquorInventoryMovement.count({ where: { tenantId } }),
+      tx.liquorInventoryCount.count({ where: { tenantId } }),
+      tx.liquorBottleScan.count({ where: { tenantId } }),
       this.countCompanyOrderCatalogOverrides(tx, tenantId),
     ]);
 
@@ -663,6 +701,10 @@ export class TenantAccountsService {
       dailyExpenses,
       companyOrders,
       companyOrderItems,
+      liquorInventoryItems,
+      liquorInventoryMovements,
+      liquorInventoryCounts,
+      liquorBottleScans,
       companyOrderCatalogOverrides,
     };
   }
@@ -677,6 +719,10 @@ export class TenantAccountsService {
     await tx.scheduleOverrideRequest.deleteMany({ where: { tenantId } });
     await tx.employeeSchedule.deleteMany({ where: { tenantId } });
     await tx.notification.deleteMany({ where: { tenantId } });
+    await tx.liquorInventoryCount.deleteMany({ where: { tenantId } });
+    await tx.liquorInventoryMovement.deleteMany({ where: { tenantId } });
+    await tx.liquorBottleScan.deleteMany({ where: { tenantId } });
+    await tx.liquorInventoryItem.deleteMany({ where: { tenantId } });
     await tx.companyOrder.deleteMany({ where: { tenantId } });
     await tx.employeePunch.deleteMany({ where: { tenantId } });
     await tx.punch.deleteMany({ where: { tenantId } });
@@ -721,6 +767,10 @@ export class TenantAccountsService {
         dailyExpenses,
         companyOrders,
         companyOrderItems,
+        liquorInventoryItems,
+        liquorInventoryMovements,
+        liquorInventoryCounts,
+        liquorBottleScans,
         companyOrderCatalogOverrides,
       ] = await Promise.all([
         tx.tenantSettings.findMany({
@@ -798,6 +848,22 @@ export class TenantAccountsService {
         tx.companyOrderItem.findMany({
           where: { companyOrder: { tenantId } },
           orderBy: [{ companyOrderId: 'asc' }, { createdAt: 'asc' }],
+        }),
+        tx.liquorInventoryItem.findMany({
+          where: { tenantId },
+          orderBy: [{ name: 'asc' }, { createdAt: 'asc' }],
+        }),
+        tx.liquorInventoryMovement.findMany({
+          where: { tenantId },
+          orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
+        }),
+        tx.liquorInventoryCount.findMany({
+          where: { tenantId },
+          orderBy: [{ countDate: 'asc' }, { createdAt: 'asc' }],
+        }),
+        tx.liquorBottleScan.findMany({
+          where: { tenantId },
+          orderBy: [{ measuredAt: 'asc' }, { createdAt: 'asc' }],
         }),
         this.loadCompanyOrderCatalogOverrides(tx, tenantId),
       ]);
@@ -965,6 +1031,30 @@ export class TenantAccountsService {
           label: 'Company Order Items',
           tableName: 'CompanyOrderItem',
           rows: this.toRows(companyOrderItems),
+        },
+        {
+          key: 'liquorInventoryItems',
+          label: 'Liquor Inventory Items',
+          tableName: 'LiquorInventoryItem',
+          rows: this.toRows(liquorInventoryItems),
+        },
+        {
+          key: 'liquorInventoryMovements',
+          label: 'Liquor Inventory Movements',
+          tableName: 'LiquorInventoryMovement',
+          rows: this.toRows(liquorInventoryMovements),
+        },
+        {
+          key: 'liquorInventoryCounts',
+          label: 'Liquor Inventory Counts',
+          tableName: 'LiquorInventoryCount',
+          rows: this.toRows(liquorInventoryCounts),
+        },
+        {
+          key: 'liquorBottleScans',
+          label: 'Liquor Bottle Scans',
+          tableName: 'LiquorBottleScan',
+          rows: this.toRows(liquorBottleScans),
         },
         {
           key: 'companyOrderCatalogOverrides',
@@ -1276,6 +1366,10 @@ export class TenantAccountsService {
         features?.companyOrdersEnabled ?? defaults.companyOrdersEnabled,
       multiLocationEnabled:
         features?.multiLocationEnabled ?? defaults.multiLocationEnabled,
+      liquorInventoryEnabled:
+        features?.liquorInventoryEnabled ?? defaults.liquorInventoryEnabled,
+      premiumFeaturesEnabled:
+        features?.premiumFeaturesEnabled ?? defaults.premiumFeaturesEnabled,
     };
   }
 
@@ -1409,6 +1503,8 @@ export class TenantAccountsService {
             dailySalesReportingEnabled: true,
             companyOrdersEnabled: true,
             multiLocationEnabled: true,
+            liquorInventoryEnabled: true,
+            premiumFeaturesEnabled: true,
           },
         },
         memberships: {
@@ -1473,6 +1569,12 @@ export class TenantAccountsService {
         multiLocationEnabled:
           tenant.settings?.multiLocationEnabled ??
           defaults.multiLocationEnabled,
+        liquorInventoryEnabled:
+          tenant.settings?.liquorInventoryEnabled ??
+          defaults.liquorInventoryEnabled,
+        premiumFeaturesEnabled:
+          tenant.settings?.premiumFeaturesEnabled ??
+          defaults.premiumFeaturesEnabled,
       },
       counts: {
         employees: tenant._count.employees,

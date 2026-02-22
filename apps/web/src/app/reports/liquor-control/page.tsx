@@ -118,7 +118,121 @@ type MonthlyReport = {
   month: string;
   office: Office | null;
   summary: MonthlySummary;
+  intelligence?: {
+    generatedAt?: string;
+    topVarianceItems?: Array<{
+      itemId: string;
+      name: string;
+      supplierName: string | null;
+      varianceUnits: number;
+      varianceAbsUnits: number;
+      actualUsageUnits: number | null;
+      issuedUnits: number;
+      usageCost: number | null;
+    }>;
+    topUsageCostItems?: Array<{
+      itemId: string;
+      name: string;
+      supplierName: string | null;
+      actualUsageUnits: number | null;
+      actualUsageCost: number;
+    }>;
+    supplierVariance?: Array<{
+      supplierName: string;
+      itemCount: number;
+      usageCost: number;
+      varianceUnits: number;
+      varianceAbsUnits: number;
+    }>;
+    topRiskItems?: Array<{
+      itemId: string;
+      name: string;
+      supplierName: string | null;
+      riskScore: number;
+      varianceUnits: number | null;
+      wasteUnits: number;
+      adjustmentUnits: number;
+      reasons: string[];
+    }>;
+    costShockItems?: Array<{
+      itemId: string;
+      name: string;
+      supplierName: string | null;
+      sampleCount: number;
+      baselineCost: number;
+      averageOverrideCost: number;
+      deltaCost: number;
+      deltaPct: number;
+      severity: "normal" | "elevated" | "critical";
+      isShock: boolean;
+    }>;
+  };
   rows: MonthlyRow[];
+};
+
+type InvoiceExtractedRow = {
+  rowNumber: number;
+  company: string | null;
+  liquorName: string;
+  kind: string | null;
+  upc: string | null;
+  ml: number | null;
+  unitCost: number | null;
+  quantity: number | null;
+  lineTotal: number | null;
+  confidence: number | null;
+  matchedItem: {
+    id: string;
+    name: string;
+    brand: string | null;
+    upc: string | null;
+    supplierName: string | null;
+    sizeMl: number | null;
+    unitCost: number;
+  } | null;
+  matchScore: number | null;
+  matchedBy: string | null;
+  suggestedAction: "update" | "create";
+  costShock: {
+    isShock: boolean;
+    severity: "normal" | "elevated" | "critical";
+    baselineCost: number;
+    newCost: number;
+    deltaCost: number;
+    deltaPct: number;
+  } | null;
+};
+
+type InvoiceAnalyzeResponse = {
+  officeId: string | null;
+  invoice: {
+    supplierName: string | null;
+    invoiceNumber: string | null;
+    invoiceDate: string | null;
+    notes: string | null;
+  };
+  analysis: {
+    model: string;
+    summary: string;
+    totalExtractedRows: number;
+    matchedCount: number;
+    newItemCandidates: number;
+    costShockCount: number;
+    lowConfidenceCount: number;
+    unresolvedRows: number;
+  };
+  rows: InvoiceExtractedRow[];
+};
+
+type InvoiceApplyResponse = {
+  summary: {
+    processedRows: number;
+    skippedRows: number;
+    createdItems: number;
+    updatedItems: number;
+    purchaseMovementsCreated: number;
+    costShockCount: number;
+  };
 };
 
 type YearlyMonth = {
@@ -214,6 +328,8 @@ const copy = {
     officeRequired: "Pick a location or set an active location scope.",
     featureDisabled:
       "Liquor inventory is disabled for this tenant. Ask your owner to enable it in Tenant Features.",
+    premiumFeatureDisabled:
+      "Premium liquor features are disabled for this tenant. Ask your owner to enable Premium Features in Tenant Features.",
     spreadsheetEditor: "Spreadsheet Editor",
     company: "Company",
     liquorName: "Liquor Names",
@@ -246,8 +362,33 @@ const copy = {
     workspaceCatalog: "Catalog",
     workspaceOperations: "Movements & Counts",
     workspaceScans: "AI Bottle Scan",
+    workspaceInvoices: "Invoice OCR",
     workspaceAnalytics: "Analytics",
     workspaceActivity: "Activity Feed",
+    invoiceOcr: "Invoice OCR + Cost Shock",
+    invoiceOcrHint:
+      "Upload supplier invoice photos, extract rows with AI, and apply catalog/movement updates in one pass.",
+    analyzeInvoice: "Analyze Invoice",
+    applyInvoice: "Apply to Catalog",
+    includePurchases: "Create purchase movements",
+    invoiceDate: "Invoice Date",
+    invoiceNumber: "Invoice #",
+    supplierNameLabel: "Supplier",
+    invoiceRows: "Extracted Invoice Rows",
+    noInvoiceRows: "No rows extracted yet.",
+    varianceIntelligence: "Variance Intelligence",
+    topVarianceItems: "Top Variance Items",
+    topRiskItems: "Top Risk Items",
+    supplierVariance: "Supplier Variance",
+    costShockMonitor: "Cost Shock Monitor",
+    match: "Match",
+    suggestedAction: "Action",
+    severity: "Severity",
+    shock: "Shock",
+    baselineCost: "Baseline Cost",
+    newCost: "New Cost",
+    deltaCost: "Delta Cost",
+    deltaPct: "Delta %",
     noItems: "No liquor items yet. Add one in Catalog.",
     noMovements: "No movements yet.",
     noCounts: "No counts yet.",
@@ -302,6 +443,8 @@ const copy = {
     officeRequired: "Selecciona ubicación o usa el alcance activo de ubicación.",
     featureDisabled:
       "El inventario de licor está deshabilitado para este tenant. Pide al owner activarlo en las funciones del tenant.",
+    premiumFeatureDisabled:
+      "Las funciones premium de licor están deshabilitadas para este tenant. Pide al owner activarlas en Funciones del Tenant.",
     spreadsheetEditor: "Editor de Hoja",
     company: "Compañía",
     liquorName: "Nombres de Licor",
@@ -334,8 +477,33 @@ const copy = {
     workspaceCatalog: "Catálogo",
     workspaceOperations: "Movimientos y Conteos",
     workspaceScans: "Escaneo AI",
+    workspaceInvoices: "OCR Facturas",
     workspaceAnalytics: "Analítica",
     workspaceActivity: "Actividad",
+    invoiceOcr: "OCR de Facturas + Alerta de Costos",
+    invoiceOcrHint:
+      "Sube fotos de facturas de proveedor, extrae filas con IA y aplica actualizaciones de catálogo/movimientos.",
+    analyzeInvoice: "Analizar Factura",
+    applyInvoice: "Aplicar al Catálogo",
+    includePurchases: "Crear movimientos de compra",
+    invoiceDate: "Fecha Factura",
+    invoiceNumber: "Factura #",
+    supplierNameLabel: "Proveedor",
+    invoiceRows: "Filas Extraídas",
+    noInvoiceRows: "Aún no hay filas extraídas.",
+    varianceIntelligence: "Inteligencia de Variaciones",
+    topVarianceItems: "Mayores Variaciones",
+    topRiskItems: "Mayor Riesgo",
+    supplierVariance: "Variación por Proveedor",
+    costShockMonitor: "Monitor de Choques de Costo",
+    match: "Coincidencia",
+    suggestedAction: "Acción",
+    severity: "Severidad",
+    shock: "Choque",
+    baselineCost: "Costo Base",
+    newCost: "Costo Nuevo",
+    deltaCost: "Diferencia Costo",
+    deltaPct: "Diferencia %",
     noItems: "Aún no hay artículos de licor. Agrega uno en Catálogo.",
     noMovements: "Aún no hay movimientos.",
     noCounts: "Aún no hay conteos.",
@@ -350,6 +518,7 @@ type WorkspaceKey =
   | "catalog"
   | "operations"
   | "scans"
+  | "invoices"
   | "analytics"
   | "activity";
 
@@ -417,6 +586,7 @@ export default function LiquorControlPage() {
   const [year, setYear] = useState(currentYearKey);
   const [officeId, setOfficeId] = useState("");
   const [targetCostPct, setTargetCostPct] = useState("0.30");
+  const [liquorPremiumEnabled, setLiquorPremiumEnabled] = useState(false);
 
   const [offices, setOffices] = useState<Office[]>([]);
   const [items, setItems] = useState<LiquorCatalogItem[]>([]);
@@ -483,19 +653,51 @@ export default function LiquorControlPage() {
     null,
   );
   const [analyzingScan, setAnalyzingScan] = useState(false);
+  const [invoiceForm, setInvoiceForm] = useState({
+    officeId: "",
+    invoiceDate: todayDateKey(),
+    invoiceNumber: "",
+    supplierName: "",
+    notes: "",
+    imageDataUrl: "",
+    imageName: "",
+    createPurchaseMovements: true,
+  });
+  const [invoiceResult, setInvoiceResult] = useState<InvoiceAnalyzeResponse | null>(
+    null,
+  );
+  const [analyzingInvoice, setAnalyzingInvoice] = useState(false);
+  const hasLiquorPremiumAccess = liquorPremiumEnabled;
 
   const parsedTargetCostPct = useMemo(() => {
     const value = Number(targetCostPct);
     return Number.isFinite(value) ? value : null;
   }, [targetCostPct]);
-  const workspaceOptions: Array<{ key: WorkspaceKey; label: string }> = [
-    { key: "inventory", label: t.workspaceInventory },
-    { key: "catalog", label: t.workspaceCatalog },
-    { key: "operations", label: t.workspaceOperations },
-    { key: "scans", label: t.workspaceScans },
-    { key: "analytics", label: t.workspaceAnalytics },
-    { key: "activity", label: t.workspaceActivity },
-  ];
+  const workspaceOptions = useMemo<Array<{ key: WorkspaceKey; label: string }>>(
+    () => [
+      { key: "inventory", label: t.workspaceInventory },
+      { key: "catalog", label: t.workspaceCatalog },
+      { key: "operations", label: t.workspaceOperations },
+      ...(hasLiquorPremiumAccess
+        ? ([
+            { key: "scans", label: t.workspaceScans },
+            { key: "invoices", label: t.workspaceInvoices },
+          ] as Array<{ key: WorkspaceKey; label: string }>)
+        : []),
+      { key: "analytics", label: t.workspaceAnalytics },
+      { key: "activity", label: t.workspaceActivity },
+    ],
+    [
+      hasLiquorPremiumAccess,
+      t.workspaceActivity,
+      t.workspaceAnalytics,
+      t.workspaceCatalog,
+      t.workspaceInventory,
+      t.workspaceInvoices,
+      t.workspaceOperations,
+      t.workspaceScans,
+    ],
+  );
   const isAnyActionBusy = activeAction !== null;
 
   const latestCountByItem = useMemo(() => {
@@ -566,6 +768,15 @@ export default function LiquorControlPage() {
     });
   }, [spreadsheetRows]);
 
+  useEffect(() => {
+    if (
+      !hasLiquorPremiumAccess &&
+      (workspace === "scans" || workspace === "invoices")
+    ) {
+      setWorkspace("inventory");
+    }
+  }, [hasLiquorPremiumAccess, workspace]);
+
   const loadAll = useCallback(async (options?: { silent?: boolean }) => {
     if (parsedTargetCostPct === null) {
       setStatusKind("danger");
@@ -578,17 +789,23 @@ export default function LiquorControlPage() {
       setStatus(null);
     }
     try {
+      let hasLiquorAccess = true;
+      let hasPremiumAccess = false;
       const accessResponse = await fetch("/api/access/me", { cache: "no-store" });
       if (accessResponse.ok) {
         const accessPayload = (await accessResponse.json()) as {
           liquorInventoryEnabled?: boolean;
+          premiumFeaturesEnabled?: boolean;
           permissions?: { reports?: boolean };
         };
-        const canAccessLiquorControl =
+        hasLiquorAccess =
           Boolean(accessPayload.permissions?.reports) &&
           Boolean(accessPayload.liquorInventoryEnabled);
+        hasPremiumAccess =
+          hasLiquorAccess && Boolean(accessPayload.premiumFeaturesEnabled);
+        setLiquorPremiumEnabled(hasPremiumAccess);
 
-        if (!canAccessLiquorControl) {
+        if (!hasLiquorAccess) {
           setItems([]);
           setMovements([]);
           setCounts([]);
@@ -599,6 +816,8 @@ export default function LiquorControlPage() {
           setStatus(t.featureDisabled);
           return;
         }
+      } else {
+        setLiquorPremiumEnabled(false);
       }
 
       const queryMonthly = new URLSearchParams();
@@ -621,6 +840,12 @@ export default function LiquorControlPage() {
         queryFeed.set("officeId", officeId);
       }
 
+      const bottleScansRequest = hasPremiumAccess
+        ? fetch(`/api/liquor-inventory/bottle-scans?${queryFeed.toString()}`, {
+            cache: "no-store",
+          })
+        : Promise.resolve(null);
+
       const [
         catalogResponse,
         movementResponse,
@@ -639,9 +864,7 @@ export default function LiquorControlPage() {
         fetch(`/api/liquor-inventory/counts?${queryFeed.toString()}`, {
           cache: "no-store",
         }),
-        fetch(`/api/liquor-inventory/bottle-scans?${queryFeed.toString()}`, {
-          cache: "no-store",
-        }),
+        bottleScansRequest,
         fetch(`/api/liquor-inventory/report/monthly?${queryMonthly.toString()}`, {
           cache: "no-store",
         }),
@@ -669,7 +892,7 @@ export default function LiquorControlPage() {
           await readErrorMessage(countResponse, "Unable to load count feed."),
         );
       }
-      if (!bottleScansResponse.ok) {
+      if (bottleScansResponse && !bottleScansResponse.ok) {
         throw new Error(
           await readErrorMessage(
             bottleScansResponse,
@@ -703,9 +926,11 @@ export default function LiquorControlPage() {
       const countPayload = (await countResponse.json()) as {
         counts?: LiquorCount[];
       };
-      const bottleScansPayload = (await bottleScansResponse.json()) as {
-        scans?: BottleScan[];
-      };
+      const bottleScansPayload = bottleScansResponse
+        ? ((await bottleScansResponse.json()) as {
+            scans?: BottleScan[];
+          })
+        : { scans: [] as BottleScan[] };
       const monthlyPayload = (await monthlyResponse.json()) as MonthlyReport;
       const yearlyPayload = (await yearlyResponse.json()) as YearlyControl;
 
@@ -1139,6 +1364,9 @@ export default function LiquorControlPage() {
   };
 
   const analyzeBottlePhoto = async () => {
+    if (!hasLiquorPremiumAccess) {
+      throw new Error(t.premiumFeatureDisabled);
+    }
     const itemId = scanForm.itemId.trim();
     const selectedOfficeId = scanForm.officeId.trim() || officeId;
     if (!itemId) {
@@ -1188,6 +1416,140 @@ export default function LiquorControlPage() {
       }));
     } finally {
       setAnalyzingScan(false);
+    }
+  };
+
+  const onInvoicePhotoSelected = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setInvoiceForm((prev) => ({
+        ...prev,
+        imageDataUrl: dataUrl,
+        imageName: file.name,
+      }));
+    } catch (error) {
+      setStatusKind("danger");
+      setStatus(
+        error instanceof Error ? error.message : "Unable to read selected photo.",
+      );
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const analyzeInvoicePhoto = async () => {
+    if (!hasLiquorPremiumAccess) {
+      throw new Error(t.premiumFeatureDisabled);
+    }
+    const selectedOfficeId = invoiceForm.officeId.trim() || officeId;
+    if (!selectedOfficeId) {
+      throw new Error(t.officeRequired);
+    }
+    if (!invoiceForm.imageDataUrl) {
+      throw new Error("Select an invoice photo first.");
+    }
+
+    setAnalyzingInvoice(true);
+    try {
+      const response = await fetch("/api/liquor-inventory/invoices/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          officeId: selectedOfficeId,
+          invoiceDate: invoiceForm.invoiceDate || undefined,
+          invoiceNumber: invoiceForm.invoiceNumber.trim() || undefined,
+          supplierName: invoiceForm.supplierName.trim() || undefined,
+          notes: invoiceForm.notes.trim() || undefined,
+          imageDataUrl: invoiceForm.imageDataUrl,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(
+          await readErrorMessage(response, "Unable to analyze invoice photo."),
+        );
+      }
+      const payload = (await response.json()) as InvoiceAnalyzeResponse;
+      setInvoiceResult(payload);
+      setInvoiceForm((prev) => ({
+        ...prev,
+        imageDataUrl: "",
+        imageName: "",
+        supplierName: payload.invoice.supplierName || prev.supplierName,
+        invoiceNumber: payload.invoice.invoiceNumber || prev.invoiceNumber,
+        invoiceDate: payload.invoice.invoiceDate || prev.invoiceDate,
+        notes: payload.invoice.notes || prev.notes,
+      }));
+    } finally {
+      setAnalyzingInvoice(false);
+    }
+  };
+
+  const applyInvoiceAnalysis = async () => {
+    if (!hasLiquorPremiumAccess) {
+      throw new Error(t.premiumFeatureDisabled);
+    }
+    if (!invoiceResult || invoiceResult.rows.length === 0) {
+      throw new Error("Analyze an invoice with at least one row before applying.");
+    }
+    const selectedOfficeId = invoiceForm.officeId.trim() || officeId;
+    if (!selectedOfficeId) {
+      throw new Error(t.officeRequired);
+    }
+
+    const response = await fetch("/api/liquor-inventory/invoices/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        officeId: selectedOfficeId,
+        invoiceDate: invoiceForm.invoiceDate || undefined,
+        invoiceNumber: invoiceForm.invoiceNumber.trim() || undefined,
+        supplierName: invoiceForm.supplierName.trim() || undefined,
+        notes: invoiceForm.notes.trim() || undefined,
+        createPurchaseMovements: invoiceForm.createPurchaseMovements,
+        rows: invoiceResult.rows.map((row) => ({
+          existingItemId: row.matchedItem?.id || undefined,
+          apply: true,
+          company: row.company || undefined,
+          liquorName: row.liquorName,
+          kind: row.kind || undefined,
+          upc: row.upc || undefined,
+          ml: row.ml ?? undefined,
+          unitCost: row.unitCost ?? undefined,
+          quantity: row.quantity ?? undefined,
+        })),
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(
+        await readErrorMessage(response, "Unable to apply invoice rows."),
+      );
+    }
+    await response.json().catch(() => ({} as InvoiceApplyResponse));
+    setInvoiceResult(null);
+  };
+
+  const runInvoiceAnalyze = async () => {
+    if (activeAction) {
+      return;
+    }
+    setActiveAction("analyze-invoice");
+    setStatusKind("info");
+    setStatus(t.processing);
+    try {
+      await analyzeInvoicePhoto();
+      setStatusKind("success");
+      setStatus("Invoice analyzed.");
+    } catch (error) {
+      setStatusKind("danger");
+      setStatus(error instanceof Error ? error.message : "Invoice analysis failed.");
+    } finally {
+      setActiveAction(null);
     }
   };
 
@@ -1339,6 +1701,132 @@ export default function LiquorControlPage() {
           <div className="text-muted small">
             {t.items}: {monthly.summary.itemCount} • {t.missingCount}:{" "}
             {monthly.summary.itemsMissingClosingCount}
+          </div>
+        </section>
+      ) : null}
+
+      {workspace === "analytics" && !hasLiquorPremiumAccess ? (
+        <section className="admin-card d-flex flex-column gap-3">
+          <div className="alert alert-info mb-0" role="alert">
+            {t.premiumFeatureDisabled}
+          </div>
+        </section>
+      ) : null}
+
+      {workspace === "analytics" && monthly?.intelligence ? (
+        <section className="admin-card d-flex flex-column gap-3">
+          <h2 className="h5 mb-0">{t.varianceIntelligence}</h2>
+          <div className="row g-3">
+            <div className="col-12 col-xl-6">
+              <div className="small fw-semibold mb-2">{t.topVarianceItems}</div>
+              <div className="table-responsive">
+                <table className="report-table">
+                  <thead>
+                    <tr>
+                      <th>{t.item}</th>
+                      <th>{t.supplier}</th>
+                      <th>{t.varianceMl}</th>
+                      <th>{t.usageCost}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(monthly.intelligence.topVarianceItems || []).map((row) => (
+                      <tr key={`variance-${row.itemId}`}>
+                        <td>{row.name}</td>
+                        <td>{row.supplierName || "—"}</td>
+                        <td>{formatQty(row.varianceUnits)}</td>
+                        <td>{formatMoney(row.usageCost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="col-12 col-xl-6">
+              <div className="small fw-semibold mb-2">{t.topRiskItems}</div>
+              <div className="table-responsive">
+                <table className="report-table">
+                  <thead>
+                    <tr>
+                      <th>{t.item}</th>
+                      <th>{t.severity}</th>
+                      <th>Risk Score</th>
+                      <th>{t.varianceMl}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(monthly.intelligence.topRiskItems || []).map((row) => (
+                      <tr key={`risk-${row.itemId}`}>
+                        <td>{row.name}</td>
+                        <td>
+                          {row.riskScore >= 70
+                            ? "High"
+                            : row.riskScore >= 40
+                              ? "Medium"
+                              : "Low"}
+                        </td>
+                        <td>{formatPercent(row.riskScore)}</td>
+                        <td>{formatQty(row.varianceUnits)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="col-12 col-xl-6">
+              <div className="small fw-semibold mb-2">{t.supplierVariance}</div>
+              <div className="table-responsive">
+                <table className="report-table">
+                  <thead>
+                    <tr>
+                      <th>{t.supplier}</th>
+                      <th>{t.items}</th>
+                      <th>{t.usageCost}</th>
+                      <th>{t.varianceMl}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(monthly.intelligence.supplierVariance || []).map((row) => (
+                      <tr key={`supplier-${row.supplierName}`}>
+                        <td>{row.supplierName}</td>
+                        <td>{row.itemCount}</td>
+                        <td>{formatMoney(row.usageCost)}</td>
+                        <td>{formatQty(row.varianceUnits)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="col-12 col-xl-6">
+              <div className="small fw-semibold mb-2">{t.costShockMonitor}</div>
+              <div className="table-responsive">
+                <table className="report-table">
+                  <thead>
+                    <tr>
+                      <th>{t.item}</th>
+                      <th>{t.baselineCost}</th>
+                      <th>{t.newCost}</th>
+                      <th>{t.deltaPct}</th>
+                      <th>{t.severity}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(monthly.intelligence.costShockItems || []).map((row) => (
+                      <tr key={`shock-${row.itemId}`}>
+                        <td>{row.name}</td>
+                        <td>{formatMoney(row.baselineCost)}</td>
+                        <td>{formatMoney(row.averageOverrideCost)}</td>
+                        <td>{formatPercent(row.deltaPct)}</td>
+                        <td className={row.isShock ? "text-danger fw-semibold" : ""}>
+                          {row.severity}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
       ) : null}
@@ -1660,8 +2148,14 @@ export default function LiquorControlPage() {
 
       {workspace === "scans" ? (
       <section id="liquor-ai-scan" className="admin-card d-flex flex-column gap-3">
-        <h2 className="h5 mb-0">{t.bottleScan}</h2>
-        <div className="text-muted small">{t.bottleScanHint}</div>
+        {!hasLiquorPremiumAccess ? (
+          <div className="alert alert-info mb-0" role="alert">
+            {t.premiumFeatureDisabled}
+          </div>
+        ) : (
+          <>
+            <h2 className="h5 mb-0">{t.bottleScan}</h2>
+            <div className="text-muted small">{t.bottleScanHint}</div>
         <div className="row g-2 align-items-end">
           <div className="col-12 col-md-3">
             <label className="form-label">{t.item}</label>
@@ -1782,6 +2276,229 @@ export default function LiquorControlPage() {
             </div>
           </div>
         ) : null}
+          </>
+        )}
+      </section>
+      ) : null}
+
+      {workspace === "invoices" ? (
+      <section className="admin-card d-flex flex-column gap-3">
+        {!hasLiquorPremiumAccess ? (
+          <div className="alert alert-info mb-0" role="alert">
+            {t.premiumFeatureDisabled}
+          </div>
+        ) : (
+          <>
+            <h2 className="h5 mb-0">{t.invoiceOcr}</h2>
+            <div className="text-muted small">{t.invoiceOcrHint}</div>
+        <div className="row g-2 align-items-end">
+          <div className="col-12 col-md-2">
+            <label className="form-label">{t.office}</label>
+            <select
+              className="form-select"
+              value={invoiceForm.officeId}
+              onChange={(event) =>
+                setInvoiceForm((prev) => ({ ...prev, officeId: event.target.value }))
+              }
+            >
+              <option value="">Use selected scope</option>
+              {offices.map((office) => (
+                <option key={office.id} value={office.id}>
+                  {office.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-6 col-md-2">
+            <label className="form-label">{t.invoiceDate}</label>
+            <input
+              type="date"
+              className="form-control"
+              value={invoiceForm.invoiceDate}
+              onChange={(event) =>
+                setInvoiceForm((prev) => ({ ...prev, invoiceDate: event.target.value }))
+              }
+            />
+          </div>
+          <div className="col-6 col-md-2">
+            <label className="form-label">{t.invoiceNumber}</label>
+            <input
+              className="form-control"
+              value={invoiceForm.invoiceNumber}
+              onChange={(event) =>
+                setInvoiceForm((prev) => ({
+                  ...prev,
+                  invoiceNumber: event.target.value,
+                }))
+              }
+              placeholder="INV-1001"
+            />
+          </div>
+          <div className="col-12 col-md-3">
+            <label className="form-label">{t.supplierNameLabel}</label>
+            <input
+              className="form-control"
+              value={invoiceForm.supplierName}
+              onChange={(event) =>
+                setInvoiceForm((prev) => ({
+                  ...prev,
+                  supplierName: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="col-12 col-md-3">
+            <label className="form-label">{t.uploadPhoto}</label>
+            <input
+              type="file"
+              accept="image/*"
+              className="form-control"
+              onChange={(event) => {
+                void onInvoicePhotoSelected(event);
+              }}
+            />
+          </div>
+          <div className="col-12 col-md-8">
+            <label className="form-label">Notes</label>
+            <input
+              className="form-control"
+              value={invoiceForm.notes}
+              onChange={(event) =>
+                setInvoiceForm((prev) => ({ ...prev, notes: event.target.value }))
+              }
+            />
+          </div>
+          <div className="col-12 col-md-4 d-flex gap-2 align-items-center">
+            <div className="form-check">
+              <input
+                id="invoice-create-purchases"
+                className="form-check-input"
+                type="checkbox"
+                checked={invoiceForm.createPurchaseMovements}
+                onChange={(event) =>
+                  setInvoiceForm((prev) => ({
+                    ...prev,
+                    createPurchaseMovements: event.target.checked,
+                  }))
+                }
+              />
+              <label className="form-check-label" htmlFor="invoice-create-purchases">
+                {t.includePurchases}
+              </label>
+            </div>
+          </div>
+          <div className="col-6 col-md-3">
+            <button
+              type="button"
+              className="btn btn-primary w-100"
+              disabled={
+                loading ||
+                isAnyActionBusy ||
+                analyzingInvoice ||
+                !(invoiceForm.officeId.trim() || officeId) ||
+                !invoiceForm.imageDataUrl
+              }
+              onClick={() => {
+                void runInvoiceAnalyze();
+              }}
+            >
+              {analyzingInvoice ? t.analyzingPhoto : t.analyzeInvoice}
+            </button>
+          </div>
+          <div className="col-6 col-md-3">
+            <button
+              type="button"
+              className="btn btn-outline-primary w-100"
+              disabled={
+                loading ||
+                isAnyActionBusy ||
+                !invoiceResult ||
+                invoiceResult.rows.length === 0
+              }
+              onClick={() => {
+                void runWithReload(
+                  "apply-invoice",
+                  applyInvoiceAnalysis,
+                  "Invoice rows applied to catalog.",
+                );
+              }}
+            >
+              {t.applyInvoice}
+            </button>
+          </div>
+        </div>
+        {invoiceForm.imageName ? (
+          <div className="small text-muted">{invoiceForm.imageName}</div>
+        ) : null}
+        {invoiceResult ? (
+          <div className="d-flex flex-column gap-2">
+            <div className="alert alert-info mb-0">
+              <div>
+                {t.model}: {invoiceResult.analysis.model}
+              </div>
+              <div>{invoiceResult.analysis.summary}</div>
+              <div>
+                {t.items}: {invoiceResult.analysis.totalExtractedRows} • Match{" "}
+                {invoiceResult.analysis.matchedCount} • {t.shock}{" "}
+                {invoiceResult.analysis.costShockCount}
+              </div>
+            </div>
+            <h3 className="h6 mb-0">{t.invoiceRows}</h3>
+            <div className="table-responsive">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>{t.company}</th>
+                    <th>{t.liquorName}</th>
+                    <th>{t.liquorKind}</th>
+                    <th>UPC</th>
+                    <th>ml</th>
+                    <th>Cost</th>
+                    <th>Qty</th>
+                    <th>{t.match}</th>
+                    <th>{t.deltaPct}</th>
+                    <th>{t.severity}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoiceResult.rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="text-muted text-center py-3">
+                        {t.noInvoiceRows}
+                      </td>
+                    </tr>
+                  ) : null}
+                  {invoiceResult.rows.map((row) => (
+                    <tr key={`invoice-row-${row.rowNumber}-${row.liquorName}`}>
+                      <td>{row.rowNumber}</td>
+                      <td>{row.company || "—"}</td>
+                      <td>{row.liquorName}</td>
+                      <td>{row.kind || "—"}</td>
+                      <td>{row.upc || "—"}</td>
+                      <td>{formatQty(row.ml)}</td>
+                      <td>{formatMoney(row.unitCost)}</td>
+                      <td>{formatQty(row.quantity)}</td>
+                      <td>
+                        {row.matchedItem ? `${row.matchedItem.name}` : row.suggestedAction}
+                      </td>
+                      <td>{formatPercent(row.costShock ? row.costShock.deltaPct * 100 : null)}</td>
+                      <td
+                        className={
+                          row.costShock?.isShock ? "text-danger fw-semibold" : ""
+                        }
+                      >
+                        {row.costShock ? row.costShock.severity : "normal"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+          </>
+        )}
       </section>
       ) : null}
 

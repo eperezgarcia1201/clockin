@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useUiLanguage } from "../../../lib/ui-language";
 
 type TenantFeatures = {
   requirePin: boolean;
@@ -9,6 +10,8 @@ type TenantFeatures = {
   dailySalesReportingEnabled: boolean;
   companyOrdersEnabled: boolean;
   multiLocationEnabled: boolean;
+  liquorInventoryEnabled: boolean;
+  premiumFeaturesEnabled: boolean;
 };
 
 type TenantAccount = {
@@ -85,6 +88,8 @@ const defaultFeatures: TenantFeatures = {
   dailySalesReportingEnabled: false,
   companyOrdersEnabled: false,
   multiLocationEnabled: false,
+  liquorInventoryEnabled: false,
+  premiumFeaturesEnabled: false,
 };
 
 const timezoneOptions = [
@@ -150,17 +155,27 @@ const resolveApiError = (payload: ApiErrorPayload, fallback: string) => {
   return fallback;
 };
 
-const isLegacyMultiLocationError = (payload: ApiErrorPayload) => {
+const isLegacyFeatureValidationError = (payload: ApiErrorPayload) => {
   const message = resolveApiError(payload, "");
-  return message.includes("features.property multiLocationEnabled should not exist");
+  return (
+    message.includes("features.property multiLocationEnabled should not exist") ||
+    message.includes("features.property liquorInventoryEnabled should not exist") ||
+    message.includes("features.property premiumFeaturesEnabled should not exist")
+  );
 };
 
 const buildTenantPayload = (
   source: TenantPayloadSource,
   roundingMinutes: number,
-  options?: { includeMultiLocation?: boolean },
+  options?: {
+    includeMultiLocation?: boolean;
+    includeLiquorInventory?: boolean;
+    includePremiumFeatures?: boolean;
+  },
 ) => {
   const includeMultiLocation = options?.includeMultiLocation ?? true;
+  const includeLiquorInventory = options?.includeLiquorInventory ?? true;
+  const includePremiumFeatures = options?.includePremiumFeatures ?? true;
   const features: Record<string, boolean> = {
     requirePin: source.features.requirePin,
     reportsEnabled: source.features.reportsEnabled,
@@ -171,6 +186,12 @@ const buildTenantPayload = (
 
   if (includeMultiLocation) {
     features.multiLocationEnabled = source.features.multiLocationEnabled;
+  }
+  if (includeLiquorInventory) {
+    features.liquorInventoryEnabled = source.features.liquorInventoryEnabled;
+  }
+  if (includePremiumFeatures) {
+    features.premiumFeaturesEnabled = source.features.premiumFeaturesEnabled;
   }
 
   return {
@@ -194,6 +215,8 @@ const emptyDeleteDownloads = (): TenantDeleteDownloads => ({
 });
 
 export default function TenantAccountsPage() {
+  const lang = useUiLanguage();
+  const tr = (en: string, es: string) => (lang === "es" ? es : en);
   const [tenants, setTenants] = useState<TenantAccount[]>([]);
   const [drafts, setDrafts] = useState<Record<string, TenantDraft>>({});
   const [createForm, setCreateForm] = useState<CreateForm>(emptyCreateForm);
@@ -236,7 +259,13 @@ export default function TenantAccountsPage() {
 
       if (!response.ok) {
         setStatus(
-          resolveApiError(data, "Unable to load tenant accounts."),
+          resolveApiError(
+            data,
+            tr(
+              "Unable to load tenant accounts.",
+              "No se pudieron cargar las cuentas de tenant.",
+            ),
+          ),
         );
         setTenants([]);
         syncDrafts([]);
@@ -250,7 +279,12 @@ export default function TenantAccountsPage() {
         setCreateOpen(true);
       }
     } catch {
-      setStatus("Unable to load tenant accounts.");
+      setStatus(
+        tr(
+          "Unable to load tenant accounts.",
+          "No se pudieron cargar las cuentas de tenant.",
+        ),
+      );
       setTenants([]);
       syncDrafts([]);
     } finally {
@@ -314,13 +348,18 @@ export default function TenantAccountsPage() {
     setStatus(null);
 
     if (!createForm.name.trim()) {
-      setStatus("Tenant name is required.");
+      setStatus(tr("Tenant name is required.", "El nombre del tenant es requerido."));
       return;
     }
 
     const roundingMinutes = parseRounding(createForm.roundingMinutes);
     if (roundingMinutes === null) {
-      setStatus("Rounding minutes must be a non-negative number.");
+      setStatus(
+        tr(
+          "Rounding minutes must be a non-negative number.",
+          "Los minutos de redondeo deben ser un numero no negativo.",
+        ),
+      );
       return;
     }
 
@@ -335,7 +374,7 @@ export default function TenantAccountsPage() {
 
       let data = (await response.json()) as TenantAccount & ApiErrorPayload;
 
-      if (!response.ok && isLegacyMultiLocationError(data)) {
+      if (!response.ok && isLegacyFeatureValidationError(data)) {
         usedLegacyFallback = true;
         response = await fetch("/api/tenant-accounts", {
           method: "POST",
@@ -343,6 +382,7 @@ export default function TenantAccountsPage() {
           body: JSON.stringify(
             buildTenantPayload(createForm, roundingMinutes, {
               includeMultiLocation: false,
+              includeLiquorInventory: false,
             }),
           ),
         });
@@ -351,7 +391,13 @@ export default function TenantAccountsPage() {
 
       if (!response.ok) {
         setStatus(
-          resolveApiError(data, "Unable to create tenant account."),
+          resolveApiError(
+            data,
+            tr(
+              "Unable to create tenant account.",
+              "No se pudo crear la cuenta del tenant.",
+            ),
+          ),
         );
         return;
       }
@@ -363,11 +409,19 @@ export default function TenantAccountsPage() {
       setCreateOpen(false);
       setStatus(
         usedLegacyFallback
-          ? "Tenant account created. Multi-location toggle needs API restart/update to be saved."
-          : "Tenant account created.",
+          ? tr(
+              "Tenant account created. Some new tenant feature toggles need API restart/update to be saved.",
+              "Cuenta de tenant creada. Algunos nuevos interruptores de funciones necesitan reinicio/actualizacion del API para guardarse.",
+            )
+          : tr("Tenant account created.", "Cuenta de tenant creada."),
       );
     } catch {
-      setStatus("Unable to create tenant account.");
+      setStatus(
+        tr(
+          "Unable to create tenant account.",
+          "No se pudo crear la cuenta del tenant.",
+        ),
+      );
     } finally {
       setCreating(false);
     }
@@ -380,13 +434,18 @@ export default function TenantAccountsPage() {
     }
 
     if (!draft.name.trim()) {
-      setStatus("Tenant name is required.");
+      setStatus(tr("Tenant name is required.", "El nombre del tenant es requerido."));
       return;
     }
 
     const roundingMinutes = parseRounding(draft.roundingMinutes);
     if (roundingMinutes === null) {
-      setStatus("Rounding minutes must be a non-negative number.");
+      setStatus(
+        tr(
+          "Rounding minutes must be a non-negative number.",
+          "Los minutos de redondeo deben ser un numero no negativo.",
+        ),
+      );
       return;
     }
 
@@ -402,7 +461,7 @@ export default function TenantAccountsPage() {
 
       let data = (await response.json()) as TenantAccount & ApiErrorPayload;
 
-      if (!response.ok && isLegacyMultiLocationError(data)) {
+      if (!response.ok && isLegacyFeatureValidationError(data)) {
         usedLegacyFallback = true;
         response = await fetch(`/api/tenant-accounts/${tenantId}`, {
           method: "PATCH",
@@ -410,6 +469,7 @@ export default function TenantAccountsPage() {
           body: JSON.stringify(
             buildTenantPayload(draft, roundingMinutes, {
               includeMultiLocation: false,
+              includeLiquorInventory: false,
             }),
           ),
         });
@@ -418,7 +478,13 @@ export default function TenantAccountsPage() {
 
       if (!response.ok) {
         setStatus(
-          resolveApiError(data, "Unable to update tenant account."),
+          resolveApiError(
+            data,
+            tr(
+              "Unable to update tenant account.",
+              "No se pudo actualizar la cuenta del tenant.",
+            ),
+          ),
         );
         return;
       }
@@ -431,11 +497,19 @@ export default function TenantAccountsPage() {
       setEditingTenantId(null);
       setStatus(
         usedLegacyFallback
-          ? "Tenant account updated. Multi-location toggle needs API restart/update to be saved."
-          : "Tenant account updated.",
+          ? tr(
+              "Tenant account updated. Some new tenant feature toggles need API restart/update to be saved.",
+              "Cuenta de tenant actualizada. Algunos nuevos interruptores de funciones necesitan reinicio/actualizacion del API para guardarse.",
+            )
+          : tr("Tenant account updated.", "Cuenta de tenant actualizada."),
       );
     } catch {
-      setStatus("Unable to update tenant account.");
+      setStatus(
+        tr(
+          "Unable to update tenant account.",
+          "No se pudo actualizar la cuenta del tenant.",
+        ),
+      );
     } finally {
       setSavingTenantId(null);
     }
@@ -453,7 +527,13 @@ export default function TenantAccountsPage() {
       const data = (await response.json()) as TenantAccount & { error?: string };
       if (!response.ok) {
         setStatus(
-          resolveApiError(data, "Unable to change tenant status."),
+          resolveApiError(
+            data,
+            tr(
+              "Unable to change tenant status.",
+              "No se pudo cambiar el estado del tenant.",
+            ),
+          ),
         );
         return;
       }
@@ -464,10 +544,17 @@ export default function TenantAccountsPage() {
       setTenants(nextTenants);
       syncDrafts(nextTenants);
       setStatus(
-        data.isActive ? "Tenant account activated." : "Tenant account deactivated.",
+        data.isActive
+          ? tr("Tenant account activated.", "Cuenta de tenant activada.")
+          : tr("Tenant account deactivated.", "Cuenta de tenant desactivada."),
       );
     } catch {
-      setStatus("Unable to change tenant status.");
+      setStatus(
+        tr(
+          "Unable to change tenant status.",
+          "No se pudo cambiar el estado del tenant.",
+        ),
+      );
     } finally {
       setTogglingTenantId(null);
     }
@@ -496,7 +583,13 @@ export default function TenantAccountsPage() {
           setPendingDeleteReport(data.summary);
         }
         setStatus(
-          resolveApiError(data, "Unable to delete tenant account."),
+          resolveApiError(
+            data,
+            tr(
+              "Unable to delete tenant account.",
+              "No se pudo eliminar la cuenta del tenant.",
+            ),
+          ),
         );
         return false;
       }
@@ -507,10 +600,15 @@ export default function TenantAccountsPage() {
       if (editingTenantId === tenant.id) {
         setEditingTenantId(null);
       }
-      setStatus("Tenant account deleted.");
+      setStatus(tr("Tenant account deleted.", "Cuenta de tenant eliminada."));
       return true;
     } catch {
-      setStatus("Unable to delete tenant account.");
+      setStatus(
+        tr(
+          "Unable to delete tenant account.",
+          "No se pudo eliminar la cuenta del tenant.",
+        ),
+      );
       return false;
     } finally {
       setDeletingTenantId(null);
@@ -544,13 +642,24 @@ export default function TenantAccountsPage() {
         | ApiErrorPayload;
       if (!response.ok) {
         setStatus(
-          resolveApiError(data as ApiErrorPayload, "Unable to inspect tenant data."),
+          resolveApiError(
+            data as ApiErrorPayload,
+            tr(
+              "Unable to inspect tenant data.",
+              "No se pudieron inspeccionar los datos del tenant.",
+            ),
+          ),
         );
         return;
       }
       setPendingDeleteReport(data as TenantDeletionReport);
     } catch {
-      setStatus("Unable to inspect tenant data.");
+      setStatus(
+        tr(
+          "Unable to inspect tenant data.",
+          "No se pudieron inspeccionar los datos del tenant.",
+        ),
+      );
     } finally {
       setPendingDeleteLoading(false);
     }
@@ -570,7 +679,13 @@ export default function TenantAccountsPage() {
       if (!response.ok) {
         const data = (await response.json().catch(() => ({}))) as ApiErrorPayload;
         setStatus(
-          resolveApiError(data, "Unable to export tenant data."),
+          resolveApiError(
+            data,
+            tr(
+              "Unable to export tenant data.",
+              "No se pudieron exportar los datos del tenant.",
+            ),
+          ),
         );
         return;
       }
@@ -597,7 +712,12 @@ export default function TenantAccountsPage() {
 
       setPendingDeleteDownloads((prev) => ({ ...prev, [format]: true }));
     } catch {
-      setStatus("Unable to export tenant data.");
+      setStatus(
+        tr(
+          "Unable to export tenant data.",
+          "No se pudieron exportar los datos del tenant.",
+        ),
+      );
     } finally {
       setPendingDeleteExporting(null);
     }
@@ -629,7 +749,7 @@ export default function TenantAccountsPage() {
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header d-flex align-items-center justify-content-between flex-wrap gap-2">
-        <h1 className="mb-0">Tenant Accounts</h1>
+        <h1 className="mb-0">{tr("Tenant Accounts", "Cuentas de Tenant")}</h1>
         <button
           type="button"
           className="btn btn-primary"
@@ -638,7 +758,9 @@ export default function TenantAccountsPage() {
             setStatus(null);
           }}
         >
-          {createOpen ? "Close" : "Create New Tenant"}
+          {createOpen
+            ? tr("Close", "Cerrar")
+            : tr("Create New Tenant", "Crear Nuevo Tenant")}
         </button>
       </div>
 
@@ -646,10 +768,14 @@ export default function TenantAccountsPage() {
 
       {createOpen && (
         <div className="admin-card">
-          <h2 className="h5 mb-3">Create Tenant Account</h2>
+          <h2 className="h5 mb-3">
+            {tr("Create Tenant Account", "Crear Cuenta de Tenant")}
+          </h2>
           <form onSubmit={handleCreate} className="row g-3">
             <div className="col-12 col-md-6">
-              <label className="form-label">Tenant Name *</label>
+              <label className="form-label">
+                {tr("Tenant Name *", "Nombre del Tenant *")}
+              </label>
               <input
                 className="form-control"
                 value={createForm.name}
@@ -658,16 +784,18 @@ export default function TenantAccountsPage() {
               />
             </div>
             <div className="col-12 col-md-6">
-              <label className="form-label">Subdomain</label>
+              <label className="form-label">{tr("Subdomain", "Subdominio")}</label>
               <input
                 className="form-control"
-                placeholder="restaurant1"
+                placeholder={tr("restaurant1", "restaurante1")}
                 value={createForm.subdomain}
                 onChange={(event) => updateCreateForm("subdomain", event.target.value)}
               />
             </div>
             <div className="col-12 col-md-6">
-              <label className="form-label">Admin Username</label>
+              <label className="form-label">
+                {tr("Admin Username", "Usuario Admin")}
+              </label>
               <input
                 className="form-control"
                 value={createForm.adminUsername}
@@ -675,7 +803,9 @@ export default function TenantAccountsPage() {
               />
             </div>
             <div className="col-12 col-md-6">
-              <label className="form-label">Admin Password</label>
+              <label className="form-label">
+                {tr("Admin Password", "Contrasena Admin")}
+              </label>
               <input
                 className="form-control"
                 type="password"
@@ -684,7 +814,7 @@ export default function TenantAccountsPage() {
               />
             </div>
             <div className="col-12 col-md-6">
-              <label className="form-label">Owner Email</label>
+              <label className="form-label">{tr("Owner Email", "Correo Owner")}</label>
               <input
                 className="form-control"
                 type="email"
@@ -693,7 +823,7 @@ export default function TenantAccountsPage() {
               />
             </div>
             <div className="col-12 col-md-6">
-              <label className="form-label">Owner Name</label>
+              <label className="form-label">{tr("Owner Name", "Nombre Owner")}</label>
               <input
                 className="form-control"
                 value={createForm.ownerName}
@@ -701,7 +831,7 @@ export default function TenantAccountsPage() {
               />
             </div>
             <div className="col-12 col-md-3">
-              <label className="form-label">Timezone</label>
+              <label className="form-label">{tr("Timezone", "Zona Horaria")}</label>
               <select
                 className="form-select"
                 value={createForm.timezone}
@@ -715,7 +845,9 @@ export default function TenantAccountsPage() {
               </select>
             </div>
             <div className="col-12 col-md-3">
-              <label className="form-label">Rounding Minutes</label>
+              <label className="form-label">
+                {tr("Rounding Minutes", "Minutos de Redondeo")}
+              </label>
               <input
                 className="form-control"
                 inputMode="numeric"
@@ -726,7 +858,9 @@ export default function TenantAccountsPage() {
               />
             </div>
             <div className="col-12 col-md-3">
-              <label className="form-label">Account Enabled</label>
+              <label className="form-label">
+                {tr("Account Enabled", "Cuenta Habilitada")}
+              </label>
               <select
                 className="form-select"
                 value={createForm.isActive ? "yes" : "no"}
@@ -734,12 +868,14 @@ export default function TenantAccountsPage() {
                   updateCreateForm("isActive", event.target.value === "yes")
                 }
               >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
+                <option value="yes">{tr("Yes", "Si")}</option>
+                <option value="no">{tr("No", "No")}</option>
               </select>
             </div>
             <div className="col-12 col-md-3">
-              <label className="form-label">Reports Enabled</label>
+              <label className="form-label">
+                {tr("Reports Enabled", "Reportes Habilitados")}
+              </label>
               <select
                 className="form-select"
                 value={createForm.features.reportsEnabled ? "yes" : "no"}
@@ -747,12 +883,12 @@ export default function TenantAccountsPage() {
                   updateCreateFeatures("reportsEnabled", event.target.value === "yes")
                 }
               >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
+                <option value="yes">{tr("Yes", "Si")}</option>
+                <option value="no">{tr("No", "No")}</option>
               </select>
             </div>
             <div className="col-12 col-md-3">
-              <label className="form-label">Require PIN</label>
+              <label className="form-label">{tr("Require PIN", "Requiere PIN")}</label>
               <select
                 className="form-select"
                 value={createForm.features.requirePin ? "yes" : "no"}
@@ -760,12 +896,14 @@ export default function TenantAccountsPage() {
                   updateCreateFeatures("requirePin", event.target.value === "yes")
                 }
               >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
+                <option value="yes">{tr("Yes", "Si")}</option>
+                <option value="no">{tr("No", "No")}</option>
               </select>
             </div>
             <div className="col-12 col-md-3">
-              <label className="form-label">Manual Time Edits</label>
+              <label className="form-label">
+                {tr("Manual Time Edits", "Ediciones Manuales de Tiempo")}
+              </label>
               <select
                 className="form-select"
                 value={createForm.features.allowManualTimeEdits ? "yes" : "no"}
@@ -776,12 +914,14 @@ export default function TenantAccountsPage() {
                   )
                 }
               >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
+                <option value="yes">{tr("Yes", "Si")}</option>
+                <option value="no">{tr("No", "No")}</option>
               </select>
             </div>
             <div className="col-12 col-md-3">
-              <label className="form-label">Daily Sales Reporting</label>
+              <label className="form-label">
+                {tr("Daily Sales Reporting", "Reporte Diario de Ventas")}
+              </label>
               <select
                 className="form-select"
                 value={createForm.features.dailySalesReportingEnabled ? "yes" : "no"}
@@ -792,12 +932,14 @@ export default function TenantAccountsPage() {
                   )
                 }
               >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
+                <option value="yes">{tr("Yes", "Si")}</option>
+                <option value="no">{tr("No", "No")}</option>
               </select>
             </div>
             <div className="col-12 col-md-3">
-              <label className="form-label">Company Orders</label>
+              <label className="form-label">
+                {tr("Company Orders", "Ordenes de Compania")}
+              </label>
               <select
                 className="form-select"
                 value={createForm.features.companyOrdersEnabled ? "yes" : "no"}
@@ -808,12 +950,14 @@ export default function TenantAccountsPage() {
                   )
                 }
               >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
+                <option value="yes">{tr("Yes", "Si")}</option>
+                <option value="no">{tr("No", "No")}</option>
               </select>
             </div>
             <div className="col-12 col-md-3">
-              <label className="form-label">Multi-Location</label>
+              <label className="form-label">
+                {tr("Multi-Location", "Multi-Ubicacion")}
+              </label>
               <select
                 className="form-select"
                 value={createForm.features.multiLocationEnabled ? "yes" : "no"}
@@ -824,13 +968,51 @@ export default function TenantAccountsPage() {
                   )
                 }
               >
-                <option value="yes">Yes</option>
-                <option value="no">No</option>
+                <option value="yes">{tr("Yes", "Si")}</option>
+                <option value="no">{tr("No", "No")}</option>
+              </select>
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">
+                {tr("Liquor Inventory", "Inventario de Licor")}
+              </label>
+              <select
+                className="form-select"
+                value={createForm.features.liquorInventoryEnabled ? "yes" : "no"}
+                onChange={(event) =>
+                  updateCreateFeatures(
+                    "liquorInventoryEnabled",
+                    event.target.value === "yes",
+                  )
+                }
+              >
+                <option value="yes">{tr("Yes", "Si")}</option>
+                <option value="no">{tr("No", "No")}</option>
+              </select>
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">
+                {tr("Premium Features", "Funciones Premium")}
+              </label>
+              <select
+                className="form-select"
+                value={createForm.features.premiumFeaturesEnabled ? "yes" : "no"}
+                onChange={(event) =>
+                  updateCreateFeatures(
+                    "premiumFeaturesEnabled",
+                    event.target.value === "yes",
+                  )
+                }
+              >
+                <option value="yes">{tr("Yes", "Si")}</option>
+                <option value="no">{tr("No", "No")}</option>
               </select>
             </div>
             <div className="col-12">
               <button className="btn btn-primary" type="submit" disabled={creating}>
-                {creating ? "Creating..." : "Create Tenant"}
+                {creating
+                  ? tr("Creating...", "Creando...")
+                  : tr("Create Tenant", "Crear Tenant")}
               </button>
             </div>
           </form>
@@ -838,11 +1020,17 @@ export default function TenantAccountsPage() {
       )}
 
       <div className="admin-card">
-        <h2 className="h5 mb-3">Existing Tenant Accounts</h2>
+        <h2 className="h5 mb-3">
+          {tr("Existing Tenant Accounts", "Cuentas de Tenant Existentes")}
+        </h2>
         {loading ? (
-          <p className="mb-0">Loading tenant accounts...</p>
+          <p className="mb-0">
+            {tr("Loading tenant accounts...", "Cargando cuentas de tenant...")}
+          </p>
         ) : tenants.length === 0 ? (
-          <p className="mb-0">No tenant accounts yet.</p>
+          <p className="mb-0">
+            {tr("No tenant accounts yet.", "Aun no hay cuentas de tenant.")}
+          </p>
         ) : (
           <div className="d-flex flex-column gap-3">
             {tenants.map((tenant) => {
@@ -861,32 +1049,64 @@ export default function TenantAccountsPage() {
                         <span
                           className={`badge ${featureState.dailySalesReportingEnabled ? "text-bg-success" : "text-bg-secondary"}`}
                         >
-                          Daily Sales {featureState.dailySalesReportingEnabled ? "On" : "Off"}
+                          {tr("Daily Sales", "Ventas Diarias")}{" "}
+                          {featureState.dailySalesReportingEnabled
+                            ? tr("On", "On")
+                            : tr("Off", "Off")}
                         </span>
                         <span
                           className={`badge ${featureState.reportsEnabled ? "text-bg-success" : "text-bg-secondary"}`}
                         >
-                          Reports {featureState.reportsEnabled ? "On" : "Off"}
+                          {tr("Reports", "Reportes")}{" "}
+                          {featureState.reportsEnabled
+                            ? tr("On", "On")
+                            : tr("Off", "Off")}
                         </span>
                         <span
                           className={`badge ${featureState.requirePin ? "text-bg-success" : "text-bg-secondary"}`}
                         >
-                          Require PIN {featureState.requirePin ? "On" : "Off"}
+                          {tr("Require PIN", "Requiere PIN")}{" "}
+                          {featureState.requirePin ? tr("On", "On") : tr("Off", "Off")}
                         </span>
                         <span
                           className={`badge ${featureState.allowManualTimeEdits ? "text-bg-success" : "text-bg-secondary"}`}
                         >
-                          Manual Edits {featureState.allowManualTimeEdits ? "On" : "Off"}
+                          {tr("Manual Edits", "Ediciones Manuales")}{" "}
+                          {featureState.allowManualTimeEdits
+                            ? tr("On", "On")
+                            : tr("Off", "Off")}
                         </span>
                         <span
                           className={`badge ${featureState.companyOrdersEnabled ? "text-bg-success" : "text-bg-secondary"}`}
                         >
-                          Company Orders {featureState.companyOrdersEnabled ? "On" : "Off"}
+                          {tr("Company Orders", "Ordenes de Compania")}{" "}
+                          {featureState.companyOrdersEnabled
+                            ? tr("On", "On")
+                            : tr("Off", "Off")}
                         </span>
                         <span
                           className={`badge ${featureState.multiLocationEnabled ? "text-bg-success" : "text-bg-secondary"}`}
                         >
-                          Multi-Location {featureState.multiLocationEnabled ? "On" : "Off"}
+                          {tr("Multi-Location", "Multi-Ubicacion")}{" "}
+                          {featureState.multiLocationEnabled
+                            ? tr("On", "On")
+                            : tr("Off", "Off")}
+                        </span>
+                        <span
+                          className={`badge ${featureState.liquorInventoryEnabled ? "text-bg-success" : "text-bg-secondary"}`}
+                        >
+                          {tr("Liquor Inventory", "Inventario de Licor")}{" "}
+                          {featureState.liquorInventoryEnabled
+                            ? tr("On", "On")
+                            : tr("Off", "Off")}
+                        </span>
+                        <span
+                          className={`badge ${featureState.premiumFeaturesEnabled ? "text-bg-success" : "text-bg-secondary"}`}
+                        >
+                          {tr("Premium", "Premium")}{" "}
+                          {featureState.premiumFeaturesEnabled
+                            ? tr("On", "On")
+                            : tr("Off", "Off")}
                         </span>
                       </div>
                     </div>
@@ -894,7 +1114,9 @@ export default function TenantAccountsPage() {
                       <span
                         className={`badge ${tenant.isActive ? "text-bg-success" : "text-bg-secondary"}`}
                       >
-                        {tenant.isActive ? "Active" : "Inactive"}
+                        {tenant.isActive
+                          ? tr("Active", "Activo")
+                          : tr("Inactive", "Inactivo")}
                       </span>
                       <button
                         type="button"
@@ -903,7 +1125,7 @@ export default function TenantAccountsPage() {
                           setEditingTenantId((prev) => (prev === tenant.id ? null : tenant.id))
                         }
                       >
-                        {isEditing ? "Close" : "Edit"}
+                        {isEditing ? tr("Close", "Cerrar") : tr("Edit", "Editar")}
                       </button>
                       <button
                         type="button"
@@ -912,7 +1134,9 @@ export default function TenantAccountsPage() {
                           setFeaturesTenantId((prev) => (prev === tenant.id ? null : tenant.id))
                         }
                       >
-                        {isFeatureOpen ? "Close Features" : "Features"}
+                        {isFeatureOpen
+                          ? tr("Close Features", "Cerrar Funciones")
+                          : tr("Features", "Funciones")}
                       </button>
                       <button
                         type="button"
@@ -920,7 +1144,9 @@ export default function TenantAccountsPage() {
                         disabled={togglingTenantId === tenant.id}
                         onClick={() => void handleToggleActive(tenant)}
                       >
-                        {tenant.isActive ? "Deactivate" : "Activate"}
+                        {tenant.isActive
+                          ? tr("Deactivate", "Desactivar")
+                          : tr("Activate", "Activar")}
                       </button>
                       <button
                         type="button"
@@ -930,7 +1156,9 @@ export default function TenantAccountsPage() {
                           void openPendingDeleteDialog(tenant);
                         }}
                       >
-                        {deletingTenantId === tenant.id ? "Deleting..." : "Delete"}
+                        {deletingTenantId === tenant.id
+                          ? tr("Deleting...", "Eliminando...")
+                          : tr("Delete", "Eliminar")}
                       </button>
                     </div>
                   </div>
@@ -938,13 +1166,20 @@ export default function TenantAccountsPage() {
                   {isFeatureOpen && draft && (
                     <div className="row g-3 mt-2 border rounded p-3 bg-body-tertiary">
                       <div className="col-12">
-                        <div className="fw-semibold">Tenant Feature Controls</div>
+                        <div className="fw-semibold">
+                          {tr("Tenant Feature Controls", "Controles de Funciones del Tenant")}
+                        </div>
                         <div className="small text-muted">
-                          Enable or disable features for this tenant.
+                          {tr(
+                            "Enable or disable features for this tenant.",
+                            "Habilita o deshabilita funciones para este tenant.",
+                          )}
                         </div>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Daily Sales Reporting</label>
+                        <label className="form-label">
+                          {tr("Daily Sales Reporting", "Reporte Diario de Ventas")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.dailySalesReportingEnabled ? "yes" : "no"}
@@ -956,12 +1191,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Reports Enabled</label>
+                        <label className="form-label">
+                          {tr("Reports Enabled", "Reportes Habilitados")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.reportsEnabled ? "yes" : "no"}
@@ -973,12 +1210,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Require PIN</label>
+                        <label className="form-label">
+                          {tr("Require PIN", "Requiere PIN")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.requirePin ? "yes" : "no"}
@@ -990,12 +1229,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Manual Time Edits</label>
+                        <label className="form-label">
+                          {tr("Manual Time Edits", "Ediciones Manuales de Tiempo")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.allowManualTimeEdits ? "yes" : "no"}
@@ -1007,12 +1248,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Multi-Location</label>
+                        <label className="form-label">
+                          {tr("Multi-Location", "Multi-Ubicacion")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.multiLocationEnabled ? "yes" : "no"}
@@ -1024,12 +1267,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Company Orders</label>
+                        <label className="form-label">
+                          {tr("Company Orders", "Ordenes de Compania")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.companyOrdersEnabled ? "yes" : "no"}
@@ -1041,8 +1286,46 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">
+                          {tr("Liquor Inventory", "Inventario de Licor")}
+                        </label>
+                        <select
+                          className="form-select"
+                          value={draft.features.liquorInventoryEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "liquorInventoryEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">
+                          {tr("Premium Features", "Funciones Premium")}
+                        </label>
+                        <select
+                          className="form-select"
+                          value={draft.features.premiumFeaturesEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "premiumFeaturesEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 d-flex gap-2">
@@ -1052,14 +1335,16 @@ export default function TenantAccountsPage() {
                           disabled={savingTenantId === tenant.id}
                           onClick={() => void handleSave(tenant.id)}
                         >
-                          {savingTenantId === tenant.id ? "Saving..." : "Save Features"}
+                          {savingTenantId === tenant.id
+                            ? tr("Saving...", "Guardando...")
+                            : tr("Save Features", "Guardar Funciones")}
                         </button>
                         <button
                           type="button"
                           className="btn btn-outline-secondary"
                           onClick={() => setFeaturesTenantId(null)}
                         >
-                          Close
+                          {tr("Close", "Cerrar")}
                         </button>
                       </div>
                     </div>
@@ -1068,7 +1353,9 @@ export default function TenantAccountsPage() {
                   {isEditing && draft && (
                     <div className="row g-3 mt-2">
                       <div className="col-12 col-md-6">
-                        <label className="form-label">Tenant Name</label>
+                        <label className="form-label">
+                          {tr("Tenant Name", "Nombre del Tenant")}
+                        </label>
                         <input
                           className="form-control"
                           value={draft.name}
@@ -1078,7 +1365,7 @@ export default function TenantAccountsPage() {
                         />
                       </div>
                       <div className="col-12 col-md-6">
-                        <label className="form-label">Subdomain</label>
+                        <label className="form-label">{tr("Subdomain", "Subdominio")}</label>
                         <input
                           className="form-control"
                           value={draft.subdomain}
@@ -1088,7 +1375,9 @@ export default function TenantAccountsPage() {
                         />
                       </div>
                       <div className="col-12 col-md-6">
-                        <label className="form-label">Admin Username</label>
+                        <label className="form-label">
+                          {tr("Admin Username", "Usuario Admin")}
+                        </label>
                         <input
                           className="form-control"
                           value={draft.adminUsername}
@@ -1098,11 +1387,16 @@ export default function TenantAccountsPage() {
                         />
                       </div>
                       <div className="col-12 col-md-6">
-                        <label className="form-label">Admin Password</label>
+                        <label className="form-label">
+                          {tr("Admin Password", "Contrasena Admin")}
+                        </label>
                         <input
                           className="form-control"
                           type="password"
-                          placeholder="Leave blank to keep current password"
+                          placeholder={tr(
+                            "Leave blank to keep current password",
+                            "Deja en blanco para conservar la contrasena actual",
+                          )}
                           value={draft.adminPassword}
                           onChange={(event) =>
                             updateDraft(tenant.id, "adminPassword", event.target.value)
@@ -1110,7 +1404,7 @@ export default function TenantAccountsPage() {
                         />
                       </div>
                       <div className="col-12 col-md-6">
-                        <label className="form-label">Owner Email</label>
+                        <label className="form-label">{tr("Owner Email", "Correo Owner")}</label>
                         <input
                           className="form-control"
                           type="email"
@@ -1121,7 +1415,7 @@ export default function TenantAccountsPage() {
                         />
                       </div>
                       <div className="col-12 col-md-6">
-                        <label className="form-label">Owner Name</label>
+                        <label className="form-label">{tr("Owner Name", "Nombre Owner")}</label>
                         <input
                           className="form-control"
                           value={draft.ownerName}
@@ -1131,7 +1425,7 @@ export default function TenantAccountsPage() {
                         />
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Timezone</label>
+                        <label className="form-label">{tr("Timezone", "Zona Horaria")}</label>
                         <select
                           className="form-select"
                           value={draft.timezone}
@@ -1147,7 +1441,9 @@ export default function TenantAccountsPage() {
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Rounding Minutes</label>
+                        <label className="form-label">
+                          {tr("Rounding Minutes", "Minutos de Redondeo")}
+                        </label>
                         <input
                           className="form-control"
                           inputMode="numeric"
@@ -1158,7 +1454,9 @@ export default function TenantAccountsPage() {
                         />
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Account Enabled</label>
+                        <label className="form-label">
+                          {tr("Account Enabled", "Cuenta Habilitada")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.isActive ? "yes" : "no"}
@@ -1170,12 +1468,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Reports Enabled</label>
+                        <label className="form-label">
+                          {tr("Reports Enabled", "Reportes Habilitados")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.reportsEnabled ? "yes" : "no"}
@@ -1187,12 +1487,12 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Require PIN</label>
+                        <label className="form-label">{tr("Require PIN", "Requiere PIN")}</label>
                         <select
                           className="form-select"
                           value={draft.features.requirePin ? "yes" : "no"}
@@ -1204,12 +1504,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Manual Time Edits</label>
+                        <label className="form-label">
+                          {tr("Manual Time Edits", "Ediciones Manuales de Tiempo")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.allowManualTimeEdits ? "yes" : "no"}
@@ -1221,12 +1523,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Daily Sales Reporting</label>
+                        <label className="form-label">
+                          {tr("Daily Sales Reporting", "Reporte Diario de Ventas")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.dailySalesReportingEnabled ? "yes" : "no"}
@@ -1238,12 +1542,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Company Orders</label>
+                        <label className="form-label">
+                          {tr("Company Orders", "Ordenes de Compania")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.companyOrdersEnabled ? "yes" : "no"}
@@ -1255,12 +1561,14 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 col-md-3">
-                        <label className="form-label">Multi-Location</label>
+                        <label className="form-label">
+                          {tr("Multi-Location", "Multi-Ubicacion")}
+                        </label>
                         <select
                           className="form-select"
                           value={draft.features.multiLocationEnabled ? "yes" : "no"}
@@ -1272,8 +1580,46 @@ export default function TenantAccountsPage() {
                             )
                           }
                         >
-                          <option value="yes">Yes</option>
-                          <option value="no">No</option>
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">
+                          {tr("Liquor Inventory", "Inventario de Licor")}
+                        </label>
+                        <select
+                          className="form-select"
+                          value={draft.features.liquorInventoryEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "liquorInventoryEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">
+                          {tr("Premium Features", "Funciones Premium")}
+                        </label>
+                        <select
+                          className="form-select"
+                          value={draft.features.premiumFeaturesEnabled ? "yes" : "no"}
+                          onChange={(event) =>
+                            updateDraftFeatures(
+                              tenant.id,
+                              "premiumFeaturesEnabled",
+                              event.target.value === "yes",
+                            )
+                          }
+                        >
+                          <option value="yes">{tr("Yes", "Si")}</option>
+                          <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
                       <div className="col-12 d-flex gap-2">
@@ -1283,14 +1629,16 @@ export default function TenantAccountsPage() {
                           disabled={savingTenantId === tenant.id}
                           onClick={() => void handleSave(tenant.id)}
                         >
-                          {savingTenantId === tenant.id ? "Saving..." : "Save"}
+                          {savingTenantId === tenant.id
+                            ? tr("Saving...", "Guardando...")
+                            : tr("Save", "Guardar")}
                         </button>
                         <button
                           type="button"
                           className="btn btn-outline-secondary"
                           onClick={() => setEditingTenantId(null)}
                         >
-                          Cancel
+                          {tr("Cancel", "Cancelar")}
                         </button>
                       </div>
                     </div>
@@ -1311,35 +1659,49 @@ export default function TenantAccountsPage() {
             className="embedded-confirm-dialog"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 className="embedded-confirm-title">Delete Tenant</h2>
+            <h2 className="embedded-confirm-title">
+              {tr("Delete Tenant", "Eliminar Tenant")}
+            </h2>
             <p className="embedded-confirm-message">
-              Review tenant "{pendingDeleteTenant.name}" data before deleting. This
-              action is permanent.
+              {tr(
+                `Review tenant "${pendingDeleteTenant.name}" data before deleting. This action is permanent.`,
+                `Revisa los datos del tenant "${pendingDeleteTenant.name}" antes de eliminar. Esta accion es permanente.`,
+              )}
             </p>
 
             {pendingDeleteLoading ? (
-              <div className="text-muted small mb-3">Inspecting tenant data...</div>
+              <div className="text-muted small mb-3">
+                {tr("Inspecting tenant data...", "Inspeccionando datos del tenant...")}
+              </div>
             ) : pendingDeleteReport ? (
               <>
                 {pendingDeleteReport.hasData ? (
                   <div className="alert alert-warning py-2 mb-3">
-                    <div className="fw-semibold">Data detected</div>
+                    <div className="fw-semibold">{tr("Data detected", "Datos detectados")}</div>
                     <div className="small">
-                      {pendingDeleteReport.totalRecords} records found. Download all
-                      exports below before permanent delete.
+                      {pendingDeleteReport.totalRecords}{" "}
+                      {tr(
+                        "records found. Download all exports below before permanent delete.",
+                        "registros encontrados. Descarga todas las exportaciones de abajo antes de la eliminacion permanente.",
+                      )}
                     </div>
                   </div>
                 ) : (
                   <div className="alert alert-success py-2 mb-3">
                     <div className="small">
-                      No related tenant data found. This tenant can be deleted now.
+                      {tr(
+                        "No related tenant data found. This tenant can be deleted now.",
+                        "No se encontraron datos relacionados del tenant. Este tenant se puede eliminar ahora.",
+                      )}
                     </div>
                   </div>
                 )}
 
                 {pendingDeleteReport.blockers.length > 0 ? (
                   <div className="mb-3">
-                    <div className="fw-semibold small mb-1">Data present</div>
+                    <div className="fw-semibold small mb-1">
+                      {tr("Data present", "Datos presentes")}
+                    </div>
                     <ul className="mb-0 small">
                       {pendingDeleteReport.blockers.map((item) => (
                         <li key={`delete-data-${item.key}`}>
@@ -1351,7 +1713,7 @@ export default function TenantAccountsPage() {
                 ) : null}
 
                 <div className="small text-muted mb-2">
-                  Snapshot generated{" "}
+                  {tr("Snapshot generated", "Corte generado")}{" "}
                   {new Date(pendingDeleteReport.generatedAt).toLocaleString()}.
                 </div>
 
@@ -1364,10 +1726,10 @@ export default function TenantAccountsPage() {
                       onClick={() => void downloadPendingDeleteExport("summary")}
                     >
                       {pendingDeleteExporting === "summary"
-                        ? "Downloading..."
+                        ? tr("Downloading...", "Descargando...")
                         : pendingDeleteDownloads.summary
-                          ? "Summary Downloaded"
-                          : "Download Friendly Report"}
+                          ? tr("Summary Downloaded", "Resumen Descargado")
+                          : tr("Download Friendly Report", "Descargar Reporte Amigable")}
                     </button>
                     <button
                       type="button"
@@ -1376,10 +1738,10 @@ export default function TenantAccountsPage() {
                       onClick={() => void downloadPendingDeleteExport("excel")}
                     >
                       {pendingDeleteExporting === "excel"
-                        ? "Downloading..."
+                        ? tr("Downloading...", "Descargando...")
                         : pendingDeleteDownloads.excel
-                          ? "Excel Downloaded"
-                          : "Download Excel"}
+                          ? tr("Excel Downloaded", "Excel Descargado")
+                          : tr("Download Excel", "Descargar Excel")}
                     </button>
                     <button
                       type="button"
@@ -1388,17 +1750,20 @@ export default function TenantAccountsPage() {
                       onClick={() => void downloadPendingDeleteExport("sql")}
                     >
                       {pendingDeleteExporting === "sql"
-                        ? "Downloading..."
+                        ? tr("Downloading...", "Descargando...")
                         : pendingDeleteDownloads.sql
-                          ? "SQL Downloaded"
-                          : "Download SQL"}
+                          ? tr("SQL Downloaded", "SQL Descargado")
+                          : tr("Download SQL", "Descargar SQL")}
                     </button>
                   </div>
                 ) : null}
               </>
             ) : (
               <div className="text-muted small mb-3">
-                Unable to load tenant data summary.
+                {tr(
+                  "Unable to load tenant data summary.",
+                  "No se pudo cargar el resumen de datos del tenant.",
+                )}
               </div>
             )}
 
@@ -1409,7 +1774,7 @@ export default function TenantAccountsPage() {
                 disabled={pendingDeleteBusy || pendingDeleteLoading}
                 onClick={closePendingDeleteDialog}
               >
-                Cancel
+                {tr("Cancel", "Cancelar")}
               </button>
               <button
                 type="button"
@@ -1423,10 +1788,10 @@ export default function TenantAccountsPage() {
                 onClick={() => void onConfirmPendingDelete()}
               >
                 {pendingDeleteBusy
-                  ? "Deleting..."
+                  ? tr("Deleting...", "Eliminando...")
                   : pendingDeleteRequiresExports && !pendingDeleteReadyToDelete
-                    ? "Download All Files First"
-                    : "Confirm Delete"}
+                    ? tr("Download All Files First", "Primero Descarga Todos los Archivos")
+                    : tr("Confirm Delete", "Confirmar Eliminacion")}
               </button>
             </div>
           </div>

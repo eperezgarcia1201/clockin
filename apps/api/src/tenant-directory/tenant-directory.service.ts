@@ -87,6 +87,8 @@ export class TenantDirectoryService {
           adminUsername: true,
           multiLocationEnabled: true,
           companyOrdersEnabled: true,
+          liquorInventoryEnabled: true,
+          premiumFeaturesEnabled: true,
         },
       }),
       this.prisma.office.findMany({
@@ -131,6 +133,8 @@ export class TenantDirectoryService {
       adminUsername: settings?.adminUsername || DEFAULT_ADMIN_USERNAME,
       multiLocationEnabled: settings?.multiLocationEnabled ?? false,
       companyOrdersEnabled: settings?.companyOrdersEnabled ?? false,
+      liquorInventoryEnabled: settings?.liquorInventoryEnabled ?? false,
+      premiumFeaturesEnabled: settings?.premiumFeaturesEnabled ?? false,
       offices,
       employees: employees.map((employee) => ({
         id: employee.id,

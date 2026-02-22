@@ -55,6 +55,16 @@ enum ExpensePaymentMethod {
   CASH
 }
 
+enum LiquorInventoryMovementType {
+  PURCHASE
+  SALE
+  WASTE
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
 model Tenant {
   id         String   @id @default(cuid())
   authOrgId  String   @unique
@@ -82,6 +92,10 @@ model Tenant {
   dailySalesReports        DailySalesReport[]
   dailyExpenses            DailyExpense[]
   companyOrders            CompanyOrder[]
+  liquorInventoryItems     LiquorInventoryItem[]
+  liquorInventoryMovements LiquorInventoryMovement[]
+  liquorInventoryCounts    LiquorInventoryCount[]
+  liquorBottleScans        LiquorBottleScan[]
   settings                 TenantSettings?
 
   @@index([isActive])
@@ -152,6 +166,9 @@ model Office {
   groups        Group[]
   employees     Employee[]
   companyOrders CompanyOrder[]
+  liquorInventoryMovements LiquorInventoryMovement[]
+  liquorInventoryCounts    LiquorInventoryCount[]
+  liquorBottleScans        LiquorBottleScan[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -205,6 +222,9 @@ model Employee {
   notifications            Notification[]
   schedules                EmployeeSchedule[]
   scheduleOverrideRequests ScheduleOverrideRequest[]
+  liquorInventoryMovementsCreated LiquorInventoryMovement[] @relation("LiquorInventoryMovementCreatedBy")
+  liquorInventoryCountsCreated    LiquorInventoryCount[]    @relation("LiquorInventoryCountCreatedBy")
+  liquorBottleScansCreated        LiquorBottleScan[]        @relation("LiquorBottleScanCreatedBy")
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
@@ -381,6 +401,8 @@ model TenantSettings {
   dailySalesReportingEnabled Boolean  @default(false)
   companyOrdersEnabled       Boolean  @default(false)
   multiLocationEnabled       Boolean  @default(false)
+  liquorInventoryEnabled     Boolean  @default(false)
+  premiumFeaturesEnabled     Boolean  @default(false)
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
@@ -488,4 +510,99 @@ model DailyExpense {
   @@index([tenantId, expenseDate])
   @@index([tenantId, paymentMethod])
   @@index([tenantId, submittedByUserId])
+}
+
+model LiquorInventoryItem {
+  id           String   @id @default(cuid())
+  tenantId     String
+  name         String
+  brand        String?
+  upc          String?
+  sizeMl       Float?
+  unitLabel    String?
+  supplierName String?
+  unitCost     Float    @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant    Tenant                   @relation(fields: [tenantId], references: [id])
+  movements LiquorInventoryMovement[]
+  counts    LiquorInventoryCount[]
+  bottleScans LiquorBottleScan[]
+
+  @@unique([tenantId, upc])
+  @@index([tenantId, isActive])
+  @@index([tenantId, name])
+}
+
+model LiquorInventoryMovement {
+  id                  String                     @id @default(cuid())
+  tenantId            String
+  officeId            String
+  itemId              String
+  type                LiquorInventoryMovementType
+  quantity            Float
+  unitCostOverride    Float?
+  occurredAt          DateTime
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime                   @default(now())
+
+  tenant            Tenant               @relation(fields: [tenantId], references: [id])
+  office            Office               @relation(fields: [officeId], references: [id])
+  item              LiquorInventoryItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdByEmployee Employee?            @relation("LiquorInventoryMovementCreatedBy", fields: [createdByEmployeeId], references: [id])
+
+  @@index([tenantId, officeId, occurredAt])
+  @@index([tenantId, itemId, occurredAt])
+  @@index([tenantId, type, occurredAt])
+}
+
+model LiquorInventoryCount {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  officeId            String
+  itemId              String
+  countDate           DateTime
+  quantity            Float
+  barQuantity         Float?
+  bodegaQuantity      Float?
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant            Tenant              @relation(fields: [tenantId], references: [id])
+  office            Office              @relation(fields: [officeId], references: [id])
+  item              LiquorInventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdByEmployee Employee?           @relation("LiquorInventoryCountCreatedBy", fields: [createdByEmployeeId], references: [id])
+
+  @@unique([tenantId, officeId, itemId, countDate])
+  @@index([tenantId, officeId, countDate])
+  @@index([tenantId, itemId, countDate])
+}
+
+model LiquorBottleScan {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  officeId            String
+  itemId              String
+  containerKey        String?
+  measuredAt          DateTime
+  fillPercent         Float
+  estimatedMl         Float?
+  confidence          Float?
+  source              String   @default("openai-vision")
+  notes               String?
+  createdByEmployeeId String?
+  createdAt           DateTime @default(now())
+
+  tenant            Tenant              @relation(fields: [tenantId], references: [id])
+  office            Office              @relation(fields: [officeId], references: [id])
+  item              LiquorInventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdByEmployee Employee?           @relation("LiquorBottleScanCreatedBy", fields: [createdByEmployeeId], references: [id])
+
+  @@index([tenantId, officeId, itemId, measuredAt])
+  @@index([tenantId, itemId, measuredAt])
 }

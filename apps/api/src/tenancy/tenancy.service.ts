@@ -40,6 +40,8 @@ type AdminAccess = {
     adminUsername: string;
     multiLocationEnabled: boolean;
     companyOrdersEnabled: boolean;
+    liquorInventoryEnabled: boolean;
+    premiumFeaturesEnabled: boolean;
   };
   ownerClockExempt: boolean;
 };
@@ -127,6 +129,8 @@ export class TenancyService {
         adminUsername: true,
         multiLocationEnabled: true,
         companyOrdersEnabled: true,
+        liquorInventoryEnabled: true,
+        premiumFeaturesEnabled: true,
       },
     });
 
@@ -134,6 +138,8 @@ export class TenancyService {
       settings?.adminUsername || DEFAULT_ADMIN_USERNAME
     ).trim();
     const companyOrdersEnabled = settings?.companyOrdersEnabled ?? false;
+    const liquorInventoryEnabled = settings?.liquorInventoryEnabled ?? false;
+    const premiumFeaturesEnabled = settings?.premiumFeaturesEnabled ?? false;
     const loginIdentifier = (
       authUser.name ||
       authUser.email ||
@@ -157,6 +163,8 @@ export class TenancyService {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
           companyOrdersEnabled,
+          liquorInventoryEnabled,
+          premiumFeaturesEnabled,
         },
         ownerClockExempt: false,
       };
@@ -182,6 +190,8 @@ export class TenancyService {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
           companyOrdersEnabled,
+          liquorInventoryEnabled,
+          premiumFeaturesEnabled,
         },
         ownerClockExempt:
           manager.isManager &&
@@ -204,6 +214,8 @@ export class TenancyService {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
           companyOrdersEnabled,
+          liquorInventoryEnabled,
+          premiumFeaturesEnabled,
         },
         ownerClockExempt: false,
       };
@@ -219,6 +231,8 @@ export class TenancyService {
         adminUsername,
         multiLocationEnabled: settings?.multiLocationEnabled ?? false,
         companyOrdersEnabled,
+        liquorInventoryEnabled,
+        premiumFeaturesEnabled,
       },
       ownerClockExempt: false,
     };

@@ -37,6 +37,14 @@ export class TenantFeaturesDto {
   @IsOptional()
   @IsBoolean()
   multiLocationEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  liquorInventoryEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  premiumFeaturesEnabled?: boolean;
 }
 
 export class CreateTenantAccountDto {

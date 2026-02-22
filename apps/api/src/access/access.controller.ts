@@ -33,6 +33,8 @@ export class AccessController {
       ownerClockExempt: access.ownerClockExempt,
       adminUsername: access.settings.adminUsername,
       multiLocationEnabled: access.settings.multiLocationEnabled,
+      liquorInventoryEnabled: access.settings.liquorInventoryEnabled,
+      premiumFeaturesEnabled: access.settings.premiumFeaturesEnabled,
       permissions: managerFeaturesToMap(access.featurePermissions),
     };
   }

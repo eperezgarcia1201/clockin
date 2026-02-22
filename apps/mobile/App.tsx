@@ -7,6 +7,7 @@ import Constants from "expo-constants";
 import * as Location from "expo-location";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import * as ImagePicker from "expo-image-picker";
 import {
   Alert,
   Image,
@@ -203,6 +204,7 @@ const getCurrentWeekStartDateKey = () => {
   utcDate.setUTCDate(utcDate.getUTCDate() - distanceToMonday);
   return utcDate.toISOString().slice(0, 10);
 };
+const todayDateKey = () => new Date().toISOString().slice(0, 10);
 
 type Employee = {
   id: string;
@@ -303,6 +305,71 @@ type CompanyOrderRow = {
 };
 
 type EmployeeViewTab = "clock" | "companyOrders";
+
+type LiquorCatalogItem = {
+  id: string;
+  name: string;
+  brand: string | null;
+  supplierName: string | null;
+  sizeMl: number | null;
+  unitCost: number;
+  isActive: boolean;
+};
+
+type LiquorCountRow = {
+  id: string;
+  itemId: string;
+  countDate: string;
+  quantity: number;
+  barQuantity: number | null;
+  bodegaQuantity: number | null;
+};
+
+type LiquorBottleScanRow = {
+  id: string;
+  itemId: string;
+  itemName: string;
+  containerKey: string | null;
+  fillPercent: number;
+  estimatedMl: number | null;
+  measuredAt: string;
+  createdAt: string;
+};
+
+type LiquorSheetDraft = {
+  supplierName: string;
+  unitCost: string;
+  sizeMl: string;
+  barQuantity: string;
+  bodegaQuantity: string;
+};
+
+type LiquorInvoiceExtractedRow = {
+  rowNumber: number;
+  company: string | null;
+  liquorName: string;
+  kind: string | null;
+  upc: string | null;
+  ml: number | null;
+  unitCost: number | null;
+  quantity: number | null;
+  matchedItemId: string | null;
+  matchedItemName: string | null;
+  suggestedAction: "update" | "create";
+  costShockDeltaPct: number | null;
+  costShockSeverity: "normal" | "elevated" | "critical";
+  costShockFlag: boolean;
+};
+
+type LiquorInvoiceAnalyzeResponse = {
+  analysis?: {
+    summary?: string;
+    totalExtractedRows?: number;
+    matchedCount?: number;
+    costShockCount?: number;
+  };
+  rows?: Array<Record<string, unknown>>;
+};
 
 const normalizeEmployeeRows = (rows: unknown): Employee[] => {
   if (!Array.isArray(rows)) {
@@ -476,6 +543,68 @@ const i18n = {
     companyOrderSaved: "Company orders saved.",
     recentCompanyOrders: "Recent company orders",
     noCompanyOrdersYet: "No company orders yet.",
+    liquorControl: "Liquor Control",
+    liquorControlHint:
+      "Manager-only liquor inventory by row: company, price, qty/ml, bar, bodega, inventory, total.",
+    liquorManagerOnly: "Manager access required for liquor control.",
+    liquorFeatureDisabled:
+      "Liquor inventory is disabled for this tenant. Ask owner to enable it.",
+    liquorPremiumDisabled:
+      "Premium liquor features are disabled for this tenant. Ask owner to enable Premium Features.",
+    liquorCompany: "Company",
+    liquorPrice: "Price",
+    liquorQtyMl: "Qty/ML",
+    liquorBar: "Bar",
+    liquorBodega: "Bodega",
+    liquorInventory: "Inventario",
+    liquorTotal: "Total",
+    liquorSaveItem: "Save Item",
+    liquorSaveCount: "Save Count",
+    liquorScanBottle: "Scan Bottle",
+    liquorRecentScans: "Bottle Scan History",
+    liquorNoScans: "No bottle scans yet.",
+    liquorInvoiceOcr: "Invoice OCR + Cost Shock",
+    liquorInvoicePhoto: "Invoice Photo",
+    liquorInvoiceDate: "Invoice Date",
+    liquorInvoiceNumber: "Invoice #",
+    liquorInvoiceSupplier: "Supplier",
+    liquorInvoiceNotes: "Notes",
+    liquorInvoiceIncludePurchases: "Create purchase movements",
+    liquorInvoiceAnalyze: "Analyze Invoice",
+    liquorInvoiceApply: "Apply Invoice Rows",
+    liquorInvoiceNoRows: "No invoice rows extracted yet.",
+    liquorInvoiceMatch: "Match",
+    liquorInvoiceSeverity: "Severity",
+    liquorInvoiceRowsExtracted: "rows extracted",
+    liquorInvoiceAnalyzeSaved: "Invoice analyzed.",
+    liquorInvoiceApplied: "Invoice rows applied.",
+    liquorInvoiceSelectPhoto: "Select an invoice photo first.",
+    liquorInvoiceSelectLocation: "Select location before invoice OCR.",
+    liquorInvoiceMediaPermission:
+      "Photo library permission is required for invoice OCR.",
+    liquorInvoiceAnalyzeFailed: "Unable to analyze invoice photo.",
+    liquorInvoiceApplyFailed: "Unable to apply invoice rows.",
+    liquorInvoiceNeedRows:
+      "Analyze an invoice with at least one row before applying.",
+    liquorPriceNonNegative: "Price must be zero or greater.",
+    liquorQtyMlPositive: "Qty/ML must be greater than zero.",
+    liquorCatalogRowSaved: "Liquor catalog row saved.",
+    liquorCatalogSaveFailed: "Unable to save liquor catalog row.",
+    liquorBarNonNegative: "Bar quantity must be zero or greater.",
+    liquorBodegaNonNegative: "Bodega quantity must be zero or greater.",
+    liquorCountDateFormat: "Count date must use YYYY-MM-DD format.",
+    liquorInventoryRowSaved: "Liquor inventory row saved.",
+    liquorInventorySaveFailed: "Unable to save liquor inventory row.",
+    liquorCameraPermissionRequired:
+      "Camera permission is required for bottle scan.",
+    liquorBottleScanSaved: "Bottle scan saved.",
+    liquorBottleScanFill: "Fill",
+    liquorBottleScanSpent: "Spent",
+    liquorBottleScanAnalyzeFailed: "Unable to analyze bottle photo.",
+    pendingTipsBeforeClockIn: "Submit tips for {date} before clocking in.",
+    pendingTipsStatus: "Pending tips for {date}.",
+    unableLocalDownloadStorage: "Unable to access local storage for download.",
+    downloadReady: "Download ready",
     downloadPdf: "Download PDF",
     downloadCsv: "Download CSV",
     downloadExcel: "Download Excel",
@@ -601,6 +730,71 @@ const i18n = {
     companyOrderSaved: "Ordenes de empresa guardadas.",
     recentCompanyOrders: "Ordenes recientes de empresa",
     noCompanyOrdersYet: "Aun no hay ordenes de empresa.",
+    liquorControl: "Control de Licor",
+    liquorControlHint:
+      "Control de inventario para gerentes: compañía, precio, cant/ml, bar, bodega, inventario y total.",
+    liquorManagerOnly: "Se requiere acceso de gerente para control de licor.",
+    liquorFeatureDisabled:
+      "El inventario de licor está deshabilitado para este tenant.",
+    liquorPremiumDisabled:
+      "Las funciones premium de licor están deshabilitadas para este tenant.",
+    liquorCompany: "Compañía",
+    liquorPrice: "Precio",
+    liquorQtyMl: "Cant/ML",
+    liquorBar: "Bar",
+    liquorBodega: "Bodega",
+    liquorInventory: "Inventario",
+    liquorTotal: "Total",
+    liquorSaveItem: "Guardar Artículo",
+    liquorSaveCount: "Guardar Conteo",
+    liquorScanBottle: "Escanear Botella",
+    liquorRecentScans: "Historial de Escaneos",
+    liquorNoScans: "Aún no hay escaneos.",
+    liquorInvoiceOcr: "OCR de Facturas + Choque de Costos",
+    liquorInvoicePhoto: "Foto de Factura",
+    liquorInvoiceDate: "Fecha Factura",
+    liquorInvoiceNumber: "Factura #",
+    liquorInvoiceSupplier: "Proveedor",
+    liquorInvoiceNotes: "Notas",
+    liquorInvoiceIncludePurchases: "Crear movimientos de compra",
+    liquorInvoiceAnalyze: "Analizar Factura",
+    liquorInvoiceApply: "Aplicar Filas",
+    liquorInvoiceNoRows: "Aún no hay filas de factura extraídas.",
+    liquorInvoiceMatch: "Coincidencia",
+    liquorInvoiceSeverity: "Severidad",
+    liquorInvoiceRowsExtracted: "filas extraídas",
+    liquorInvoiceAnalyzeSaved: "Factura analizada.",
+    liquorInvoiceApplied: "Filas de factura aplicadas.",
+    liquorInvoiceSelectPhoto: "Selecciona primero una foto de factura.",
+    liquorInvoiceSelectLocation: "Selecciona ubicación antes del OCR de factura.",
+    liquorInvoiceMediaPermission:
+      "Se requiere permiso de fotos para OCR de factura.",
+    liquorInvoiceAnalyzeFailed: "No se pudo analizar la foto de la factura.",
+    liquorInvoiceApplyFailed: "No se pudieron aplicar las filas de factura.",
+    liquorInvoiceNeedRows:
+      "Analiza una factura con al menos una fila antes de aplicar.",
+    liquorPriceNonNegative: "El precio debe ser cero o mayor.",
+    liquorQtyMlPositive: "Cant/ML debe ser mayor que cero.",
+    liquorCatalogRowSaved: "Fila de catálogo de licor guardada.",
+    liquorCatalogSaveFailed: "No se pudo guardar la fila del catálogo de licor.",
+    liquorBarNonNegative: "La cantidad de bar debe ser cero o mayor.",
+    liquorBodegaNonNegative: "La cantidad de bodega debe ser cero o mayor.",
+    liquorCountDateFormat: "La fecha de conteo debe usar formato YYYY-MM-DD.",
+    liquorInventoryRowSaved: "Fila de inventario de licor guardada.",
+    liquorInventorySaveFailed:
+      "No se pudo guardar la fila de inventario de licor.",
+    liquorCameraPermissionRequired:
+      "Se requiere permiso de cámara para escanear botella.",
+    liquorBottleScanSaved: "Escaneo de botella guardado.",
+    liquorBottleScanFill: "Nivel",
+    liquorBottleScanSpent: "Consumido",
+    liquorBottleScanAnalyzeFailed: "No se pudo analizar la foto de la botella.",
+    pendingTipsBeforeClockIn:
+      "Envía propinas del {date} antes de marcar entrada.",
+    pendingTipsStatus: "Propinas pendientes del {date}.",
+    unableLocalDownloadStorage:
+      "No se puede acceder al almacenamiento local para descarga.",
+    downloadReady: "Descarga lista",
     downloadPdf: "Descargar PDF",
     downloadCsv: "Descargar CSV",
     downloadExcel: "Descargar Excel",
@@ -629,6 +823,10 @@ export default function App() {
   const [tenantOffices, setTenantOffices] = useState<TenantOffice[]>([]);
   const [selectedOfficeId, setSelectedOfficeId] = useState<string | null>(null);
   const [tenantCompanyOrdersEnabled, setTenantCompanyOrdersEnabled] =
+    useState(false);
+  const [tenantLiquorInventoryEnabled, setTenantLiquorInventoryEnabled] =
+    useState(false);
+  const [tenantLiquorPremiumEnabled, setTenantLiquorPremiumEnabled] =
     useState(false);
   const [loadingLocations, setLoadingLocations] = useState(false);
   const [locationStatus, setLocationStatus] = useState<string | null>(null);
@@ -698,6 +896,40 @@ export default function App() {
   const [companyOrderStatus, setCompanyOrderStatus] = useState<string | null>(
     null,
   );
+  const [liquorCatalog, setLiquorCatalog] = useState<LiquorCatalogItem[]>([]);
+  const [liquorCounts, setLiquorCounts] = useState<LiquorCountRow[]>([]);
+  const [liquorBottleScans, setLiquorBottleScans] = useState<
+    LiquorBottleScanRow[]
+  >([]);
+  const [liquorSheetDrafts, setLiquorSheetDrafts] = useState<
+    Record<string, LiquorSheetDraft>
+  >({});
+  const [liquorCountDate, setLiquorCountDate] = useState(todayDateKey());
+  const [liquorScanContainerKey, setLiquorScanContainerKey] = useState("");
+  const [liquorInvoiceDate, setLiquorInvoiceDate] = useState(todayDateKey());
+  const [liquorInvoiceNumber, setLiquorInvoiceNumber] = useState("");
+  const [liquorInvoiceSupplier, setLiquorInvoiceSupplier] = useState("");
+  const [liquorInvoiceNotes, setLiquorInvoiceNotes] = useState("");
+  const [liquorInvoiceIncludePurchases, setLiquorInvoiceIncludePurchases] =
+    useState(true);
+  const [liquorInvoiceImageDataUrl, setLiquorInvoiceImageDataUrl] = useState("");
+  const [liquorInvoiceImageName, setLiquorInvoiceImageName] = useState("");
+  const [liquorInvoiceRows, setLiquorInvoiceRows] = useState<
+    LiquorInvoiceExtractedRow[]
+  >([]);
+  const [liquorInvoiceAnalyzing, setLiquorInvoiceAnalyzing] = useState(false);
+  const [liquorInvoiceApplying, setLiquorInvoiceApplying] = useState(false);
+  const [liquorStatus, setLiquorStatus] = useState<string | null>(null);
+  const [liquorLoading, setLiquorLoading] = useState(false);
+  const [liquorSavingItemId, setLiquorSavingItemId] = useState<string | null>(
+    null,
+  );
+  const [liquorSavingCountItemId, setLiquorSavingCountItemId] = useState<
+    string | null
+  >(null);
+  const [liquorAnalyzingItemId, setLiquorAnalyzingItemId] = useState<
+    string | null
+  >(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
 
   const officeScopedDirectoryEmployees = useMemo(() => {
@@ -772,6 +1004,12 @@ export default function App() {
   const hasCompanyOrdersAccess = Boolean(
     tenantCompanyOrdersEnabled && activeShift && companyOrdersActor,
   );
+  const liquorManagerActor = useMemo(() => {
+    if (!sessionEmployee?.isManager) {
+      return null;
+    }
+    return sessionEmployee;
+  }, [sessionEmployee]);
 
   const getTipSubmissionKey = (employeeId: string, workDate?: string) => {
     const normalizedDate = workDate || new Date().toISOString().slice(0, 10);
@@ -813,6 +1051,16 @@ export default function App() {
       "x-dev-email": `${companyOrdersActor.id}@clockin.local`,
     };
   }, [companyOrdersActor]);
+  const liquorHeaders = useMemo<Record<string, string> | undefined>(() => {
+    if (!liquorManagerActor) {
+      return undefined;
+    }
+    return {
+      "x-dev-user-id": `employee:${liquorManagerActor.id}`,
+      "x-dev-name": liquorManagerActor.name,
+      "x-dev-email": `${liquorManagerActor.id}@clockin.local`,
+    };
+  }, [liquorManagerActor]);
   const selectedCompanyOrderSupplier = useMemo(
     () =>
       companyOrderCatalog.find(
@@ -937,9 +1185,68 @@ export default function App() {
       ).length,
     [companyOrderDrafts],
   );
+  const latestLiquorCountByItem = useMemo(() => {
+    const map = new Map<string, LiquorCountRow>();
+    liquorCounts.forEach((count) => {
+      if (!map.has(count.itemId)) {
+        map.set(count.itemId, count);
+      }
+    });
+    return map;
+  }, [liquorCounts]);
+  const liquorSheetRows = useMemo(
+    () =>
+      [...liquorCatalog]
+        .filter((item) => item.isActive)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((item) => {
+          const latestCount = latestLiquorCountByItem.get(item.id);
+          const barQuantity =
+            latestCount?.barQuantity ?? latestCount?.quantity ?? 0;
+          const bodegaQuantity = latestCount?.bodegaQuantity ?? 0;
+          const inventory = barQuantity + bodegaQuantity;
+          const total =
+            item.sizeMl && item.sizeMl > 0
+              ? Number(((item.unitCost * inventory) / item.sizeMl).toFixed(2))
+              : null;
+          return {
+            item,
+            barQuantity,
+            bodegaQuantity,
+            inventory,
+            total,
+          };
+        }),
+    [latestLiquorCountByItem, liquorCatalog],
+  );
+  useEffect(() => {
+    setLiquorSheetDrafts((previous) => {
+      const next: Record<string, LiquorSheetDraft> = {};
+      liquorSheetRows.forEach((row) => {
+        const existing = previous[row.item.id];
+        next[row.item.id] = existing || {
+          supplierName: row.item.supplierName || "",
+          unitCost: String(row.item.unitCost ?? ""),
+          sizeMl: row.item.sizeMl === null ? "" : String(row.item.sizeMl),
+          barQuantity: String(row.barQuantity || ""),
+          bodegaQuantity: String(row.bodegaQuantity || ""),
+        };
+      });
+      return next;
+    });
+  }, [liquorSheetRows]);
   const requiresLocationSelection = tenantOffices.length > 1;
   const canUseClockScreen =
     !requiresLocationSelection || Boolean(selectedOfficeId);
+  const hasLiquorAccess = Boolean(
+    tenantLiquorInventoryEnabled &&
+      canUseClockScreen &&
+      activeShift &&
+      liquorManagerActor,
+  );
+  const hasLiquorPremiumAccess = Boolean(
+    hasLiquorAccess && tenantLiquorPremiumEnabled,
+  );
   const formatScheduleShiftLabel = useCallback(
     (startTime: string, endTime: string) => {
       if (startTime && endTime) {
@@ -1027,7 +1334,7 @@ export default function App() {
   const fetchJson = useCallback(
     async (path: string, options?: RequestInit) => {
       if (!tenant) {
-        throw new Error("Tenant not configured.");
+        throw new Error(t.tenantNotConfigured);
       }
 
       const orderedBases = resolvedApiBase
@@ -1089,7 +1396,7 @@ export default function App() {
       const message = lastError?.message || "Unable to reach ClockIn API.";
       throw new Error(tried ? `${message} Tried: ${tried}` : message);
     },
-    [resolvedApiBase, tenant],
+    [resolvedApiBase, t.tenantNotConfigured, tenant],
   );
 
   const fetchCompanyOrderExport = useCallback(
@@ -1186,7 +1493,7 @@ export default function App() {
             const directoryUri =
               FileSystem.cacheDirectory || FileSystem.documentDirectory;
             if (!directoryUri) {
-              throw new Error("Unable to access local storage for download.");
+              throw new Error(t.unableLocalDownloadStorage);
             }
 
             const fileUri = `${directoryUri}${filename}`;
@@ -1201,7 +1508,7 @@ export default function App() {
                 dialogTitle: filename,
               });
             } else {
-              Alert.alert("Download ready", filename);
+              Alert.alert(t.downloadReady, filename);
             }
             return true;
           }
@@ -1213,7 +1520,7 @@ export default function App() {
       }
       return false;
     },
-    [resolvedApiBase, selectedOfficeId, tenant],
+    [resolvedApiBase, selectedOfficeId, t.downloadReady, t.unableLocalDownloadStorage, tenant],
   );
 
   const loadEmployees = useCallback(async () => {
@@ -1544,6 +1851,188 @@ export default function App() {
     tenant,
   ]);
 
+  const loadLiquorControlData = useCallback(async () => {
+    if (!tenant || !canUseClockScreen || !hasLiquorAccess || !selectedOfficeId) {
+      setLiquorCatalog([]);
+      setLiquorCounts([]);
+      setLiquorBottleScans([]);
+      setLiquorInvoiceRows([]);
+      setLiquorInvoiceImageDataUrl("");
+      setLiquorInvoiceImageName("");
+      return;
+    }
+
+    setLiquorLoading(true);
+    setLiquorStatus(null);
+    try {
+      const query = new URLSearchParams();
+      query.set("limit", "300");
+      query.set("officeId", selectedOfficeId);
+      const scanRequest = hasLiquorPremiumAccess
+        ? (fetchJson(`/liquor-inventory/bottle-scans?${query.toString()}`, {
+            headers: liquorHeaders,
+          }) as Promise<{
+            scans?: Array<Record<string, unknown>>;
+          }>)
+        : Promise.resolve({ scans: [] as Array<Record<string, unknown>> });
+      const [catalogPayload, countPayload, scanPayload] = await Promise.all([
+        fetchJson("/liquor-inventory/catalog?includeInactive=1", {
+          headers: liquorHeaders,
+        }) as Promise<{
+          items?: Array<Record<string, unknown>>;
+        }>,
+        fetchJson(`/liquor-inventory/counts?${query.toString()}`, {
+          headers: liquorHeaders,
+        }) as Promise<{
+          counts?: Array<Record<string, unknown>>;
+        }>,
+        scanRequest,
+      ]);
+
+      const items = Array.isArray(catalogPayload.items)
+        ? catalogPayload.items
+            .map((candidate) => {
+              const id =
+                typeof candidate.id === "string" ? candidate.id.trim() : "";
+              const name =
+                typeof candidate.name === "string" ? candidate.name.trim() : "";
+              if (!id || !name) {
+                return null;
+              }
+              const unitCost =
+                typeof candidate.unitCost === "number" &&
+                Number.isFinite(candidate.unitCost)
+                  ? candidate.unitCost
+                  : 0;
+              return {
+                id,
+                name,
+                brand:
+                  typeof candidate.brand === "string" ? candidate.brand : null,
+                supplierName:
+                  typeof candidate.supplierName === "string"
+                    ? candidate.supplierName
+                    : null,
+                sizeMl:
+                  typeof candidate.sizeMl === "number" &&
+                  Number.isFinite(candidate.sizeMl)
+                    ? candidate.sizeMl
+                    : null,
+                unitCost,
+                isActive:
+                  typeof candidate.isActive === "boolean"
+                    ? candidate.isActive
+                    : true,
+              } satisfies LiquorCatalogItem;
+            })
+            .filter((row): row is LiquorCatalogItem => Boolean(row))
+        : [];
+      const counts = Array.isArray(countPayload.counts)
+        ? countPayload.counts
+            .map((candidate) => {
+              const id =
+                typeof candidate.id === "string" ? candidate.id.trim() : "";
+              const itemId =
+                typeof candidate.itemId === "string"
+                  ? candidate.itemId.trim()
+                  : "";
+              if (!id || !itemId) {
+                return null;
+              }
+              const quantity =
+                typeof candidate.quantity === "number" &&
+                Number.isFinite(candidate.quantity)
+                  ? candidate.quantity
+                  : 0;
+              return {
+                id,
+                itemId,
+                countDate:
+                  typeof candidate.countDate === "string"
+                    ? candidate.countDate
+                    : todayDateKey(),
+                quantity,
+                barQuantity:
+                  typeof candidate.barQuantity === "number" &&
+                  Number.isFinite(candidate.barQuantity)
+                    ? candidate.barQuantity
+                    : null,
+                bodegaQuantity:
+                  typeof candidate.bodegaQuantity === "number" &&
+                  Number.isFinite(candidate.bodegaQuantity)
+                    ? candidate.bodegaQuantity
+                    : null,
+              } satisfies LiquorCountRow;
+            })
+            .filter((row): row is LiquorCountRow => Boolean(row))
+        : [];
+      const scans = Array.isArray(scanPayload.scans)
+        ? scanPayload.scans
+            .map((candidate) => {
+              const id =
+                typeof candidate.id === "string" ? candidate.id.trim() : "";
+              const itemId =
+                typeof candidate.itemId === "string"
+                  ? candidate.itemId.trim()
+                  : "";
+              if (!id || !itemId) {
+                return null;
+              }
+              return {
+                id,
+                itemId,
+                itemName:
+                  typeof candidate.itemName === "string"
+                    ? candidate.itemName
+                    : "Item",
+                containerKey:
+                  typeof candidate.containerKey === "string"
+                    ? candidate.containerKey
+                    : null,
+                fillPercent:
+                  typeof candidate.fillPercent === "number" &&
+                  Number.isFinite(candidate.fillPercent)
+                    ? candidate.fillPercent
+                    : 0,
+                estimatedMl:
+                  typeof candidate.estimatedMl === "number" &&
+                  Number.isFinite(candidate.estimatedMl)
+                    ? candidate.estimatedMl
+                    : null,
+                measuredAt:
+                  typeof candidate.measuredAt === "string"
+                    ? candidate.measuredAt
+                    : new Date().toISOString(),
+                createdAt:
+                  typeof candidate.createdAt === "string"
+                    ? candidate.createdAt
+                    : new Date().toISOString(),
+              } satisfies LiquorBottleScanRow;
+            })
+            .filter((row): row is LiquorBottleScanRow => Boolean(row))
+        : [];
+      setLiquorCatalog(items);
+      setLiquorCounts(counts);
+      setLiquorBottleScans(scans);
+    } catch (error) {
+      setLiquorStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to load liquor control right now.",
+      );
+    } finally {
+      setLiquorLoading(false);
+    }
+  }, [
+    canUseClockScreen,
+    fetchJson,
+    hasLiquorAccess,
+    hasLiquorPremiumAccess,
+    liquorHeaders,
+    selectedOfficeId,
+    tenant,
+  ]);
+
   const loadCompanyOrders = useCallback(async () => {
     if (!tenant || !canUseClockScreen || !hasCompanyOrdersAccess) {
       setCompanyOrderRows([]);
@@ -1594,6 +2083,8 @@ export default function App() {
           setTenantOffices([]);
           setSelectedOfficeId(null);
           setTenantCompanyOrdersEnabled(false);
+          setTenantLiquorInventoryEnabled(false);
+          setTenantLiquorPremiumEnabled(false);
           setDirectoryEmployees([]);
           setLocationPickerOpen(false);
           setLocationStatus(null);
@@ -1618,7 +2109,9 @@ export default function App() {
             geofenceRadiusMeters?: number | null;
           }>;
           companyOrdersEnabled?: boolean;
+          liquorInventoryEnabled?: boolean;
           employees?: unknown[];
+          premiumFeaturesEnabled?: boolean;
           message?: string;
           error?: string;
         } | null = null;
@@ -1645,6 +2138,8 @@ export default function App() {
                 geofenceRadiusMeters?: number | null;
               }>;
               companyOrdersEnabled?: boolean;
+              liquorInventoryEnabled?: boolean;
+              premiumFeaturesEnabled?: boolean;
               employees?: unknown[];
               message?: string;
               error?: string;
@@ -1733,6 +2228,16 @@ export default function App() {
             ? payload.companyOrdersEnabled
             : true,
         );
+        setTenantLiquorInventoryEnabled(
+          typeof payload.liquorInventoryEnabled === "boolean"
+            ? payload.liquorInventoryEnabled
+            : true,
+        );
+        setTenantLiquorPremiumEnabled(
+          typeof payload.premiumFeaturesEnabled === "boolean"
+            ? payload.premiumFeaturesEnabled
+            : false,
+        );
         setDirectoryEmployees(contextEmployees);
         setSelectedOfficeId(nextOfficeId);
         setLocationPickerOpen(false);
@@ -1742,6 +2247,8 @@ export default function App() {
         }
         setTenantOffices((prev) => prev);
         setTenantCompanyOrdersEnabled(false);
+        setTenantLiquorInventoryEnabled(false);
+        setTenantLiquorPremiumEnabled(false);
         setLocationPickerOpen(false);
         setLocationStatus(
           error instanceof Error ? error.message : t.unableToLoadLocations,
@@ -1911,6 +2418,24 @@ export default function App() {
   ]);
 
   useEffect(() => {
+    if (!tenantHydrated) {
+      return;
+    }
+    if (!hasLiquorAccess) {
+      setLiquorCatalog([]);
+      setLiquorCounts([]);
+      setLiquorBottleScans([]);
+      setLiquorSheetDrafts({});
+      setLiquorInvoiceRows([]);
+      setLiquorInvoiceImageDataUrl("");
+      setLiquorInvoiceImageName("");
+      setLiquorStatus(null);
+      return;
+    }
+    void loadLiquorControlData();
+  }, [hasLiquorAccess, loadLiquorControlData, tenantHydrated]);
+
+  useEffect(() => {
     let active = true;
 
     const loadActiveShift = async () => {
@@ -2027,11 +2552,9 @@ export default function App() {
   }, [activeShift, employeeName]);
 
   useEffect(() => {
-    if (activeShift) {
-      setPunchType((current) => (current === "IN" ? "OUT" : current));
-      return;
+    if (!activeShift) {
+      setPunchType("IN");
     }
-    setPunchType("IN");
   }, [activeShift]);
 
   const configureTenant = async () => {
@@ -2114,6 +2637,7 @@ export default function App() {
       setTenantOffices([]);
       setSelectedOfficeId(null);
       setTenantCompanyOrdersEnabled(false);
+      setTenantLiquorInventoryEnabled(false);
       setLocationPickerOpen(false);
       setLocationStatus(null);
       setTenant(resolvedTenant);
@@ -2324,6 +2848,429 @@ export default function App() {
     }
   };
 
+  const updateLiquorSheetDraft = (
+    itemId: string,
+    field: keyof LiquorSheetDraft,
+    value: string,
+  ) => {
+    setLiquorSheetDrafts((previous) => ({
+      ...previous,
+      [itemId]: {
+        ...(previous[itemId] || {
+          supplierName: "",
+          unitCost: "",
+          sizeMl: "",
+          barQuantity: "",
+          bodegaQuantity: "",
+        }),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveLiquorCatalogRow = async (itemId: string) => {
+    if (!hasLiquorAccess || !liquorHeaders) {
+      setLiquorStatus(t.liquorManagerOnly);
+      return;
+    }
+    const draft = liquorSheetDrafts[itemId];
+    if (!draft) {
+      return;
+    }
+    const unitCost = Number(draft.unitCost);
+    const sizeMlRaw = draft.sizeMl.trim();
+    const sizeMl = sizeMlRaw ? Number(sizeMlRaw) : undefined;
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      setLiquorStatus(t.liquorPriceNonNegative);
+      return;
+    }
+    if (
+      sizeMlRaw &&
+      (sizeMl === undefined || !Number.isFinite(sizeMl) || sizeMl <= 0)
+    ) {
+      setLiquorStatus(t.liquorQtyMlPositive);
+      return;
+    }
+
+    setLiquorSavingItemId(itemId);
+    try {
+      await fetchJson(`/liquor-inventory/catalog/${itemId}`, {
+        method: "PUT",
+        headers: liquorHeaders,
+        body: JSON.stringify({
+          supplierName: draft.supplierName.trim() || undefined,
+          unitCost,
+          sizeMl,
+        }),
+      });
+      setLiquorStatus(t.liquorCatalogRowSaved);
+      await loadLiquorControlData();
+    } catch (error) {
+      setLiquorStatus(
+        error instanceof Error
+          ? error.message
+          : t.liquorCatalogSaveFailed,
+      );
+    } finally {
+      setLiquorSavingItemId(null);
+    }
+  };
+
+  const saveLiquorCountRow = async (itemId: string) => {
+    if (!hasLiquorAccess || !liquorHeaders) {
+      setLiquorStatus(t.liquorManagerOnly);
+      return;
+    }
+    if (!selectedOfficeId) {
+      setLiquorStatus(t.selectLocationBeforeClockIn);
+      return;
+    }
+    const draft = liquorSheetDrafts[itemId];
+    if (!draft) {
+      return;
+    }
+    const barQuantity = draft.barQuantity.trim() ? Number(draft.barQuantity) : 0;
+    const bodegaQuantity = draft.bodegaQuantity.trim()
+      ? Number(draft.bodegaQuantity)
+      : 0;
+    if (!Number.isFinite(barQuantity) || barQuantity < 0) {
+      setLiquorStatus(t.liquorBarNonNegative);
+      return;
+    }
+    if (!Number.isFinite(bodegaQuantity) || bodegaQuantity < 0) {
+      setLiquorStatus(t.liquorBodegaNonNegative);
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(liquorCountDate.trim())) {
+      setLiquorStatus(t.liquorCountDateFormat);
+      return;
+    }
+
+    setLiquorSavingCountItemId(itemId);
+    try {
+      await fetchJson("/liquor-inventory/counts", {
+        method: "POST",
+        headers: liquorHeaders,
+        body: JSON.stringify({
+          itemId,
+          officeId: selectedOfficeId,
+          countDate: liquorCountDate.trim(),
+          quantity: Number((barQuantity + bodegaQuantity).toFixed(3)),
+          barQuantity,
+          bodegaQuantity,
+        }),
+      });
+      setLiquorStatus(t.liquorInventoryRowSaved);
+      await loadLiquorControlData();
+    } catch (error) {
+      setLiquorStatus(
+        error instanceof Error
+          ? error.message
+          : t.liquorInventorySaveFailed,
+      );
+    } finally {
+      setLiquorSavingCountItemId(null);
+    }
+  };
+
+  const analyzeLiquorBottleForItem = async (itemId: string) => {
+    if (!hasLiquorAccess || !liquorHeaders) {
+      setLiquorStatus(t.liquorManagerOnly);
+      return;
+    }
+    if (!hasLiquorPremiumAccess) {
+      setLiquorStatus(t.liquorPremiumDisabled);
+      return;
+    }
+    if (!selectedOfficeId) {
+      setLiquorStatus(t.selectLocationBeforeClockIn);
+      return;
+    }
+
+    setLiquorAnalyzingItemId(itemId);
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        setLiquorStatus(t.liquorCameraPermissionRequired);
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.7,
+      });
+      if (result.canceled || !result.assets.length) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const fallbackMimeType = asset.uri.toLowerCase().endsWith(".png")
+        ? "image/png"
+        : "image/jpeg";
+      const mimeType = asset.mimeType || fallbackMimeType;
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const imageDataUrl = `data:${mimeType};base64,${base64}`;
+
+      const payload = (await fetchJson("/liquor-inventory/bottle-scans/analyze", {
+        method: "POST",
+        headers: liquorHeaders,
+        body: JSON.stringify({
+          itemId,
+          officeId: selectedOfficeId,
+          measuredAt: new Date().toISOString(),
+          containerKey: liquorScanContainerKey.trim() || undefined,
+          imageDataUrl,
+        }),
+      })) as {
+        analysis?: { fillPercent?: number };
+        comparison?: { spentMlClamped?: number | null };
+      };
+
+      const fillPercent =
+        typeof payload.analysis?.fillPercent === "number"
+          ? payload.analysis.fillPercent.toFixed(1)
+          : "n/a";
+      const spentMl =
+        typeof payload.comparison?.spentMlClamped === "number"
+          ? payload.comparison.spentMlClamped.toFixed(1)
+          : "n/a";
+      setLiquorStatus(
+        `${t.liquorBottleScanSaved} ${t.liquorBottleScanFill} ${fillPercent}% • ${t.liquorBottleScanSpent} ${spentMl} ml.`,
+      );
+      await loadLiquorControlData();
+    } catch (error) {
+      setLiquorStatus(
+        error instanceof Error
+          ? error.message
+          : t.liquorBottleScanAnalyzeFailed,
+      );
+    } finally {
+      setLiquorAnalyzingItemId(null);
+    }
+  };
+
+  const normalizeLiquorInvoiceRows = (
+    rows: Array<Record<string, unknown>>,
+  ): LiquorInvoiceExtractedRow[] =>
+    rows
+      .map((candidate, index) => {
+        const liquorName =
+          typeof candidate.liquorName === "string"
+            ? candidate.liquorName.trim()
+            : "";
+        if (!liquorName) {
+          return null;
+        }
+        const matchedItem =
+          candidate.matchedItem && typeof candidate.matchedItem === "object"
+            ? (candidate.matchedItem as Record<string, unknown>)
+            : null;
+        const costShock =
+          candidate.costShock && typeof candidate.costShock === "object"
+            ? (candidate.costShock as Record<string, unknown>)
+            : null;
+        const costShockSeverity =
+          typeof costShock?.severity === "string" &&
+          (costShock.severity === "normal" ||
+            costShock.severity === "elevated" ||
+            costShock.severity === "critical")
+            ? costShock.severity
+            : "normal";
+        const costShockDeltaPct =
+          typeof costShock?.deltaPct === "number" &&
+          Number.isFinite(costShock.deltaPct)
+            ? costShock.deltaPct
+            : null;
+        return {
+          rowNumber:
+            typeof candidate.rowNumber === "number" &&
+            Number.isFinite(candidate.rowNumber)
+              ? candidate.rowNumber
+              : index + 1,
+          company:
+            typeof candidate.company === "string" ? candidate.company.trim() : null,
+          liquorName,
+          kind: typeof candidate.kind === "string" ? candidate.kind.trim() : null,
+          upc: typeof candidate.upc === "string" ? candidate.upc.trim() : null,
+          ml:
+            typeof candidate.ml === "number" && Number.isFinite(candidate.ml)
+              ? candidate.ml
+              : null,
+          unitCost:
+            typeof candidate.unitCost === "number" &&
+            Number.isFinite(candidate.unitCost)
+              ? candidate.unitCost
+              : null,
+          quantity:
+            typeof candidate.quantity === "number" &&
+            Number.isFinite(candidate.quantity)
+              ? candidate.quantity
+              : null,
+          matchedItemId:
+            matchedItem && typeof matchedItem.id === "string"
+              ? matchedItem.id.trim()
+              : null,
+          matchedItemName:
+            matchedItem && typeof matchedItem.name === "string"
+              ? matchedItem.name.trim()
+              : null,
+          suggestedAction:
+            candidate.suggestedAction === "update" ? "update" : "create",
+          costShockDeltaPct,
+          costShockSeverity,
+          costShockFlag: Boolean(costShock?.isShock),
+        } satisfies LiquorInvoiceExtractedRow;
+      })
+      .filter((row): row is LiquorInvoiceExtractedRow => Boolean(row));
+
+  const pickLiquorInvoicePhoto = async () => {
+    if (!hasLiquorAccess) {
+      setLiquorStatus(t.liquorManagerOnly);
+      return;
+    }
+    if (!hasLiquorPremiumAccess) {
+      setLiquorStatus(t.liquorPremiumDisabled);
+      return;
+    }
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setLiquorStatus(t.liquorInvoiceMediaPermission);
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.75,
+    });
+    if (result.canceled || !result.assets.length) {
+      return;
+    }
+    const asset = result.assets[0];
+    const fallbackMimeType = asset.uri.toLowerCase().endsWith(".png")
+      ? "image/png"
+      : "image/jpeg";
+    const mimeType = asset.mimeType || fallbackMimeType;
+    const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    setLiquorInvoiceImageDataUrl(`data:${mimeType};base64,${base64}`);
+    setLiquorInvoiceImageName(
+      asset.fileName ||
+        asset.uri.split("/").pop() ||
+        `invoice-${new Date().toISOString().slice(0, 10)}`,
+    );
+  };
+
+  const analyzeLiquorInvoicePhoto = async () => {
+    if (!hasLiquorAccess || !liquorHeaders) {
+      setLiquorStatus(t.liquorManagerOnly);
+      return;
+    }
+    if (!hasLiquorPremiumAccess) {
+      setLiquorStatus(t.liquorPremiumDisabled);
+      return;
+    }
+    if (!selectedOfficeId) {
+      setLiquorStatus(t.liquorInvoiceSelectLocation);
+      return;
+    }
+    if (!liquorInvoiceImageDataUrl) {
+      setLiquorStatus(t.liquorInvoiceSelectPhoto);
+      return;
+    }
+    setLiquorInvoiceAnalyzing(true);
+    try {
+      const payload = (await fetchJson("/liquor-inventory/invoices/analyze", {
+        method: "POST",
+        headers: liquorHeaders,
+        body: JSON.stringify({
+          officeId: selectedOfficeId,
+          invoiceDate: liquorInvoiceDate.trim() || undefined,
+          invoiceNumber: liquorInvoiceNumber.trim() || undefined,
+          supplierName: liquorInvoiceSupplier.trim() || undefined,
+          notes: liquorInvoiceNotes.trim() || undefined,
+          imageDataUrl: liquorInvoiceImageDataUrl,
+        }),
+      })) as LiquorInvoiceAnalyzeResponse;
+
+      const rows = Array.isArray(payload.rows)
+        ? normalizeLiquorInvoiceRows(payload.rows)
+        : [];
+      setLiquorInvoiceRows(rows);
+      setLiquorInvoiceImageDataUrl("");
+      setLiquorInvoiceImageName("");
+      const extractedCount =
+        typeof payload.analysis?.totalExtractedRows === "number" &&
+        Number.isFinite(payload.analysis.totalExtractedRows)
+          ? payload.analysis.totalExtractedRows
+          : rows.length;
+      setLiquorStatus(
+        `${t.liquorInvoiceAnalyzeSaved} ${extractedCount} ${t.liquorInvoiceRowsExtracted}.`,
+      );
+    } catch (error) {
+      setLiquorStatus(
+        error instanceof Error ? error.message : t.liquorInvoiceAnalyzeFailed,
+      );
+    } finally {
+      setLiquorInvoiceAnalyzing(false);
+    }
+  };
+
+  const applyLiquorInvoiceRows = async () => {
+    if (!hasLiquorAccess || !liquorHeaders) {
+      setLiquorStatus(t.liquorManagerOnly);
+      return;
+    }
+    if (!hasLiquorPremiumAccess) {
+      setLiquorStatus(t.liquorPremiumDisabled);
+      return;
+    }
+    if (!selectedOfficeId) {
+      setLiquorStatus(t.liquorInvoiceSelectLocation);
+      return;
+    }
+    if (liquorInvoiceRows.length === 0) {
+      setLiquorStatus(t.liquorInvoiceNeedRows);
+      return;
+    }
+    setLiquorInvoiceApplying(true);
+    try {
+      await fetchJson("/liquor-inventory/invoices/apply", {
+        method: "POST",
+        headers: liquorHeaders,
+        body: JSON.stringify({
+          officeId: selectedOfficeId,
+          invoiceDate: liquorInvoiceDate.trim() || undefined,
+          invoiceNumber: liquorInvoiceNumber.trim() || undefined,
+          supplierName: liquorInvoiceSupplier.trim() || undefined,
+          notes: liquorInvoiceNotes.trim() || undefined,
+          createPurchaseMovements: liquorInvoiceIncludePurchases,
+          rows: liquorInvoiceRows.map((row) => ({
+            existingItemId: row.matchedItemId || undefined,
+            apply: true,
+            company: row.company || undefined,
+            liquorName: row.liquorName,
+            kind: row.kind || undefined,
+            upc: row.upc || undefined,
+            ml: row.ml ?? undefined,
+            unitCost: row.unitCost ?? undefined,
+            quantity: row.quantity ?? undefined,
+          })),
+        }),
+      });
+      setLiquorInvoiceRows([]);
+      setLiquorStatus(t.liquorInvoiceApplied);
+      await loadLiquorControlData();
+    } catch (error) {
+      setLiquorStatus(
+        error instanceof Error ? error.message : t.liquorInvoiceApplyFailed,
+      );
+    } finally {
+      setLiquorInvoiceApplying(false);
+    }
+  };
+
   const getClockInCoordinates = useCallback(async () => {
     const permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== Location.PermissionStatus.GRANTED) {
@@ -2371,8 +3318,8 @@ export default function App() {
       return;
     }
     if (punchType === "IN" && targetEmployee.isServer && pendingTipDate) {
-      setStatus(`Submit tips for ${pendingTipDate} before clocking in.`);
-      setTipsStatus(`Pending tips for ${pendingTipDate}.`);
+      setStatus(t.pendingTipsBeforeClockIn.replace("{date}", pendingTipDate));
+      setTipsStatus(t.pendingTipsStatus.replace("{date}", pendingTipDate));
       setTipsAlert(true);
       setTimeout(() => {
         scrollRef.current?.scrollToEnd({ animated: true });
@@ -3509,6 +4456,429 @@ export default function App() {
                         ))
                       )}
                     </View>
+                    <View
+                      style={{
+                        marginVertical: 14,
+                        borderTopWidth: 1,
+                        borderTopColor: "rgba(24, 44, 86, 0.12)",
+                        paddingTop: 14,
+                      }}
+                    />
+                    <Text style={styles.teamTitle}>{t.liquorControl}</Text>
+                    <Text style={styles.teamMeta}>{t.liquorControlHint}</Text>
+                    {!tenantLiquorInventoryEnabled ? (
+                      <Text style={[styles.statusText, styles.teamStatusText]}>
+                        {t.liquorFeatureDisabled}
+                      </Text>
+                    ) : !sessionEmployee?.isManager ? (
+                      <Text style={[styles.statusText, styles.teamStatusText]}>
+                        {t.liquorManagerOnly}
+                      </Text>
+                    ) : (
+                      <>
+                        <View style={styles.teamHeaderRow}>
+                          <TouchableOpacity
+                            style={[
+                              styles.tenantSwitch,
+                              liquorLoading && styles.teamRefreshDisabled,
+                            ]}
+                            onPress={() => {
+                              void loadLiquorControlData();
+                            }}
+                            disabled={liquorLoading}
+                          >
+                            <Text style={styles.tenantSwitchText}>
+                              {liquorLoading ? t.refreshing : t.refresh}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                        <Text style={styles.label}>Count Date</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={liquorCountDate}
+                          onChangeText={setLiquorCountDate}
+                          placeholder="YYYY-MM-DD"
+                          placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                        />
+                        <Text style={styles.label}>Container Key</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={liquorScanContainerKey}
+                          onChangeText={setLiquorScanContainerKey}
+                          placeholder="bar-1 (optional)"
+                          placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                        />
+                        {hasLiquorPremiumAccess ? (
+                          <>
+                            <Text style={styles.teamTitle}>{t.liquorInvoiceOcr}</Text>
+                            <Text style={styles.label}>{t.liquorInvoiceDate}</Text>
+                            <TextInput
+                              style={styles.input}
+                              value={liquorInvoiceDate}
+                              onChangeText={setLiquorInvoiceDate}
+                              placeholder="YYYY-MM-DD"
+                              placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                            />
+                            <Text style={styles.label}>{t.liquorInvoiceNumber}</Text>
+                            <TextInput
+                              style={styles.input}
+                              value={liquorInvoiceNumber}
+                              onChangeText={setLiquorInvoiceNumber}
+                              placeholder="INV-1001"
+                              placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                            />
+                            <Text style={styles.label}>{t.liquorInvoiceSupplier}</Text>
+                            <TextInput
+                              style={styles.input}
+                              value={liquorInvoiceSupplier}
+                              onChangeText={setLiquorInvoiceSupplier}
+                              placeholder="Supplier"
+                              placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                            />
+                            <Text style={styles.label}>{t.liquorInvoiceNotes}</Text>
+                            <TextInput
+                              style={styles.input}
+                              value={liquorInvoiceNotes}
+                              onChangeText={setLiquorInvoiceNotes}
+                              placeholder="Optional notes"
+                              placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                            />
+                            <TouchableOpacity
+                              style={styles.tenantSwitch}
+                              onPress={() =>
+                                setLiquorInvoiceIncludePurchases((previous) => !previous)
+                              }
+                            >
+                              <Text style={styles.tenantSwitchText}>
+                                {liquorInvoiceIncludePurchases ? "✓ " : "○ "}
+                                {t.liquorInvoiceIncludePurchases}
+                              </Text>
+                            </TouchableOpacity>
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                flexWrap: "wrap",
+                                gap: 8,
+                                marginTop: 6,
+                              }}
+                            >
+                              <TouchableOpacity
+                                style={styles.tenantSwitch}
+                                onPress={() => {
+                                  void pickLiquorInvoicePhoto();
+                                }}
+                              >
+                                <Text style={styles.tenantSwitchText}>
+                                  {t.liquorInvoicePhoto}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.tenantSwitch}
+                                disabled={liquorInvoiceAnalyzing}
+                                onPress={() => {
+                                  void analyzeLiquorInvoicePhoto();
+                                }}
+                              >
+                                <Text style={styles.tenantSwitchText}>
+                                  {liquorInvoiceAnalyzing
+                                    ? t.preparingDownload
+                                    : t.liquorInvoiceAnalyze}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.tenantSwitch}
+                                disabled={liquorInvoiceApplying}
+                                onPress={() => {
+                                  void applyLiquorInvoiceRows();
+                                }}
+                              >
+                                <Text style={styles.tenantSwitchText}>
+                                  {liquorInvoiceApplying
+                                    ? t.preparingDownload
+                                    : t.liquorInvoiceApply}
+                                </Text>
+                              </TouchableOpacity>
+                            </View>
+                            {liquorInvoiceImageName ? (
+                              <Text style={styles.teamEmployeeMeta}>
+                                {t.liquorInvoicePhoto}: {liquorInvoiceImageName}
+                              </Text>
+                            ) : null}
+                            {liquorInvoiceRows.length === 0 ? (
+                              <Text style={styles.teamEmployeeMeta}>
+                                {t.liquorInvoiceNoRows}
+                              </Text>
+                            ) : (
+                              liquorInvoiceRows.slice(0, 12).map((row) => (
+                                <View
+                                  key={`liquor-invoice-row-${row.rowNumber}-${row.liquorName}`}
+                                  style={styles.teamRow}
+                                >
+                                  <View style={styles.teamRowMain}>
+                                    <Text style={styles.teamEmployeeName}>
+                                      {row.liquorName}
+                                    </Text>
+                                    <Text style={styles.teamEmployeeMeta}>
+                                      {row.company || "-"} • {row.kind || "-"} •{" "}
+                                      {row.quantity === null ? "-" : row.quantity}
+                                    </Text>
+                                    <Text style={styles.teamEmployeeMeta}>
+                                      {t.liquorInvoiceMatch}:{" "}
+                                      {row.matchedItemName || row.suggestedAction} •{" "}
+                                      {t.liquorInvoiceSeverity}: {row.costShockSeverity}
+                                      {row.costShockDeltaPct !== null
+                                        ? ` • ${(
+                                            row.costShockDeltaPct * 100
+                                          ).toFixed(1)}%`
+                                        : ""}
+                                    </Text>
+                                  </View>
+                                </View>
+                              ))
+                            )}
+                          </>
+                        ) : (
+                          <Text style={[styles.statusText, styles.teamStatusText]}>
+                            {t.liquorPremiumDisabled}
+                          </Text>
+                        )}
+                        {liquorStatus ? (
+                          <Text style={[styles.statusText, styles.teamStatusText]}>
+                            {liquorStatus}
+                          </Text>
+                        ) : null}
+                        {liquorSheetRows.length === 0 ? (
+                          <Text style={styles.teamEmptyText}>No liquor items yet.</Text>
+                        ) : (
+                          liquorSheetRows.map((row) => {
+                            const draft = liquorSheetDrafts[row.item.id] || {
+                              supplierName: row.item.supplierName || "",
+                              unitCost: String(row.item.unitCost || ""),
+                              sizeMl:
+                                row.item.sizeMl === null
+                                  ? ""
+                                  : String(row.item.sizeMl),
+                              barQuantity: String(row.barQuantity || ""),
+                              bodegaQuantity: String(row.bodegaQuantity || ""),
+                            };
+                            const isSavingItem = liquorSavingItemId === row.item.id;
+                            const isSavingCount =
+                              liquorSavingCountItemId === row.item.id;
+                            const isAnalyzing = liquorAnalyzingItemId === row.item.id;
+                            return (
+                              <View
+                                key={`liquor-row-${row.item.id}`}
+                                style={styles.companyOrderItemRow}
+                              >
+                                <View style={styles.companyOrderItemMain}>
+                                  <Text style={styles.teamEmployeeName}>
+                                    {row.item.name}
+                                  </Text>
+                                  <Text style={styles.teamEmployeeMeta}>
+                                    {row.item.brand || "Liquor item"}
+                                  </Text>
+                                </View>
+                                <View
+                                  style={{
+                                    flexDirection: "row",
+                                    flexWrap: "wrap",
+                                    gap: 8,
+                                    marginTop: 8,
+                                  }}
+                                >
+                                  <View style={{ width: "48%" }}>
+                                    <Text style={styles.label}>{t.liquorCompany}</Text>
+                                    <TextInput
+                                      style={styles.input}
+                                      value={draft.supplierName}
+                                      onChangeText={(value) =>
+                                        updateLiquorSheetDraft(
+                                          row.item.id,
+                                          "supplierName",
+                                          value,
+                                        )
+                                      }
+                                      placeholder="Supplier"
+                                      placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                                    />
+                                  </View>
+                                  <View style={{ width: "48%" }}>
+                                    <Text style={styles.label}>{t.liquorPrice}</Text>
+                                    <TextInput
+                                      style={styles.input}
+                                      value={draft.unitCost}
+                                      onChangeText={(value) =>
+                                        updateLiquorSheetDraft(
+                                          row.item.id,
+                                          "unitCost",
+                                          value,
+                                        )
+                                      }
+                                      keyboardType="decimal-pad"
+                                      inputMode="decimal"
+                                      placeholder="0.00"
+                                      placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                                    />
+                                  </View>
+                                  <View style={{ width: "30%" }}>
+                                    <Text style={styles.label}>{t.liquorQtyMl}</Text>
+                                    <TextInput
+                                      style={styles.input}
+                                      value={draft.sizeMl}
+                                      onChangeText={(value) =>
+                                        updateLiquorSheetDraft(
+                                          row.item.id,
+                                          "sizeMl",
+                                          value,
+                                        )
+                                      }
+                                      keyboardType="decimal-pad"
+                                      inputMode="decimal"
+                                      placeholder="750"
+                                      placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                                    />
+                                  </View>
+                                  <View style={{ width: "30%" }}>
+                                    <Text style={styles.label}>{t.liquorBar}</Text>
+                                    <TextInput
+                                      style={styles.input}
+                                      value={draft.barQuantity}
+                                      onChangeText={(value) =>
+                                        updateLiquorSheetDraft(
+                                          row.item.id,
+                                          "barQuantity",
+                                          value,
+                                        )
+                                      }
+                                      keyboardType="decimal-pad"
+                                      inputMode="decimal"
+                                      placeholder="0"
+                                      placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                                    />
+                                  </View>
+                                  <View style={{ width: "30%" }}>
+                                    <Text style={styles.label}>{t.liquorBodega}</Text>
+                                    <TextInput
+                                      style={styles.input}
+                                      value={draft.bodegaQuantity}
+                                      onChangeText={(value) =>
+                                        updateLiquorSheetDraft(
+                                          row.item.id,
+                                          "bodegaQuantity",
+                                          value,
+                                        )
+                                      }
+                                      keyboardType="decimal-pad"
+                                      inputMode="decimal"
+                                      placeholder="0"
+                                      placeholderTextColor="rgba(31, 26, 22, 0.35)"
+                                    />
+                                  </View>
+                                  <View style={{ width: "46%" }}>
+                                    <Text style={styles.label}>{t.liquorInventory}</Text>
+                                    <Text style={styles.teamEmployeeMeta}>
+                                      {row.inventory.toFixed(3)}
+                                    </Text>
+                                  </View>
+                                  <View style={{ width: "46%" }}>
+                                    <Text style={styles.label}>{t.liquorTotal}</Text>
+                                    <Text style={styles.teamEmployeeMeta}>
+                                      {row.total === null
+                                        ? "-"
+                                        : `$${row.total.toFixed(2)}`}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <View
+                                  style={{
+                                    flexDirection: "row",
+                                    flexWrap: "wrap",
+                                    gap: 8,
+                                    marginTop: 8,
+                                  }}
+                                >
+                                  <TouchableOpacity
+                                    style={styles.tenantSwitch}
+                                    disabled={isSavingItem}
+                                    onPress={() => {
+                                      void saveLiquorCatalogRow(row.item.id);
+                                    }}
+                                  >
+                                    <Text style={styles.tenantSwitchText}>
+                                      {isSavingItem
+                                        ? t.saving
+                                        : t.liquorSaveItem}
+                                    </Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    style={styles.tenantSwitch}
+                                    disabled={isSavingCount}
+                                    onPress={() => {
+                                      void saveLiquorCountRow(row.item.id);
+                                    }}
+                                  >
+                                    <Text style={styles.tenantSwitchText}>
+                                      {isSavingCount
+                                        ? t.saving
+                                        : t.liquorSaveCount}
+                                    </Text>
+                                  </TouchableOpacity>
+                                  {hasLiquorPremiumAccess ? (
+                                    <TouchableOpacity
+                                      style={styles.tenantSwitch}
+                                      disabled={isAnalyzing}
+                                      onPress={() => {
+                                        void analyzeLiquorBottleForItem(row.item.id);
+                                      }}
+                                    >
+                                      <Text style={styles.tenantSwitchText}>
+                                        {isAnalyzing
+                                          ? t.preparingDownload
+                                          : t.liquorScanBottle}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  ) : null}
+                                </View>
+                              </View>
+                            );
+                          })
+                        )}
+                        {hasLiquorPremiumAccess ? (
+                          <>
+                            <Text style={styles.teamTitle}>{t.liquorRecentScans}</Text>
+                            {liquorBottleScans.length === 0 ? (
+                              <Text style={styles.teamEmptyText}>{t.liquorNoScans}</Text>
+                            ) : (
+                              liquorBottleScans.slice(0, 12).map((scan) => (
+                                <View
+                                  key={`liquor-scan-${scan.id}`}
+                                  style={styles.teamRow}
+                                >
+                                  <View style={styles.teamRowMain}>
+                                    <Text style={styles.teamEmployeeName}>
+                                      {scan.itemName}
+                                    </Text>
+                                    <Text style={styles.teamEmployeeMeta}>
+                                      {formatDisplayDate(scan.measuredAt.slice(0, 10))} •{" "}
+                                      Fill {scan.fillPercent.toFixed(1)}%
+                                    </Text>
+                                    <Text style={styles.teamEmployeeMeta}>
+                                      Est. ml{" "}
+                                      {scan.estimatedMl === null
+                                        ? "-"
+                                        : scan.estimatedMl.toFixed(1)}
+                                      {scan.containerKey
+                                        ? ` • ${scan.containerKey}`
+                                        : ""}
+                                    </Text>
+                                  </View>
+                                </View>
+                              ))
+                            )}
+                          </>
+                        ) : null}
+                      </>
+                    )}
                   </View>
                 )}
 
