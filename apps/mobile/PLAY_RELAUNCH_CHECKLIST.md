@@ -39,12 +39,13 @@ cd apps/mobile
 npx eas submit --platform android --profile production --latest --non-interactive
 ```
 
-If submit fails because the package does not exist yet, create the Play app once in Console with:
+If submit fails for first upload (`The first submission of the app needs to be performed manually`), do the first upload in Play Console:
 
 - App name: `ClockIn Employee`
 - Package: `com.websys.clockinemployee`
+- Upload file: `apps/mobile/dist/clockin-employee-v3.aab`
 
-Then rerun the submit command.
+After that first manual upload, rerun `eas submit` for future releases.
 
 ## Final Play Console checks before sending for review
 
