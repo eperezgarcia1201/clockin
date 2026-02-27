@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ClockIn",
+    "name": "ClockIn Employee",
     "slug": "clockin",
     "version": "1.0.0",
     "entryPoint": "./index.ts",
@@ -23,7 +23,8 @@
       }
     },
     "android": {
-      "package": "com.websys.clockin",
+      "icon": "./assets/icon.png",
+      "package": "com.websys.clockinemployee",
       "versionCode": 1,
       "permissions": [
         "ACCESS_FINE_LOCATION",

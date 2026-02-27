@@ -1,0 +1,23 @@
+ClockIn Employee (com.websys.clockinemployee) - Google Play screenshots
+
+Phone screenshots (upload in this order):
+1. phone/Clockin_Play_Phone_1.jpg
+2. phone/Clockin_Play_Phone_2.jpg
+3. phone/Clockin_Play_Phone_3.jpg
+4. phone/Clockin_Play_Phone_4.jpg
+
+10-inch tablet screenshots:
+1. tablet-10/Clockin_Play_Tablet10_1.jpg
+2. tablet-10/Clockin_Play_Tablet10_2.jpg
+3. tablet-10/Clockin_Play_Tablet10_3.jpg
+4. tablet-10/Clockin_Play_Tablet10_4.jpg
+
+7-inch tablet screenshots:
+1. tablet-7/Clockin_Play_Tablet7_1.jpg
+2. tablet-7/Clockin_Play_Tablet7_2.jpg
+3. tablet-7/Clockin_Play_Tablet7_3.jpg
+4. tablet-7/Clockin_Play_Tablet7_4.jpg
+
+Important:
+- Remove old screenshots first.
+- Do NOT upload Expo Go screenshots.
