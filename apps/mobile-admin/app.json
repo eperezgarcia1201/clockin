@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ClockIn Admin",
+    "name": "ClockIn Admin Plus",
     "slug": "clockin-admin",
     "version": "1.0.0",
     "entryPoint": "./index.ts",
@@ -18,11 +18,15 @@
       "bundleIdentifier": "com.websys.clockinadmin",
       "buildNumber": "1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "ClockIn Admin uses the camera to capture expense receipts.",
+        "NSPhotoLibraryUsageDescription": "ClockIn Admin uses photos to attach expense receipts.",
+        "NSPhotoLibraryAddUsageDescription": "ClockIn Admin may save captured receipt images for sharing."
       }
     },
     "android": {
-      "package": "com.websys.clockinadmin",
+      "icon": "./assets/icon.png",
+      "package": "com.websys.clockinadminplus",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

@@ -8,15 +8,15 @@
     },
     "info": {
       "en-US": {
-        "description": "Admins can track their employees",
+        "description": "ClockIn Admin Plus helps managers run daily operations for workforce time tracking. Review punches, monitor schedules, manage teams by location, and keep staff records organized from one admin workspace.\n\nFeatures\n- Admin and manager access with tenant-based login\n- View and manage employee punch activity\n- Team and location workflow support\n- Operational tools for schedules and reporting\n- Built for organizations using the ClockIn platform\n\nRequires an active ClockIn organization account.",
         "keywords": [
           "Admin",
           "Tracking",
           "employees"
         ],
         "supportUrl": "https://websysclockin.com/support",
-        "title": "ClockIn Admin",
-        "subtitle": "Admins time tracking",
+        "title": "ClockIn Admin Plus",
+        "subtitle": "Admin time operations",
         "privacyPolicyUrl": "https://websysclockin.com/privacy"
       }
     },
@@ -28,9 +28,10 @@
       "lastName": "perez",
       "email": "elmerperez1201@gmail.com",
       "phone": "+19204616022",
-      "demoUsername": "admin",
+      "demoUsername": "reviewadmin",
       "demoPassword": "1234qwer",
-      "demoRequired": true
+      "demoRequired": true,
+      "notes": "Demo tenant: apple-review-demo (ClockIn Apple Review Demo). Primary admin login: tenant=apple-review-demo, username=reviewadmin, password=1234qwer. Manager fallback login: tenant=apple-review-demo, username=reviewmanager, password=3333."
     }
   }
 }
