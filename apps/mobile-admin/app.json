@@ -2,7 +2,7 @@
   "expo": {
     "name": "ClockIn Admin Plus",
     "slug": "clockin-admin",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "entryPoint": "./index.ts",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
