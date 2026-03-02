@@ -12,14 +12,99 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UpdateSettingsDto = void 0;
 const class_validator_1 = require("class-validator");
 class UpdateSettingsDto {
+    companyName;
+    companyLegalName;
+    companyAddressLine1;
+    companyAddressLine2;
+    companyCity;
+    companyState;
+    companyPostalCode;
+    companyCountry;
+    companyPhone;
+    companyEmail;
+    companyWebsite;
+    companyTaxId;
     timezone;
     roundingMinutes;
     requirePin;
     ipRestrictions;
     reportsEnabled;
     allowManualTimeEdits;
+    multiLocationEnabled;
 }
 exports.UpdateSettingsDto = UpdateSettingsDto;
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(120),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(120),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyLegalName", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(180),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyAddressLine1", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(180),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyAddressLine2", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(80),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyCity", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(80),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyState", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(30),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyPostalCode", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(80),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyCountry", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(40),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyPhone", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(120),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyEmail", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(180),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyWebsite", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(60),
+    __metadata("design:type", String)
+], UpdateSettingsDto.prototype, "companyTaxId", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
@@ -53,4 +138,9 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], UpdateSettingsDto.prototype, "allowManualTimeEdits", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateSettingsDto.prototype, "multiLocationEnabled", void 0);
 //# sourceMappingURL=update-settings.dto.js.map

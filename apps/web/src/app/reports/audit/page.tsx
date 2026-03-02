@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  fetchAuditReportRequest,
+  fetchEmployeesRequest,
+} from "../../../lib/api/reports-core";
+import {
+  useUiCopy,
+  useUiLanguage,
+  type UiLang,
+} from "../../../lib/ui-language";
 
 type Employee = { id: string; name: string };
 
@@ -18,9 +27,66 @@ type AuditResponse = {
   records: AuditRecord[];
 };
 
+const copy: Record<UiLang, Record<string, string>> = {
+  en: {
+    title: "Audit Log",
+    period: "Period",
+    weekly: "Weekly",
+    biweekly: "Bi-Weekly",
+    monthly: "Monthly",
+    custom: "Custom",
+    from: "From",
+    to: "To",
+    employee: "Employee",
+    allEmployees: "All Employees",
+    type: "Type",
+    allTypes: "All Types",
+    limit: "Limit",
+    running: "Running...",
+    runReport: "Run Report",
+    exportExcel: "Export Excel",
+    noRecords: "No audit records found.",
+    results: "Audit Log Results",
+    records: "Records",
+    dateTime: "Date & Time",
+    office: "Office",
+    group: "Group",
+    notes: "Notes",
+    empty: "—",
+  },
+  es: {
+    title: "Bitácora de Auditoría",
+    period: "Periodo",
+    weekly: "Semanal",
+    biweekly: "Quincenal",
+    monthly: "Mensual",
+    custom: "Personalizado",
+    from: "Desde",
+    to: "Hasta",
+    employee: "Empleado",
+    allEmployees: "Todos los empleados",
+    type: "Tipo",
+    allTypes: "Todos los tipos",
+    limit: "Límite",
+    running: "Ejecutando...",
+    runReport: "Generar reporte",
+    exportExcel: "Exportar Excel",
+    noRecords: "No se encontraron registros de auditoría.",
+    results: "Resultados de auditoría",
+    records: "Registros",
+    dateTime: "Fecha y hora",
+    office: "Ubicación",
+    group: "Grupo",
+    notes: "Notas",
+    empty: "—",
+  },
+};
+
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 
 export default function AuditReport() {
+  const lang = useUiLanguage();
+  const t = useUiCopy(copy, lang);
   const today = useMemo(() => new Date(), []);
   const sevenDaysAgo = useMemo(() => {
     const date = new Date();
@@ -63,7 +129,7 @@ export default function AuditReport() {
 
   useEffect(() => {
     const loadEmployees = async () => {
-      const response = await fetch("/api/employees", { cache: "no-store" });
+      const response = await fetchEmployeesRequest();
       if (!response.ok) return;
       const data = (await response.json()) as { employees: Employee[] };
       setEmployees(data.employees || []);
@@ -92,9 +158,7 @@ export default function AuditReport() {
         params.set("type", type);
       }
 
-      const response = await fetch(`/api/reports/audit?${params.toString()}`, {
-        cache: "no-store",
-      });
+      const response = await fetchAuditReportRequest(params);
       if (!response.ok) {
         throw new Error("Unable to load report");
       }
@@ -115,26 +179,26 @@ export default function AuditReport() {
   return (
     <div className="reports-page">
       <div className="admin-header">
-        <h1>Audit Log</h1>
+        <h1>{t.title}</h1>
       </div>
 
       <div className="admin-card report-filters">
         <div className="row g-3 align-items-end">
           <div className="col-12 col-md-3">
-            <label className="form-label">Period</label>
+            <label className="form-label">{t.period}</label>
             <select
               className="form-select"
               value={period}
               onChange={(event) => setPeriod(event.target.value)}
             >
-              <option value="weekly">Weekly</option>
-              <option value="biweekly">Bi-Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="custom">Custom</option>
+              <option value="weekly">{t.weekly}</option>
+              <option value="biweekly">{t.biweekly}</option>
+              <option value="monthly">{t.monthly}</option>
+              <option value="custom">{t.custom}</option>
             </select>
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">From</label>
+            <label className="form-label">{t.from}</label>
             <input
               className="form-control"
               type="date"
@@ -146,7 +210,7 @@ export default function AuditReport() {
             />
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">To</label>
+            <label className="form-label">{t.to}</label>
             <input
               className="form-control"
               type="date"
@@ -158,13 +222,13 @@ export default function AuditReport() {
             />
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Employee</label>
+            <label className="form-label">{t.employee}</label>
             <select
               className="form-select"
               value={employeeId}
               onChange={(event) => setEmployeeId(event.target.value)}
             >
-              <option value="">All Employees</option>
+              <option value="">{t.allEmployees}</option>
               {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.name}
@@ -173,13 +237,13 @@ export default function AuditReport() {
             </select>
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Type</label>
+            <label className="form-label">{t.type}</label>
             <select
               className="form-select"
               value={type}
               onChange={(event) => setType(event.target.value)}
             >
-              <option value="">All Types</option>
+              <option value="">{t.allTypes}</option>
               <option value="IN">IN</option>
               <option value="OUT">OUT</option>
               <option value="BREAK">BREAK</option>
@@ -187,7 +251,7 @@ export default function AuditReport() {
             </select>
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Limit</label>
+            <label className="form-label">{t.limit}</label>
             <input
               className="form-control"
               type="number"
@@ -199,7 +263,7 @@ export default function AuditReport() {
           </div>
           <div className="col-12 d-flex gap-2 flex-wrap">
             <button className="btn btn-primary" onClick={runReport}>
-              {loading ? "Running..." : "Run Report"}
+              {loading ? t.running : t.runReport}
             </button>
             <a
               className="btn btn-outline-secondary"
@@ -212,7 +276,7 @@ export default function AuditReport() {
                 ...(type ? { type } : {}),
               }).toString()}`}
             >
-              Export Excel
+              {t.exportExcel}
             </a>
           </div>
         </div>
@@ -220,7 +284,7 @@ export default function AuditReport() {
 
       {report && report.records.length === 0 && (
         <div className="admin-card">
-          <p className="mb-0">No audit records found.</p>
+          <p className="mb-0">{t.noRecords}</p>
         </div>
       )}
 
@@ -229,13 +293,14 @@ export default function AuditReport() {
           <div className="report-card-header">
             <div>
               <div className="report-employee">Audit Log Results</div>
+              <div className="report-employee">{t.results}</div>
               <div className="report-range">
                 {from} → {to}
               </div>
             </div>
             <div className="report-card-meta">
               <div className="report-total">
-                <div className="report-total-label">Records</div>
+                <div className="report-total-label">{t.records}</div>
                 <div className="report-total-value">
                   {report.records.length}
                 </div>
@@ -246,12 +311,12 @@ export default function AuditReport() {
             <table className="report-table">
               <thead>
                 <tr>
-                  <th>Employee</th>
-                  <th>Type</th>
-                  <th>Date &amp; Time</th>
-                  <th>Office</th>
-                  <th>Group</th>
-                  <th>Notes</th>
+                  <th>{t.employee}</th>
+                  <th>{t.type}</th>
+                  <th>{t.dateTime}</th>
+                  <th>{t.office}</th>
+                  <th>{t.group}</th>
+                  <th>{t.notes}</th>
                 </tr>
               </thead>
               <tbody>
@@ -260,9 +325,9 @@ export default function AuditReport() {
                     <td>{record.employeeName}</td>
                     <td>{record.type}</td>
                     <td>{new Date(record.occurredAt).toLocaleString()}</td>
-                    <td>{record.office || "—"}</td>
-                    <td>{record.group || "—"}</td>
-                    <td>{record.notes || "—"}</td>
+                    <td>{record.office || t.empty}</td>
+                    <td>{record.group || t.empty}</td>
+                    <td>{record.notes || t.empty}</td>
                   </tr>
                 ))}
               </tbody>

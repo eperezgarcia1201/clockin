@@ -1,6 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  createTenantAccountRequest,
+  deleteTenantAccountRequest,
+  fetchTenantAccountsRequest,
+  fetchTenantDeletionExportRequest,
+  fetchTenantDeletionReportRequest,
+  updateTenantAccountRequest,
+} from "../../../lib/api/owner-tenants";
 import { useUiLanguage } from "../../../lib/ui-language";
 
 type TenantFeatures = {
@@ -251,7 +259,7 @@ export default function TenantAccountsPage() {
     setLoading(true);
     setStatus(null);
     try {
-      const response = await fetch("/api/tenant-accounts", { cache: "no-store" });
+      const response = await fetchTenantAccountsRequest();
       const data = (await response.json()) as {
         tenants?: TenantAccount[];
         error?: string;
@@ -366,26 +374,20 @@ export default function TenantAccountsPage() {
     setCreating(true);
     try {
       let usedLegacyFallback = false;
-      let response = await fetch("/api/tenant-accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildTenantPayload(createForm, roundingMinutes)),
-      });
+      let response = await createTenantAccountRequest(
+        buildTenantPayload(createForm, roundingMinutes),
+      );
 
       let data = (await response.json()) as TenantAccount & ApiErrorPayload;
 
       if (!response.ok && isLegacyFeatureValidationError(data)) {
         usedLegacyFallback = true;
-        response = await fetch("/api/tenant-accounts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            buildTenantPayload(createForm, roundingMinutes, {
-              includeMultiLocation: false,
-              includeLiquorInventory: false,
-            }),
-          ),
-        });
+        response = await createTenantAccountRequest(
+          buildTenantPayload(createForm, roundingMinutes, {
+            includeMultiLocation: false,
+            includeLiquorInventory: false,
+          }),
+        );
         data = (await response.json()) as TenantAccount & ApiErrorPayload;
       }
 
@@ -453,26 +455,22 @@ export default function TenantAccountsPage() {
     setStatus(null);
     try {
       let usedLegacyFallback = false;
-      let response = await fetch(`/api/tenant-accounts/${tenantId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildTenantPayload(draft, roundingMinutes)),
-      });
+      let response = await updateTenantAccountRequest(
+        tenantId,
+        buildTenantPayload(draft, roundingMinutes),
+      );
 
       let data = (await response.json()) as TenantAccount & ApiErrorPayload;
 
       if (!response.ok && isLegacyFeatureValidationError(data)) {
         usedLegacyFallback = true;
-        response = await fetch(`/api/tenant-accounts/${tenantId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            buildTenantPayload(draft, roundingMinutes, {
-              includeMultiLocation: false,
-              includeLiquorInventory: false,
-            }),
-          ),
-        });
+        response = await updateTenantAccountRequest(
+          tenantId,
+          buildTenantPayload(draft, roundingMinutes, {
+            includeMultiLocation: false,
+            includeLiquorInventory: false,
+          }),
+        );
         data = (await response.json()) as TenantAccount & ApiErrorPayload;
       }
 
@@ -519,10 +517,8 @@ export default function TenantAccountsPage() {
     setTogglingTenantId(tenant.id);
     setStatus(null);
     try {
-      const response = await fetch(`/api/tenant-accounts/${tenant.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive: !tenant.isActive }),
+      const response = await updateTenantAccountRequest(tenant.id, {
+        isActive: !tenant.isActive,
       });
       const data = (await response.json()) as TenantAccount & { error?: string };
       if (!response.ok) {
@@ -567,10 +563,7 @@ export default function TenantAccountsPage() {
     setDeletingTenantId(tenant.id);
     setStatus(null);
     try {
-      const query = options?.force ? "?force=true" : "";
-      const response = await fetch(`/api/tenant-accounts/${tenant.id}${query}`, {
-        method: "DELETE",
-      });
+      const response = await deleteTenantAccountRequest(tenant.id, options);
       const data = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
@@ -633,10 +626,7 @@ export default function TenantAccountsPage() {
     setPendingDeleteLoading(true);
     setStatus(null);
     try {
-      const response = await fetch(
-        `/api/tenant-accounts/${tenant.id}/deletion-report`,
-        { cache: "no-store" },
-      );
+      const response = await fetchTenantDeletionReportRequest(tenant.id);
       const data = (await response.json().catch(() => ({}))) as
         | TenantDeletionReport
         | ApiErrorPayload;
@@ -673,8 +663,9 @@ export default function TenantAccountsPage() {
     setPendingDeleteExporting(format);
     setStatus(null);
     try {
-      const response = await fetch(
-        `/api/tenant-accounts/${pendingDeleteTenant.id}/deletion-export?format=${format}`,
+      const response = await fetchTenantDeletionExportRequest(
+        pendingDeleteTenant.id,
+        format,
       );
       if (!response.ok) {
         const data = (await response.json().catch(() => ({}))) as ApiErrorPayload;

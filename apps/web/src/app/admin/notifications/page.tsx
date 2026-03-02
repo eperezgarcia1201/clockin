@@ -1,24 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-type NotificationRow = {
-  id: string;
-  type: string;
-  message: string;
-  createdAt: string;
-  readAt: string | null;
-  employeeId?: string | null;
-  employeeName?: string | null;
-};
-
-type EmployeeOption = {
-  id: string;
-  name: string;
-  active: boolean;
-};
+import { useUiLanguage } from "../../../lib/ui-language";
+import {
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  sendEmployeeMessage,
+  type NotificationRow,
+} from "../../../lib/api/notifications-admin";
+import {
+  listEmployees,
+  type EmployeeRow as EmployeeOption,
+} from "../../../lib/api/users-admin";
 
 export default function AdminNotifications() {
+  const lang = useUiLanguage();
+  const tr = useCallback(
+    (en: string, es: string) => (lang === "es" ? es : en),
+    [lang],
+  );
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
   const [employeeId, setEmployeeId] = useState("");
@@ -33,23 +34,20 @@ export default function AdminNotifications() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `/api/notifications?limit=50${unreadOnly ? "&unread=1" : ""}`,
-        { cache: "no-store" },
-      );
-      if (!response.ok) {
-        setStatus("Unable to load notifications.");
-        return;
-      }
-      const data = (await response.json()) as { notifications?: NotificationRow[] };
-      setNotifications(data.notifications || []);
+      const rows = await listNotifications({ limit: 50, unreadOnly });
+      setNotifications(rows);
       setStatus(null);
     } catch {
-      setStatus("Unable to load notifications.");
+      setStatus(
+        tr(
+          "Unable to load notifications.",
+          "No se pudieron cargar las notificaciones.",
+        ),
+      );
     } finally {
       setLoading(false);
     }
-  }, [unreadOnly]);
+  }, [tr, unreadOnly]);
 
   useEffect(() => {
     load();
@@ -58,12 +56,8 @@ export default function AdminNotifications() {
   useEffect(() => {
     const loadEmployees = async () => {
       try {
-        const response = await fetch("/api/employees", { cache: "no-store" });
-        if (!response.ok) {
-          return;
-        }
-        const data = (await response.json()) as { employees?: EmployeeOption[] };
-        const active = (data.employees || []).filter((employee) => employee.active);
+        const data = await listEmployees();
+        const active = data.filter((employee) => employee.active);
         setEmployees(active);
         setEmployeeId((previous) => {
           if (previous && active.some((employee) => employee.id === previous)) {
@@ -85,16 +79,18 @@ export default function AdminNotifications() {
   );
 
   const handleMarkRead = async (id: string) => {
-    await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
+    await markNotificationRead(id);
     setNotifications((prev) =>
       prev.map((notice) =>
-        notice.id === id ? { ...notice, readAt: new Date().toISOString() } : notice,
+        notice.id === id
+          ? { ...notice, readAt: new Date().toISOString() }
+          : notice,
       ),
     );
   };
 
   const handleMarkAll = async () => {
-    await fetch("/api/notifications/read-all", { method: "POST" });
+    await markAllNotificationsRead();
     setNotifications((prev) =>
       prev.map((notice) => ({ ...notice, readAt: new Date().toISOString() })),
     );
@@ -104,45 +100,43 @@ export default function AdminNotifications() {
     const trimmedSubject = subject.trim();
     const trimmedMessage = message.trim();
     if (!employeeId) {
-      setMessageStatus("Select an employee.");
+      setMessageStatus(tr("Select an employee.", "Selecciona un empleado."));
       return;
     }
     if (!trimmedSubject) {
-      setMessageStatus("Subject is required.");
+      setMessageStatus(tr("Subject is required.", "El asunto es obligatorio."));
       return;
     }
     if (!trimmedMessage) {
-      setMessageStatus("Message is required.");
+      setMessageStatus(
+        tr("Message is required.", "El mensaje es obligatorio."),
+      );
       return;
     }
 
     setSendingMessage(true);
     setMessageStatus(null);
     try {
-      const response = await fetch("/api/notifications/employee-message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          employeeId,
-          subject: trimmedSubject,
-          message: trimmedMessage,
-        }),
+      await sendEmployeeMessage({
+        employeeId,
+        subject: trimmedSubject,
+        message: trimmedMessage,
       });
-      const data = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        message?: string;
-      };
-      if (!response.ok) {
-        throw new Error(data.error || data.message || "Unable to send message.");
-      }
 
       setSubject("");
       setMessage("");
-      setMessageStatus("Message sent. It will appear when the employee clocks in.");
+      setMessageStatus(
+        tr(
+          "Message sent. It will appear when the employee clocks in.",
+          "Mensaje enviado. Aparecerá cuando el empleado marque entrada.",
+        ),
+      );
       await load();
     } catch (error) {
       setMessageStatus(
-        error instanceof Error ? error.message : "Unable to send message.",
+        error instanceof Error
+          ? error.message
+          : tr("Unable to send message.", "No se pudo enviar el mensaje."),
       );
     } finally {
       setSendingMessage(false);
@@ -153,31 +147,39 @@ export default function AdminNotifications() {
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
         <div>
-          <h1>Notifications</h1>
+          <h1>{tr("Notifications", "Notificaciones")}</h1>
           <p className="text-muted">
-            Live alerts for punch activity and compliance events.
+            {tr(
+              "Live alerts for punch activity and compliance events.",
+              "Alertas en vivo para actividad de marcación y cumplimiento.",
+            )}
           </p>
         </div>
         <div className="admin-actions">
           <button className="btn btn-outline-secondary" onClick={load}>
-            Refresh
+            {tr("Refresh", "Actualizar")}
           </button>
           <button className="btn btn-primary" onClick={handleMarkAll}>
-            Mark All Read
+            {tr("Mark All Read", "Marcar Todo como Leído")}
           </button>
         </div>
       </div>
 
       <div className="admin-card d-flex flex-column gap-3">
         <div>
-          <h2 className="h5 mb-1">Send Employee Message</h2>
+          <h2 className="h5 mb-1">
+            {tr("Send Employee Message", "Enviar Mensaje al Empleado")}
+          </h2>
           <p className="text-muted mb-0">
-            This alert pops up for the employee on their next clock-in.
+            {tr(
+              "This alert pops up for the employee on their next clock-in.",
+              "Esta alerta aparece para el empleado en su próxima entrada.",
+            )}
           </p>
         </div>
         <div className="row g-2">
           <div className="col-md-4">
-            <label className="form-label">Employee</label>
+            <label className="form-label">{tr("Employee", "Empleado")}</label>
             <select
               className="form-select"
               value={employeeId}
@@ -191,24 +193,27 @@ export default function AdminNotifications() {
             </select>
           </div>
           <div className="col-md-8">
-            <label className="form-label">Subject</label>
+            <label className="form-label">{tr("Subject", "Asunto")}</label>
             <input
               className="form-control"
               value={subject}
               maxLength={120}
               onChange={(event) => setSubject(event.target.value)}
-              placeholder="Subject"
+              placeholder={tr("Subject", "Asunto")}
             />
           </div>
           <div className="col-12">
-            <label className="form-label">Message</label>
+            <label className="form-label">{tr("Message", "Mensaje")}</label>
             <textarea
               className="form-control"
               rows={3}
               value={message}
               maxLength={2000}
               onChange={(event) => setMessage(event.target.value)}
-              placeholder="Write your message for the employee..."
+              placeholder={tr(
+                "Write your message for the employee...",
+                "Escribe tu mensaje para el empleado...",
+              )}
             />
           </div>
         </div>
@@ -218,7 +223,9 @@ export default function AdminNotifications() {
             onClick={handleSendMessage}
             disabled={sendingMessage}
           >
-            {sendingMessage ? "Sending..." : "Send Message"}
+            {sendingMessage
+              ? tr("Sending...", "Enviando...")
+              : tr("Send Message", "Enviar Mensaje")}
           </button>
           {messageStatus && <span className="text-muted">{messageStatus}</span>}
         </div>
@@ -227,7 +234,7 @@ export default function AdminNotifications() {
       <div className="admin-card">
         <div className="notification-toolbar">
           <div className="notification-count">
-            {unreadCount} Unread
+            {unreadCount} {tr("Unread", "No leídas")}
           </div>
           <label className="notification-filter">
             <input
@@ -235,16 +242,20 @@ export default function AdminNotifications() {
               checked={unreadOnly}
               onChange={(event) => setUnreadOnly(event.target.checked)}
             />
-            Show unread only
+            {tr("Show unread only", "Mostrar solo no leídas")}
           </label>
         </div>
 
         {status && <div className="alert alert-danger">{status}</div>}
 
         {loading ? (
-          <div className="empty-state">Loading notifications…</div>
+          <div className="empty-state">
+            {tr("Loading notifications…", "Cargando notificaciones…")}
+          </div>
         ) : notifications.length === 0 ? (
-          <div className="empty-state">No notifications yet.</div>
+          <div className="empty-state">
+            {tr("No notifications yet.", "Aún no hay notificaciones.")}
+          </div>
         ) : (
           <ul className="notification-list">
             {notifications.map((notice) => {
@@ -257,9 +268,7 @@ export default function AdminNotifications() {
                   }`}
                 >
                   <div className="notification-main">
-                    <div className="notification-title">
-                      {notice.message}
-                    </div>
+                    <div className="notification-title">{notice.message}</div>
                     <div className="notification-meta">
                       <span className="badge bg-primary-subtle">
                         {notice.type.replace(/_/g, " ")}
@@ -278,7 +287,7 @@ export default function AdminNotifications() {
                         className="btn btn-sm btn-outline-secondary"
                         onClick={() => handleMarkRead(notice.id)}
                       >
-                        Mark Read
+                        {tr("Mark Read", "Marcar Leída")}
                       </button>
                     )}
                   </div>

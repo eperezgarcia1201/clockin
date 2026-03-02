@@ -13,6 +13,9 @@ exports.CreateOfficeDto = void 0;
 const class_validator_1 = require("class-validator");
 class CreateOfficeDto {
     name;
+    latitude;
+    longitude;
+    geofenceRadiusMeters;
 }
 exports.CreateOfficeDto = CreateOfficeDto;
 __decorate([
@@ -20,4 +23,25 @@ __decorate([
     (0, class_validator_1.MaxLength)(80),
     __metadata("design:type", String)
 ], CreateOfficeDto.prototype, "name", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(-90),
+    (0, class_validator_1.Max)(90),
+    __metadata("design:type", Object)
+], CreateOfficeDto.prototype, "latitude", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(-180),
+    (0, class_validator_1.Max)(180),
+    __metadata("design:type", Object)
+], CreateOfficeDto.prototype, "longitude", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(25),
+    (0, class_validator_1.Max)(5000),
+    __metadata("design:type", Object)
+], CreateOfficeDto.prototype, "geofenceRadiusMeters", void 0);
 //# sourceMappingURL=create-office.dto.js.map

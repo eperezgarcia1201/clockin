@@ -572,7 +572,10 @@ export class TenantAccountsService {
     };
   }
 
-  private async resolveOwnerManagedTenant(authUser: AuthUser, tenantId: string) {
+  private async resolveOwnerManagedTenant(
+    authUser: AuthUser,
+    tenantId: string,
+  ) {
     const ownerContext = await this.requireOwner(authUser);
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -1135,13 +1138,17 @@ export class TenantAccountsService {
 
         const columns = this.resolveDatasetColumns(dataset.rows);
         const header = columns
-          .map((column) => `<th>${escapeHtml(this.humanizeFieldLabel(column))}</th>`)
+          .map(
+            (column) =>
+              `<th>${escapeHtml(this.humanizeFieldLabel(column))}</th>`,
+          )
           .join('');
         const body = dataset.rows
           .map((row) => {
             const cells = columns
-              .map((column) =>
-                `<td>${escapeHtml(this.formatReadableValue(row[column]))}</td>`,
+              .map(
+                (column) =>
+                  `<td>${escapeHtml(this.formatReadableValue(row[column]))}</td>`,
               )
               .join('');
             return `<tr>${cells}</tr>`;

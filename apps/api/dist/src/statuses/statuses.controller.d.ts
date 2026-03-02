@@ -1,6 +1,6 @@
-import type { RequestWithUser } from "../auth/auth.types";
-import { CreateStatusDto } from "./dto/create-status.dto";
-import { StatusesService } from "./statuses.service";
+import type { RequestWithUser } from '../auth/auth.types';
+import { CreateStatusDto } from './dto/create-status.dto';
+import { StatusesService } from './statuses.service';
 export declare class StatusesController {
     private readonly statuses;
     constructor(statuses: StatusesService);

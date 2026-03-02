@@ -74,7 +74,9 @@ export class EmployeeTipsService {
       select: { id: true },
     });
     if (existingTip) {
-      throw new ForbiddenException('Tips already submitted for this work date.');
+      throw new ForbiddenException(
+        'Tips already submitted for this work date.',
+      );
     }
 
     const tip = await this.prisma.employeeTip.create({

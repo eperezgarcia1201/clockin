@@ -3,25 +3,17 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
-
-type Summary = {
-  total: number;
-  admins: number;
-  timeAdmins: number;
-  reports: number;
-};
-
-type HoursReport = {
-  range: { from: string; to: string };
-  employees: {
-    id: string;
-    name: string;
-    totalHoursDecimal: number;
-    totalHoursFormatted: string;
-  }[];
-};
+import { useUiLanguage } from "../../lib/ui-language";
+import {
+  getEmployeeSummary,
+  getHoursReport,
+  type AdminSummary as Summary,
+  type HoursReport,
+} from "../../lib/api/admin-dashboard";
 
 export default function AdminDashboard() {
+  const lang = useUiLanguage();
+  const tr = (en: string, es: string) => (lang === "es" ? es : en);
   const [summary, setSummary] = useState<Summary>({
     total: 0,
     admins: 0,
@@ -73,19 +65,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     const load = async () => {
       try {
-        const response = await fetch("/api/employees/summary", {
-          cache: "no-store",
-        });
-        if (response.ok) {
-          const data = (await response.json()) as Summary;
-          setSummary(data);
-        }
+        const data = await getEmployeeSummary();
+        setSummary(data);
       } catch {
         // ignore
       }
     };
 
-    load();
+    void load();
   }, []);
 
   useEffect(() => {
@@ -97,24 +84,19 @@ export default function AdminDashboard() {
       const from = start.toISOString().slice(0, 10);
 
       try {
-        const params = new URLSearchParams({
+        const data = await getHoursReport({
           from,
           to,
-          round: "0",
-          tzOffset: String(-new Date().getTimezoneOffset()),
+          round: 0,
+          tzOffset: -new Date().getTimezoneOffset(),
         });
-        const response = await fetch(`/api/reports/hours?${params}`, {
-          cache: "no-store",
-        });
-        if (!response.ok) return;
-        const data = (await response.json()) as HoursReport;
         setHoursReport(data);
       } catch {
         // ignore
       }
     };
 
-    loadHours();
+    void loadHours();
   }, []);
 
   return (
@@ -130,7 +112,7 @@ export default function AdminDashboard() {
             priority
           />
         </span>
-        Administration
+        {tr("Administration", "Administración")}
       </div>
 
       <div className="admin-hero">
@@ -147,7 +129,9 @@ export default function AdminDashboard() {
           </div>
           <div>
             <div className="admin-hero-name">Websys</div>
-            <div className="admin-hero-sub">ClockIn Admin</div>
+            <div className="admin-hero-sub">
+              {tr("ClockIn Admin", "ClockIn Admin")}
+            </div>
           </div>
         </div>
       </div>
@@ -157,22 +141,26 @@ export default function AdminDashboard() {
           className="summary-card summary-card--light summary-card-link"
           href="/admin/users"
         >
-          <div className="summary-header">Total Users</div>
+          <div className="summary-header">
+            {tr("Total Users", "Usuarios Totales")}
+          </div>
           <div className="summary-value">{summary.total}</div>
-          <div className="summary-sub">Active Users</div>
+          <div className="summary-sub">
+            {tr("Active Users", "Usuarios Activos")}
+          </div>
           <div className="summary-list">
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              Active Users
+              {tr("Active Users", "Usuarios Activos")}
             </div>
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              System Administrators
+              {tr("System Administrators", "Administradores del Sistema")}
             </div>
           </div>
           <div className="summary-meta">
-            <span>500 Customers</span>
-            <span>5 collectors</span>
+            <span>{tr("500 Customers", "500 Clientes")}</span>
+            <span>{tr("5 collectors", "5 colectores")}</span>
           </div>
         </Link>
 
@@ -180,25 +168,29 @@ export default function AdminDashboard() {
           className="summary-card summary-card--navy summary-card-link"
           href="/admin/users?role=admin"
         >
-          <div className="summary-header">Sys Admin Users</div>
+          <div className="summary-header">
+            {tr("Sys Admin Users", "Usuarios Sys Admin")}
+          </div>
           <div className="summary-value">{summary.admins}</div>
-          <div className="summary-sub">System Administrators</div>
+          <div className="summary-sub">
+            {tr("System Administrators", "Administradores del Sistema")}
+          </div>
           <div className="summary-list">
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              Sys Admin Users
+              {tr("Sys Admin Users", "Usuarios Sys Admin")}
             </div>
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              System Administrators
+              {tr("System Administrators", "Administradores del Sistema")}
             </div>
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              Unlimited customers
+              {tr("Unlimited customers", "Clientes ilimitados")}
             </div>
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              Unlimited collectors
+              {tr("Unlimited collectors", "Colectores ilimitados")}
             </div>
           </div>
         </Link>
@@ -207,21 +199,25 @@ export default function AdminDashboard() {
           className="summary-card summary-card--purple summary-card-link"
           href="/admin/users?role=time"
         >
-          <div className="summary-header">Time Admin Users</div>
+          <div className="summary-header">
+            {tr("Time Admin Users", "Usuarios Time Admin")}
+          </div>
           <div className="summary-value">{summary.timeAdmins}</div>
-          <div className="summary-sub">Time Administrators</div>
+          <div className="summary-sub">
+            {tr("Time Administrators", "Administradores de Tiempo")}
+          </div>
           <div className="summary-list">
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              Sys Admin Users
+              {tr("Sys Admin Users", "Usuarios Sys Admin")}
             </div>
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              Time Admin Users
+              {tr("Time Admin Users", "Usuarios Time Admin")}
             </div>
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              Unlimited collectors
+              {tr("Unlimited collectors", "Colectores ilimitados")}
             </div>
           </div>
         </Link>
@@ -230,13 +226,17 @@ export default function AdminDashboard() {
           className="summary-card summary-card--teal summary-card-link"
           href="/admin/users?role=reports"
         >
-          <div className="summary-header">Reports Users</div>
+          <div className="summary-header">
+            {tr("Reports Users", "Usuarios de Reportes")}
+          </div>
           <div className="summary-value">{summary.reports}</div>
-          <div className="summary-sub">Report Administrators</div>
+          <div className="summary-sub">
+            {tr("Report Administrators", "Administradores de Reportes")}
+          </div>
           <div className="summary-list">
             <div className="summary-item">
               <i className="fa-solid fa-check" aria-hidden="true" />
-              Report Administrators
+              {tr("Report Administrators", "Administradores de Reportes")}
             </div>
           </div>
         </Link>
@@ -245,15 +245,22 @@ export default function AdminDashboard() {
       <div className="admin-card chart-card">
         <div className="chart-header">
           <div>
-            <h2>Hours Worked</h2>
-            <p>Last 7 days of total hours per employee.</p>
+            <h2>{tr("Hours Worked", "Horas Trabajadas")}</h2>
+            <p>
+              {tr(
+                "Last 7 days of total hours per employee.",
+                "Últimos 7 días de horas totales por empleado.",
+              )}
+            </p>
           </div>
           <a className="btn btn-outline-secondary btn-sm" href="/reports/hours">
-            View Report
+            {tr("View Report", "Ver Reporte")}
           </a>
         </div>
         {chartRows.length === 0 ? (
-          <div className="chart-empty">No hours recorded yet.</div>
+          <div className="chart-empty">
+            {tr("No hours recorded yet.", "Aún no hay horas registradas.")}
+          </div>
         ) : (
           <div className="chart-bars">
             {chartRows.map((row) => (
@@ -275,30 +282,39 @@ export default function AdminDashboard() {
       <div className="admin-card insights-card">
         <div className="chart-header">
           <div>
-            <h2>Hours Insights</h2>
-            <p>Quick performance snapshot for the current range.</p>
+            <h2>{tr("Hours Insights", "Resumen de Horas")}</h2>
+            <p>
+              {tr(
+                "Quick performance snapshot for the current range.",
+                "Resumen rápido de rendimiento para el rango actual.",
+              )}
+            </p>
           </div>
         </div>
         <div className="insights-grid">
           <div className="insight-tile">
-            <span>Total Hours</span>
+            <span>{tr("Total Hours", "Horas Totales")}</span>
             <strong>{totalHours.toFixed(2)}</strong>
-            <em>Last 7 days</em>
+            <em>{tr("Last 7 days", "Últimos 7 días")}</em>
           </div>
           <div className="insight-tile">
-            <span>Average Hours</span>
+            <span>{tr("Average Hours", "Horas Promedio")}</span>
             <strong>{averageHours.toFixed(2)}</strong>
-            <em>Per employee</em>
+            <em>{tr("Per employee", "Por empleado")}</em>
           </div>
           <div className="insight-tile">
-            <span>Top Performer</span>
-            <strong>{topPerformer?.name || "N/A"}</strong>
-            <em>{topPerformer ? topPerformer.hoursFormatted : "No data"}</em>
+            <span>{tr("Top Performer", "Mejor Rendimiento")}</span>
+            <strong>{topPerformer?.name || tr("N/A", "N/D")}</strong>
+            <em>
+              {topPerformer
+                ? topPerformer.hoursFormatted
+                : tr("No data", "Sin datos")}
+            </em>
           </div>
           <div className="insight-tile">
-            <span>40+ Hours</span>
+            <span>{tr("40+ Hours", "40+ Horas")}</span>
             <strong>{overFortyCount}</strong>
-            <em>Potential overtime</em>
+            <em>{tr("Potential overtime", "Posible tiempo extra")}</em>
           </div>
         </div>
         {chartRows.length > 0 && (
@@ -328,7 +344,12 @@ export default function AdminDashboard() {
           </div>
         )}
         {chartRows.length === 0 && (
-          <div className="chart-empty">No employee hour data yet.</div>
+          <div className="chart-empty">
+            {tr(
+              "No employee hour data yet.",
+              "Aún no hay datos de horas por empleado.",
+            )}
+          </div>
         )}
       </div>
     </div>

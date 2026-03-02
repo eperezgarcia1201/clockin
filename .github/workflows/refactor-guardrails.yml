@@ -1,0 +1,61 @@
+name: refactor-guardrails
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  guardrails:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Max line guard
+        run: npm run check:lines
+
+      - name: No direct fetch guard
+        run: npm run check:no-direct-fetch
+
+  validate-slice:
+    runs-on: ubuntu-latest
+    needs:
+      - guardrails
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Backend build
+        run: npm --workspace apps/api run build
+
+      - name: Frontend build
+        run: npm --workspace apps/web run build
+
+      - name: Mobile typecheck
+        run: npx tsc -p apps/mobile/tsconfig.json --noEmit
+
+      - name: Mobile admin typecheck
+        run: npx tsc -p apps/mobile-admin/tsconfig.json --noEmit
+
+      - name: Backend tests
+        run: npm --workspace apps/api run test -- --runInBand

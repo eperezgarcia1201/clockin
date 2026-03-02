@@ -16,6 +16,7 @@ exports.OfficesController = void 0;
 const common_1 = require("@nestjs/common");
 const auth_guard_1 = require("../auth/auth.guard");
 const create_office_dto_1 = require("./dto/create-office.dto");
+const update_office_dto_1 = require("./dto/update-office.dto");
 const offices_service_1 = require("./offices.service");
 let OfficesController = class OfficesController {
     offices;
@@ -31,6 +32,11 @@ let OfficesController = class OfficesController {
         if (!req.user)
             throw new common_1.UnauthorizedException();
         return this.offices.create(req.user, dto);
+    }
+    async update(req, id, dto) {
+        if (!req.user)
+            throw new common_1.UnauthorizedException();
+        return this.offices.update(req.user, id, dto);
     }
 };
 exports.OfficesController = OfficesController;
@@ -49,8 +55,17 @@ __decorate([
     __metadata("design:paramtypes", [Object, create_office_dto_1.CreateOfficeDto]),
     __metadata("design:returntype", Promise)
 ], OfficesController.prototype, "create", null);
+__decorate([
+    (0, common_1.Patch)(':id'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, update_office_dto_1.UpdateOfficeDto]),
+    __metadata("design:returntype", Promise)
+], OfficesController.prototype, "update", null);
 exports.OfficesController = OfficesController = __decorate([
-    (0, common_1.Controller)("offices"),
+    (0, common_1.Controller)(['offices', 'locations']),
     (0, common_1.UseGuards)(auth_guard_1.AuthOrDevGuard),
     __metadata("design:paramtypes", [offices_service_1.OfficesService])
 ], OfficesController);

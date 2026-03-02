@@ -22,10 +22,12 @@ let GroupsController = class GroupsController {
     constructor(groups) {
         this.groups = groups;
     }
-    async list(req) {
+    async list(req, officeId) {
         if (!req.user)
             throw new common_1.UnauthorizedException();
-        return { groups: await this.groups.list(req.user) };
+        return {
+            groups: await this.groups.list(req.user, officeId?.trim() || undefined),
+        };
     }
     async create(req, dto) {
         if (!req.user)
@@ -37,8 +39,9 @@ exports.GroupsController = GroupsController;
 __decorate([
     (0, common_1.Get)(),
     __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Query)('officeId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], GroupsController.prototype, "list", null);
 __decorate([
@@ -50,7 +53,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], GroupsController.prototype, "create", null);
 exports.GroupsController = GroupsController = __decorate([
-    (0, common_1.Controller)("groups"),
+    (0, common_1.Controller)('groups'),
     (0, common_1.UseGuards)(auth_guard_1.AuthOrDevGuard),
     __metadata("design:paramtypes", [groups_service_1.GroupsService])
 ], GroupsController);

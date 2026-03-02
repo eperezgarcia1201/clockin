@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { loginOwnerRequest } from "../../lib/api/owner-auth";
 
 type Theme = "light" | "dark";
 type Lang = "en" | "es";
@@ -88,11 +89,7 @@ export default function OwnerLoginPage() {
     setStatus(null);
 
     try {
-      const response = await fetch("/api/owner/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
+      const response = await loginOwnerRequest({ username, password });
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));

@@ -1,6 +1,6 @@
-import { ConfigService } from "@nestjs/config";
-import { Strategy } from "passport-jwt";
-import type { AuthUser } from "./auth.types";
+import { ConfigService } from '@nestjs/config';
+import { Strategy } from 'passport-jwt';
+import type { AuthUser } from './auth.types';
 type JwtPayload = {
     sub: string;
     email?: string;

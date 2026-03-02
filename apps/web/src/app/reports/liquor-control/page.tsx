@@ -1,6 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  analyzeLiquorBottleScanRequest,
+  analyzeLiquorInvoiceRequest,
+  applyLiquorInvoiceRequest,
+  createLiquorCatalogItemRequest,
+  createLiquorCountRequest,
+  createLiquorKindRequest,
+  createLiquorMovementRequest,
+  deleteLiquorKindRequest,
+  fetchLiquorAccessRequest,
+  fetchLiquorMonthlyReportRequest,
+  fetchLiquorYearlyControlRequest,
+  fetchOfficesRequest,
+  listLiquorBottleScansRequest,
+  listLiquorCatalogRequest,
+  listLiquorCountsRequest,
+  listLiquorKindsRequest,
+  listLiquorMovementsRequest,
+  lookupLiquorCatalogByUpcRequest,
+  updateLiquorCatalogItemRequest,
+} from "../../../lib/api/reports-liquor-control";
 import { useUiLanguage } from "../../../lib/ui-language";
 
 type Office = { id: string; name: string };
@@ -39,6 +60,8 @@ type LiquorCount = {
   quantity: number;
   barQuantity: number | null;
   bodegaQuantity: number | null;
+  bodegaBottleCount: number | null;
+  itemSizeMl: number | null;
   createdBy: string | null;
 };
 
@@ -83,7 +106,7 @@ type SpreadsheetDraft = {
   unitCost: string;
   sizeMl: string;
   barQuantity: string;
-  bodegaQuantity: string;
+  bodegaBottleCount: string;
 };
 
 type MonthlyRow = {
@@ -334,10 +357,19 @@ const copy = {
     company: "Company",
     liquorName: "Liquor Names",
     liquorKind: "Kind",
+    kindList: "Kind List",
+    addKind: "Add Kind",
+    deleteKind: "Delete Kind",
+    kindPlaceholder: "Select or type kind",
+    newKindPlaceholder: "Add new kind",
+    kindDeletePlaceholder: "Select kind to hide",
+    noKindsConfigured: "No kinds configured yet.",
     price: "Price",
     qtyMl: "Qty/ML",
     bar: "Bar",
     bodega: "Bodega",
+    bodegaBottles: "Bodega Bottles",
+    bodegaMl: "Bodega ML",
     inventory: "Inventario",
     total: "Total",
     saveItemRow: "Save Item",
@@ -449,10 +481,19 @@ const copy = {
     company: "Compañía",
     liquorName: "Nombres de Licor",
     liquorKind: "Tipo",
+    kindList: "Lista de Tipos",
+    addKind: "Agregar Tipo",
+    deleteKind: "Eliminar Tipo",
+    kindPlaceholder: "Selecciona o escribe tipo",
+    newKindPlaceholder: "Agregar tipo nuevo",
+    kindDeletePlaceholder: "Selecciona tipo para ocultar",
+    noKindsConfigured: "Aún no hay tipos configurados.",
     price: "Precio",
     qtyMl: "Cant/ML",
     bar: "Bar",
     bodega: "Bodega",
+    bodegaBottles: "Botellas Bodega",
+    bodegaMl: "ML Bodega",
     inventory: "Inventario",
     total: "Total",
     saveItemRow: "Guardar Artículo",
@@ -590,6 +631,7 @@ export default function LiquorControlPage() {
 
   const [offices, setOffices] = useState<Office[]>([]);
   const [items, setItems] = useState<LiquorCatalogItem[]>([]);
+  const [liquorKinds, setLiquorKinds] = useState<string[]>([]);
   const [movements, setMovements] = useState<LiquorMovement[]>([]);
   const [counts, setCounts] = useState<LiquorCount[]>([]);
   const [bottleScans, setBottleScans] = useState<BottleScan[]>([]);
@@ -619,6 +661,10 @@ export default function LiquorControlPage() {
     supplierName: "",
     unitCost: "",
   });
+  const [kindForm, setKindForm] = useState({
+    newKind: "",
+    deleteKind: "",
+  });
 
   const [movementForm, setMovementForm] = useState({
     itemId: "",
@@ -635,7 +681,7 @@ export default function LiquorControlPage() {
     countDate: todayDateKey(),
     quantity: "",
     barQuantity: "",
-    bodegaQuantity: "",
+    bodegaBottleCount: "",
     notes: "",
   });
   const [sheetDrafts, setSheetDrafts] = useState<Record<string, SpreadsheetDraft>>(
@@ -699,6 +745,19 @@ export default function LiquorControlPage() {
     ],
   );
   const isAnyActionBusy = activeAction !== null;
+  const selectedCountItem = useMemo(
+    () => items.find((item) => item.id === countForm.itemId.trim()) || null,
+    [countForm.itemId, items],
+  );
+  const countBodegaBottleInput = countForm.bodegaBottleCount.trim()
+    ? Number(countForm.bodegaBottleCount)
+    : 0;
+  const countBodegaQuantityMl =
+    selectedCountItem?.sizeMl && selectedCountItem.sizeMl > 0
+      ? Number((countBodegaBottleInput * selectedCountItem.sizeMl).toFixed(3))
+      : 0;
+  const countInventoryQuantity =
+    (Number(countForm.barQuantity) || 0) + countBodegaQuantityMl;
 
   const latestCountByItem = useMemo(() => {
     const map = new Map<string, LiquorCount>();
@@ -721,14 +780,20 @@ export default function LiquorControlPage() {
               (latestCount.barQuantity !== null ||
                 latestCount.bodegaQuantity !== null),
           );
+          const itemSizeMl = latestCount?.itemSizeMl ?? item.sizeMl;
           const barQuantity = hasSplitCount
             ? latestCount?.barQuantity ?? 0
             : latestCount?.quantity ?? 0;
-          const bodegaQuantity = hasSplitCount
+          const bodegaQuantityMl = hasSplitCount
             ? latestCount?.bodegaQuantity ?? 0
             : 0;
+          const bodegaBottleCount =
+            latestCount?.bodegaBottleCount ??
+            (itemSizeMl && itemSizeMl > 0
+              ? Number((bodegaQuantityMl / itemSizeMl).toFixed(3))
+              : 0);
           const inventory = hasSplitCount
-            ? barQuantity + bodegaQuantity
+            ? barQuantity + bodegaQuantityMl
             : latestCount?.quantity ?? 0;
           const total =
             item.sizeMl && item.sizeMl > 0
@@ -738,7 +803,8 @@ export default function LiquorControlPage() {
             item,
             latestCount,
             barQuantity,
-            bodegaQuantity,
+            bodegaQuantityMl,
+            bodegaBottleCount,
             inventory,
             total,
           };
@@ -760,8 +826,8 @@ export default function LiquorControlPage() {
             existing?.sizeMl ??
             (row.item.sizeMl === null ? "" : String(row.item.sizeMl)),
           barQuantity: existing?.barQuantity ?? String(row.barQuantity || ""),
-          bodegaQuantity:
-            existing?.bodegaQuantity ?? String(row.bodegaQuantity || ""),
+          bodegaBottleCount:
+            existing?.bodegaBottleCount ?? String(row.bodegaBottleCount || ""),
         };
       });
       return next;
@@ -791,7 +857,7 @@ export default function LiquorControlPage() {
     try {
       let hasLiquorAccess = true;
       let hasPremiumAccess = false;
-      const accessResponse = await fetch("/api/access/me", { cache: "no-store" });
+      const accessResponse = await fetchLiquorAccessRequest();
       if (accessResponse.ok) {
         const accessPayload = (await accessResponse.json()) as {
           liquorInventoryEnabled?: boolean;
@@ -806,6 +872,7 @@ export default function LiquorControlPage() {
         setLiquorPremiumEnabled(hasPremiumAccess);
 
         if (!hasLiquorAccess) {
+          setLiquorKinds([]);
           setItems([]);
           setMovements([]);
           setCounts([]);
@@ -841,12 +908,11 @@ export default function LiquorControlPage() {
       }
 
       const bottleScansRequest = hasPremiumAccess
-        ? fetch(`/api/liquor-inventory/bottle-scans?${queryFeed.toString()}`, {
-            cache: "no-store",
-          })
+        ? listLiquorBottleScansRequest(queryFeed)
         : Promise.resolve(null);
 
       const [
+        kindsResponse,
         catalogResponse,
         movementResponse,
         countResponse,
@@ -855,28 +921,24 @@ export default function LiquorControlPage() {
         yearlyResponse,
         officesResponse,
       ] = await Promise.all([
-        fetch("/api/liquor-inventory/catalog?includeInactive=1", {
-          cache: "no-store",
-        }),
-        fetch(`/api/liquor-inventory/movements?${queryFeed.toString()}`, {
-          cache: "no-store",
-        }),
-        fetch(`/api/liquor-inventory/counts?${queryFeed.toString()}`, {
-          cache: "no-store",
-        }),
+        listLiquorKindsRequest(),
+        listLiquorCatalogRequest("includeInactive=1"),
+        listLiquorMovementsRequest(queryFeed),
+        listLiquorCountsRequest(queryFeed),
         bottleScansRequest,
-        fetch(`/api/liquor-inventory/report/monthly?${queryMonthly.toString()}`, {
-          cache: "no-store",
-        }),
-        fetch(`/api/liquor-inventory/control/yearly?${queryYearly.toString()}`, {
-          cache: "no-store",
-        }),
-        fetch("/api/offices", { cache: "no-store" }),
+        fetchLiquorMonthlyReportRequest(queryMonthly),
+        fetchLiquorYearlyControlRequest(queryYearly),
+        fetchOfficesRequest(),
       ]);
 
       if (!catalogResponse.ok) {
         throw new Error(
           await readErrorMessage(catalogResponse, "Unable to load catalog."),
+        );
+      }
+      if (!kindsResponse.ok) {
+        throw new Error(
+          await readErrorMessage(kindsResponse, "Unable to load liquor kinds."),
         );
       }
       if (!movementResponse.ok) {
@@ -917,6 +979,9 @@ export default function LiquorControlPage() {
         );
       }
 
+      const kindsPayload = (await kindsResponse.json()) as {
+        kinds?: string[];
+      };
       const catalogPayload = (await catalogResponse.json()) as {
         items?: LiquorCatalogItem[];
       };
@@ -934,6 +999,13 @@ export default function LiquorControlPage() {
       const monthlyPayload = (await monthlyResponse.json()) as MonthlyReport;
       const yearlyPayload = (await yearlyResponse.json()) as YearlyControl;
 
+      const kinds = Array.isArray(kindsPayload.kinds)
+        ? kindsPayload.kinds
+            .filter((entry): entry is string => typeof entry === "string")
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+        : [];
+      setLiquorKinds(kinds);
       setItems(Array.isArray(catalogPayload.items) ? catalogPayload.items : []);
       setMovements(
         Array.isArray(movementPayload.movements) ? movementPayload.movements : [],
@@ -1003,18 +1075,14 @@ export default function LiquorControlPage() {
       return;
     }
 
-    const response = await fetch("/api/liquor-inventory/catalog", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        brand: itemForm.brand.trim() || undefined,
-        upc: itemForm.upc.trim() || undefined,
-        sizeMl,
-        unitLabel: itemForm.unitLabel.trim() || undefined,
-        supplierName: itemForm.supplierName.trim() || undefined,
-        unitCost,
-      }),
+    const response = await createLiquorCatalogItemRequest({
+      name,
+      brand: itemForm.brand.trim() || undefined,
+      upc: itemForm.upc.trim() || undefined,
+      sizeMl,
+      unitLabel: itemForm.unitLabel.trim() || undefined,
+      supplierName: itemForm.supplierName.trim() || undefined,
+      unitCost,
     });
     if (!response.ok) {
       throw new Error(
@@ -1031,6 +1099,38 @@ export default function LiquorControlPage() {
       supplierName: "",
       unitCost: "",
     });
+  };
+
+  const createLiquorKind = async () => {
+    const name = kindForm.newKind.trim();
+    if (!name) {
+      setStatusKind("danger");
+      setStatus("Kind name is required.");
+      return;
+    }
+
+    const response = await createLiquorKindRequest({ name });
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response, "Unable to save kind."));
+    }
+
+    setKindForm((previous) => ({ ...previous, newKind: "" }));
+  };
+
+  const deleteLiquorKind = async () => {
+    const name = kindForm.deleteKind.trim();
+    if (!name) {
+      setStatusKind("danger");
+      setStatus("Select a kind to delete.");
+      return;
+    }
+
+    const response = await deleteLiquorKindRequest(name);
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response, "Unable to delete kind."));
+    }
+
+    setKindForm((previous) => ({ ...previous, deleteKind: "" }));
   };
 
   const createMovement = async () => {
@@ -1061,17 +1161,13 @@ export default function LiquorControlPage() {
       return;
     }
 
-    const response = await fetch("/api/liquor-inventory/movements", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        itemId,
-        officeId: selectedOfficeId,
-        type: movementForm.type,
-        quantity,
-        occurredAt: occurredAt.toISOString(),
-        notes: movementForm.notes.trim() || undefined,
-      }),
+    const response = await createLiquorMovementRequest({
+      itemId,
+      officeId: selectedOfficeId,
+      type: movementForm.type,
+      quantity,
+      occurredAt: occurredAt.toISOString(),
+      notes: movementForm.notes.trim() || undefined,
     });
     if (!response.ok) {
       throw new Error(
@@ -1106,13 +1202,21 @@ export default function LiquorControlPage() {
     const parsedBarQuantity = countForm.barQuantity.trim()
       ? Number(countForm.barQuantity)
       : null;
-    const parsedBodegaQuantity = countForm.bodegaQuantity.trim()
-      ? Number(countForm.bodegaQuantity)
+    const parsedBodegaBottleCount = countForm.bodegaBottleCount.trim()
+      ? Number(countForm.bodegaBottleCount)
       : null;
     const hasSplitCount =
-      parsedBarQuantity !== null || parsedBodegaQuantity !== null;
+      parsedBarQuantity !== null || parsedBodegaBottleCount !== null;
+    const selectedItem = items.find((candidate) => candidate.id === itemId) || null;
+    const sizeMl = selectedItem?.sizeMl ?? null;
+    const resolvedBodegaQuantity =
+      parsedBodegaBottleCount === null
+        ? null
+        : sizeMl && sizeMl > 0
+          ? Number((parsedBodegaBottleCount * sizeMl).toFixed(3))
+          : null;
     const quantity = hasSplitCount
-      ? (parsedBarQuantity || 0) + (parsedBodegaQuantity || 0)
+      ? (parsedBarQuantity || 0) + (resolvedBodegaQuantity || 0)
       : parsedQuantity;
 
     if (quantity === null || !Number.isFinite(quantity) || quantity < 0) {
@@ -1129,26 +1233,31 @@ export default function LiquorControlPage() {
       return;
     }
     if (
-      parsedBodegaQuantity !== null &&
-      (!Number.isFinite(parsedBodegaQuantity) || parsedBodegaQuantity < 0)
+      parsedBodegaBottleCount !== null &&
+      (!Number.isFinite(parsedBodegaBottleCount) || parsedBodegaBottleCount < 0)
     ) {
       setStatusKind("danger");
-      setStatus("Bodega quantity must be zero or greater.");
+      setStatus("Bodega bottle count must be zero or greater.");
+      return;
+    }
+    if (
+      parsedBodegaBottleCount !== null &&
+      parsedBodegaBottleCount > 0 &&
+      (!sizeMl || sizeMl <= 0)
+    ) {
+      setStatusKind("danger");
+      setStatus("Item Qty/ML is required before entering bodega bottles.");
       return;
     }
 
-    const response = await fetch("/api/liquor-inventory/counts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        itemId,
-        officeId: selectedOfficeId,
-        countDate: countForm.countDate,
-        quantity,
-        barQuantity: parsedBarQuantity ?? undefined,
-        bodegaQuantity: parsedBodegaQuantity ?? undefined,
-        notes: countForm.notes.trim() || undefined,
-      }),
+    const response = await createLiquorCountRequest({
+      itemId,
+      officeId: selectedOfficeId,
+      countDate: countForm.countDate,
+      quantity,
+      barQuantity: parsedBarQuantity ?? undefined,
+      bodegaBottleCount: parsedBodegaBottleCount ?? undefined,
+      notes: countForm.notes.trim() || undefined,
     });
     if (!response.ok) {
       throw new Error(await readErrorMessage(response, "Unable to save count."));
@@ -1158,7 +1267,7 @@ export default function LiquorControlPage() {
       ...previous,
       quantity: "",
       barQuantity: "",
-      bodegaQuantity: "",
+      bodegaBottleCount: "",
       notes: "",
     }));
   };
@@ -1177,7 +1286,7 @@ export default function LiquorControlPage() {
         unitCost: previous[itemId]?.unitCost ?? "",
         sizeMl: previous[itemId]?.sizeMl ?? "",
         barQuantity: previous[itemId]?.barQuantity ?? "",
-        bodegaQuantity: previous[itemId]?.bodegaQuantity ?? "",
+        bodegaBottleCount: previous[itemId]?.bodegaBottleCount ?? "",
         [field]: value,
       },
     }));
@@ -1208,16 +1317,12 @@ export default function LiquorControlPage() {
       throw new Error("Qty/ML must be greater than zero.");
     }
 
-    const response = await fetch(`/api/liquor-inventory/catalog/${itemId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        brand: draft.brand.trim() || undefined,
-        supplierName: draft.supplierName.trim() || undefined,
-        unitCost,
-        sizeMl: parsedSizeMl ?? undefined,
-      }),
+    const response = await updateLiquorCatalogItemRequest(itemId, {
+      name,
+      brand: draft.brand.trim() || undefined,
+      supplierName: draft.supplierName.trim() || undefined,
+      unitCost,
+      sizeMl: parsedSizeMl ?? undefined,
     });
 
     if (!response.ok) {
@@ -1239,27 +1344,32 @@ export default function LiquorControlPage() {
     }
 
     const barQuantity = draft.barQuantity.trim() ? Number(draft.barQuantity) : 0;
-    const bodegaQuantity = draft.bodegaQuantity.trim()
-      ? Number(draft.bodegaQuantity)
+    const bodegaBottleCount = draft.bodegaBottleCount.trim()
+      ? Number(draft.bodegaBottleCount)
       : 0;
     if (!Number.isFinite(barQuantity) || barQuantity < 0) {
       throw new Error("Bar quantity must be zero or greater.");
     }
-    if (!Number.isFinite(bodegaQuantity) || bodegaQuantity < 0) {
-      throw new Error("Bodega quantity must be zero or greater.");
+    if (!Number.isFinite(bodegaBottleCount) || bodegaBottleCount < 0) {
+      throw new Error("Bodega bottle count must be zero or greater.");
     }
+    const item = items.find((candidate) => candidate.id === itemId);
+    const sizeMl = item?.sizeMl ?? null;
+    if (bodegaBottleCount > 0 && (!sizeMl || sizeMl <= 0)) {
+      throw new Error("Qty/ML is required before entering bodega bottles.");
+    }
+    const bodegaQuantity =
+      bodegaBottleCount > 0 && sizeMl
+        ? Number((bodegaBottleCount * sizeMl).toFixed(3))
+        : 0;
 
-    const response = await fetch("/api/liquor-inventory/counts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        itemId,
-        officeId: selectedOfficeId,
-        countDate: countForm.countDate,
-        quantity: barQuantity + bodegaQuantity,
-        barQuantity,
-        bodegaQuantity,
-      }),
+    const response = await createLiquorCountRequest({
+      itemId,
+      officeId: selectedOfficeId,
+      countDate: countForm.countDate,
+      quantity: barQuantity + bodegaQuantity,
+      barQuantity,
+      bodegaBottleCount,
     });
     if (!response.ok) {
       throw new Error(
@@ -1302,9 +1412,7 @@ export default function LiquorControlPage() {
 
     setLookingUp(true);
     try {
-      const response = await fetch(`/api/liquor-inventory/catalog/upc/${upc}`, {
-        cache: "no-store",
-      });
+      const response = await lookupLiquorCatalogByUpcRequest(upc);
       if (!response.ok) {
         throw new Error(
           await readErrorMessage(response, "Unable to lookup UPC right now."),
@@ -1388,16 +1496,12 @@ export default function LiquorControlPage() {
 
     setAnalyzingScan(true);
     try {
-      const response = await fetch("/api/liquor-inventory/bottle-scans/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          itemId,
-          officeId: selectedOfficeId,
-          measuredAt: measuredAt.toISOString(),
-          containerKey: scanForm.containerKey.trim() || undefined,
-          imageDataUrl: scanForm.imageDataUrl,
-        }),
+      const response = await analyzeLiquorBottleScanRequest({
+        itemId,
+        officeId: selectedOfficeId,
+        measuredAt: measuredAt.toISOString(),
+        containerKey: scanForm.containerKey.trim() || undefined,
+        imageDataUrl: scanForm.imageDataUrl,
       });
       if (!response.ok) {
         throw new Error(
@@ -1457,17 +1561,13 @@ export default function LiquorControlPage() {
 
     setAnalyzingInvoice(true);
     try {
-      const response = await fetch("/api/liquor-inventory/invoices/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          officeId: selectedOfficeId,
-          invoiceDate: invoiceForm.invoiceDate || undefined,
-          invoiceNumber: invoiceForm.invoiceNumber.trim() || undefined,
-          supplierName: invoiceForm.supplierName.trim() || undefined,
-          notes: invoiceForm.notes.trim() || undefined,
-          imageDataUrl: invoiceForm.imageDataUrl,
-        }),
+      const response = await analyzeLiquorInvoiceRequest({
+        officeId: selectedOfficeId,
+        invoiceDate: invoiceForm.invoiceDate || undefined,
+        invoiceNumber: invoiceForm.invoiceNumber.trim() || undefined,
+        supplierName: invoiceForm.supplierName.trim() || undefined,
+        notes: invoiceForm.notes.trim() || undefined,
+        imageDataUrl: invoiceForm.imageDataUrl,
       });
       if (!response.ok) {
         throw new Error(
@@ -1502,28 +1602,24 @@ export default function LiquorControlPage() {
       throw new Error(t.officeRequired);
     }
 
-    const response = await fetch("/api/liquor-inventory/invoices/apply", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        officeId: selectedOfficeId,
-        invoiceDate: invoiceForm.invoiceDate || undefined,
-        invoiceNumber: invoiceForm.invoiceNumber.trim() || undefined,
-        supplierName: invoiceForm.supplierName.trim() || undefined,
-        notes: invoiceForm.notes.trim() || undefined,
-        createPurchaseMovements: invoiceForm.createPurchaseMovements,
-        rows: invoiceResult.rows.map((row) => ({
-          existingItemId: row.matchedItem?.id || undefined,
-          apply: true,
-          company: row.company || undefined,
-          liquorName: row.liquorName,
-          kind: row.kind || undefined,
-          upc: row.upc || undefined,
-          ml: row.ml ?? undefined,
-          unitCost: row.unitCost ?? undefined,
-          quantity: row.quantity ?? undefined,
-        })),
-      }),
+    const response = await applyLiquorInvoiceRequest({
+      officeId: selectedOfficeId,
+      invoiceDate: invoiceForm.invoiceDate || undefined,
+      invoiceNumber: invoiceForm.invoiceNumber.trim() || undefined,
+      supplierName: invoiceForm.supplierName.trim() || undefined,
+      notes: invoiceForm.notes.trim() || undefined,
+      createPurchaseMovements: invoiceForm.createPurchaseMovements,
+      rows: invoiceResult.rows.map((row) => ({
+        existingItemId: row.matchedItem?.id || undefined,
+        apply: true,
+        company: row.company || undefined,
+        liquorName: row.liquorName,
+        kind: row.kind || undefined,
+        upc: row.upc || undefined,
+        ml: row.ml ?? undefined,
+        unitCost: row.unitCost ?? undefined,
+        quantity: row.quantity ?? undefined,
+      })),
     });
     if (!response.ok) {
       throw new Error(
@@ -1639,6 +1735,11 @@ export default function LiquorControlPage() {
             </button>
           ))}
         </div>
+        <datalist id="liquor-kind-options">
+          {liquorKinds.map((kind) => (
+            <option key={`kind-option-${kind}`} value={kind} />
+          ))}
+        </datalist>
       </section>
 
       {loading && !monthly ? (
@@ -1992,6 +2093,76 @@ export default function LiquorControlPage() {
             </select>
           </div>
         </div>
+        <div className="row g-2 align-items-end">
+          <div className="col-12 col-md-4">
+            <label className="form-label">{t.kindList}</label>
+            <input
+              className="form-control"
+              value={kindForm.newKind}
+              onChange={(event) =>
+                setKindForm((prev) => ({ ...prev, newKind: event.target.value }))
+              }
+              placeholder={t.newKindPlaceholder}
+              list="liquor-kind-options"
+            />
+          </div>
+          <div className="col-6 col-md-2">
+            <button
+              type="button"
+              className="btn btn-outline-primary w-100"
+              disabled={loading || isAnyActionBusy || !kindForm.newKind.trim()}
+              onClick={() => {
+                void runWithReload(
+                  "create-kind",
+                  createLiquorKind,
+                  "Kind saved.",
+                );
+              }}
+            >
+              {t.addKind}
+            </button>
+          </div>
+          <div className="col-12 col-md-4">
+            <label className="form-label">{t.deleteKind}</label>
+            <select
+              className="form-select"
+              value={kindForm.deleteKind}
+              onChange={(event) =>
+                setKindForm((prev) => ({ ...prev, deleteKind: event.target.value }))
+              }
+            >
+              <option value="">{t.kindDeletePlaceholder}</option>
+              {liquorKinds.map((kind) => (
+                <option key={`kind-delete-${kind}`} value={kind}>
+                  {kind}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-6 col-md-2">
+            <button
+              type="button"
+              className="btn btn-outline-danger w-100"
+              disabled={loading || isAnyActionBusy || !kindForm.deleteKind.trim()}
+              onClick={() => {
+                void runWithReload(
+                  "delete-kind",
+                  deleteLiquorKind,
+                  "Kind deleted.",
+                );
+              }}
+            >
+              {t.deleteKind}
+            </button>
+          </div>
+          <div className="col-12">
+            <div className="small text-muted">
+              {liquorKinds.length > 0
+                ? liquorKinds.join(" • ")
+                : t.noKindsConfigured}
+            </div>
+          </div>
+        </div>
         <div className="table-responsive">
           <table className="report-table">
             <thead>
@@ -2002,7 +2173,8 @@ export default function LiquorControlPage() {
                 <th>{t.price}</th>
                 <th>{t.qtyMl}</th>
                 <th>{t.bar}</th>
-                <th>{t.bodega}</th>
+                <th>{t.bodegaBottles}</th>
+                <th>{t.bodegaMl}</th>
                 <th>{t.inventory}</th>
                 <th>{t.total}</th>
                 <th>Actions</th>
@@ -2011,7 +2183,7 @@ export default function LiquorControlPage() {
             <tbody>
               {spreadsheetRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="text-muted text-center py-3">
+                  <td colSpan={11} className="text-muted text-center py-3">
                     {t.noItems}
                   </td>
                 </tr>
@@ -2019,11 +2191,15 @@ export default function LiquorControlPage() {
               {spreadsheetRows.map((row) => {
                 const draft = sheetDrafts[row.item.id];
                 const bar = Number(draft?.barQuantity ?? row.barQuantity) || 0;
-                const bodega =
-                  Number(draft?.bodegaQuantity ?? row.bodegaQuantity) || 0;
-                const inventory = bar + bodega;
                 const price = Number(draft?.unitCost ?? row.item.unitCost) || 0;
                 const qtyMl = Number(draft?.sizeMl ?? row.item.sizeMl) || 0;
+                const bodegaBottleCount =
+                  Number(draft?.bodegaBottleCount ?? row.bodegaBottleCount) || 0;
+                const bodegaMl =
+                  qtyMl > 0
+                    ? bodegaBottleCount * qtyMl
+                    : Number(row.bodegaQuantityMl) || 0;
+                const inventory = bar + bodegaMl;
                 const total = qtyMl > 0 ? (price * inventory) / qtyMl : null;
 
                 return (
@@ -2053,6 +2229,7 @@ export default function LiquorControlPage() {
                     <td>
                       <input
                         className="form-control form-control-sm"
+                        list="liquor-kind-options"
                         value={draft?.brand ?? row.item.brand ?? ""}
                         onChange={(event) =>
                           updateSheetDraft(row.item.id, "brand", event.target.value)
@@ -2093,16 +2270,19 @@ export default function LiquorControlPage() {
                     <td>
                       <input
                         className="form-control form-control-sm"
-                        value={draft?.bodegaQuantity ?? String(row.bodegaQuantity)}
+                        value={
+                          draft?.bodegaBottleCount ?? String(row.bodegaBottleCount)
+                        }
                         onChange={(event) =>
                           updateSheetDraft(
                             row.item.id,
-                            "bodegaQuantity",
+                            "bodegaBottleCount",
                             event.target.value,
                           )
                         }
                       />
                     </td>
+                    <td>{formatQty(bodegaMl)}</td>
                     <td>{formatQty(inventory)}</td>
                     <td>{formatMoney(total)}</td>
                     <td>
@@ -2533,10 +2713,12 @@ export default function LiquorControlPage() {
             <label className="form-label">{t.liquorKind}</label>
             <input
               className="form-control"
+              list="liquor-kind-options"
               value={itemForm.brand}
               onChange={(event) =>
                 setItemForm((prev) => ({ ...prev, brand: event.target.value }))
               }
+              placeholder={t.kindPlaceholder}
             />
           </div>
           <div className="col-12 col-md-2">
@@ -2847,26 +3029,31 @@ export default function LiquorControlPage() {
             />
           </div>
           <div className="col-6 col-md-1">
-            <label className="form-label">{t.bodega}</label>
+            <label className="form-label">{t.bodegaBottles}</label>
             <input
               className="form-control"
-              value={countForm.bodegaQuantity}
+              value={countForm.bodegaBottleCount}
               onChange={(event) =>
                 setCountForm((prev) => ({
                   ...prev,
-                  bodegaQuantity: event.target.value,
+                  bodegaBottleCount: event.target.value,
                 }))
               }
+            />
+          </div>
+          <div className="col-6 col-md-1">
+            <label className="form-label">{t.bodegaMl}</label>
+            <input
+              className="form-control"
+              value={String(countBodegaQuantityMl)}
+              readOnly
             />
           </div>
           <div className="col-6 col-md-1">
             <label className="form-label">{t.inventory}</label>
             <input
               className="form-control"
-              value={String(
-                (Number(countForm.barQuantity) || 0) +
-                  (Number(countForm.bodegaQuantity) || 0),
-              )}
+              value={String(countInventoryQuantity)}
               readOnly
             />
           </div>
@@ -2936,7 +3123,8 @@ export default function LiquorControlPage() {
                 <th>{t.office}</th>
                 <th>{t.item}</th>
                 <th>{t.bar}</th>
-                <th>{t.bodega}</th>
+                <th>{t.bodegaBottles}</th>
+                <th>{t.bodegaMl}</th>
                 <th>Qty</th>
                 <th>User</th>
               </tr>
@@ -2944,7 +3132,7 @@ export default function LiquorControlPage() {
             <tbody>
               {counts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-muted text-center py-3">
+                  <td colSpan={8} className="text-muted text-center py-3">
                     {t.noCounts}
                   </td>
                 </tr>
@@ -2955,6 +3143,7 @@ export default function LiquorControlPage() {
                   <td>{count.officeName}</td>
                   <td>{count.itemName}</td>
                   <td>{formatQty(count.barQuantity)}</td>
+                  <td>{formatQty(count.bodegaBottleCount)}</td>
                   <td>{formatQty(count.bodegaQuantity)}</td>
                   <td>{formatQty(count.quantity)}</td>
                   <td>{count.createdBy || "—"}</td>

@@ -210,6 +210,44 @@ export class ReportsController {
     });
   }
 
+  @Get('comparison')
+  async comparisonReport(
+    @Req() req: RequestWithUser,
+    @Query() query: Record<string, string>,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    const periodRaw =
+      typeof query.period === 'string' ? query.period.trim().toLowerCase() : '';
+    const period =
+      periodRaw === 'week' || periodRaw === 'month' || periodRaw === 'year'
+        ? periodRaw
+        : 'month';
+
+    const anchorDate = query.anchorDate || undefined;
+    const tzOffset = Number(query.tzOffset ?? 0);
+    const weekStartsOn = [0, 1].includes(Number(query.weekStartsOn))
+      ? Number(query.weekStartsOn)
+      : 1;
+    const trendWeeksRaw = Number(query.trendWeeks ?? 8);
+    const trendWeeks = Number.isFinite(trendWeeksRaw) ? trendWeeksRaw : 8;
+
+    return this.reports.getComparisonReport(req.user, {
+      period,
+      anchorDate,
+      from: query.from || undefined,
+      to: query.to || undefined,
+      tzOffset,
+      weekStartsOn,
+      trendWeeks,
+      employeeId: query.employeeId || undefined,
+      officeId: query.officeId || undefined,
+      groupId: query.groupId || undefined,
+    });
+  }
+
   @Post('sales')
   async saveSalesReport(
     @Req() req: RequestWithUser,

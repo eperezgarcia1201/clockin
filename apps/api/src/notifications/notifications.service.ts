@@ -536,9 +536,7 @@ export class NotificationsService {
     return hours * 60 + minutes;
   }
 
-  private toMetadataRecord(
-    metadata: unknown,
-  ): Record<string, unknown> | null {
+  private toMetadataRecord(metadata: unknown): Record<string, unknown> | null {
     if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
       return null;
     }
@@ -684,9 +682,7 @@ export class NotificationsService {
 
       const metadata = this.toMetadataRecord(notice.metadata);
       const kind =
-        metadata && typeof metadata.kind === 'string'
-          ? metadata.kind
-          : '';
+        metadata && typeof metadata.kind === 'string' ? metadata.kind : '';
 
       if (kind === MANAGER_MESSAGE_KIND || kind === AUTO_CLOCK_IN_KIND) {
         return;
@@ -713,7 +709,8 @@ export class NotificationsService {
       if (clockedInToday.has(reminder.employeeId)) {
         continue;
       }
-      const reminderCount = reminderCountByEmployee.get(reminder.employeeId) || 0;
+      const reminderCount =
+        reminderCountByEmployee.get(reminder.employeeId) || 0;
       const latestPunch = latestPunchByEmployee.get(reminder.employeeId);
       const isAlreadyActive = latestPunch
         ? ACTIVE_WORK_STATUSES.has(latestPunch.type)
@@ -724,10 +721,7 @@ export class NotificationsService {
       }
 
       const autoClockIn = async () => {
-        if (
-          clockedInToday.has(reminder.employeeId) ||
-          isAlreadyActive
-        ) {
+        if (clockedInToday.has(reminder.employeeId) || isAlreadyActive) {
           return false;
         }
 
@@ -738,7 +732,8 @@ export class NotificationsService {
             employeeId: reminder.employeeId,
             type: PunchType.IN,
             occurredAt,
-            notes: 'Auto clock-in: missed scheduled start after late reminders.',
+            notes:
+              'Auto clock-in: missed scheduled start after late reminders.',
           },
         });
 
@@ -1043,7 +1038,8 @@ export class NotificationsService {
         contributors.add(name),
       );
       const byEmployee =
-        order.createdByEmployee?.displayName || order.createdByEmployee?.fullName;
+        order.createdByEmployee?.displayName ||
+        order.createdByEmployee?.fullName;
       if (typeof byEmployee === 'string' && byEmployee.trim()) {
         contributors.add(byEmployee.trim());
       }
@@ -1118,7 +1114,9 @@ export class NotificationsService {
         supplierNames: Array.from(supplierNames).sort((a, b) =>
           a.localeCompare(b),
         ),
-        contributors: Array.from(contributors).sort((a, b) => a.localeCompare(b)),
+        contributors: Array.from(contributors).sort((a, b) =>
+          a.localeCompare(b),
+        ),
         orderRecordCount: orders.length,
         itemCount: orderItemCount,
         totalQuantity: Number(totalOrderQuantity.toFixed(2)),
@@ -1264,7 +1262,9 @@ export class NotificationsService {
       };
     }
 
-    const resendApiKey = (this.config.get<string>('RESEND_API_KEY') || '').trim();
+    const resendApiKey = (
+      this.config.get<string>('RESEND_API_KEY') || ''
+    ).trim();
     const reportFrom =
       (this.config.get<string>('OWNER_REPORT_EMAIL_FROM') || '').trim() ||
       (this.config.get<string>('REPORT_EMAIL_FROM') || '').trim() ||
@@ -1304,7 +1304,9 @@ export class NotificationsService {
     }
 
     const webhookUrl =
-      (this.config.get<string>('OWNER_REPORT_EMAIL_WEBHOOK_URL') || '').trim() ||
+      (
+        this.config.get<string>('OWNER_REPORT_EMAIL_WEBHOOK_URL') || ''
+      ).trim() ||
       (this.config.get<string>('REPORT_EMAIL_WEBHOOK_URL') || '').trim();
     if (webhookUrl) {
       try {
@@ -1403,7 +1405,9 @@ export class NotificationsService {
     const payload = source.slice(COMPANY_ORDER_META_PREFIX.length);
     const newlineIndex = payload.indexOf('\n');
     const metadataRaw =
-      newlineIndex >= 0 ? payload.slice(0, newlineIndex).trim() : payload.trim();
+      newlineIndex >= 0
+        ? payload.slice(0, newlineIndex).trim()
+        : payload.trim();
 
     try {
       const parsed = JSON.parse(metadataRaw) as Record<string, unknown>;

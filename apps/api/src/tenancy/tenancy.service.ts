@@ -399,8 +399,13 @@ export class TenancyService {
     return match[1]?.trim() || '';
   }
 
-  private async findKitchenManagerEmployee(tenantId: string, authUser: AuthUser) {
-    const actorEmployeeId = this.parseEmployeeActorId(authUser.authUserId || '');
+  private async findKitchenManagerEmployee(
+    tenantId: string,
+    authUser: AuthUser,
+  ) {
+    const actorEmployeeId = this.parseEmployeeActorId(
+      authUser.authUserId || '',
+    );
     const loginIdentifier = (
       authUser.name ||
       authUser.email ||

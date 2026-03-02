@@ -25,6 +25,20 @@ Expected result: `PASS: admin reviewer access checks are valid`.
 
 ## Build latest Android app bundle (admin app)
 
+Before building, ensure Android push credentials are configured for this package:
+
+- Firebase Android app package: `com.websys.clockinadminplus`
+- Place Firebase config file at: `apps/mobile-admin/google-services.json`
+- Expo config uses this file via: `expo.android.googleServicesFile`
+- Upload FCM V1 service account for this Expo project:
+
+```bash
+cd apps/mobile-admin
+npx eas credentials -p android
+```
+
+Then build:
+
 ```bash
 cd apps/mobile-admin
 npx eas build --platform android --profile production

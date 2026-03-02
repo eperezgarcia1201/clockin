@@ -1,0 +1,62 @@
+{
+  "maxLines": {
+    "default": 350,
+    "include": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "src/**/*.js",
+      "src/**/*.jsx"
+    ],
+    "exclude": [
+      "**/*.d.ts",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/__tests__/**",
+      "**/generated/**",
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.next/**"
+    ],
+    "overrides": [
+      {
+        "file": "src/app/App.tsx",
+        "max": 900,
+        "expiresOn": "2026-06-30",
+        "reason": "Legacy shell extraction in progress"
+      }
+    ]
+  },
+  "noDirectFetch": {
+    "include": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "src/**/*.js",
+      "src/**/*.jsx"
+    ],
+    "exclude": [
+      "**/*.d.ts",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/__tests__/**",
+      "**/generated/**",
+      "**/node_modules/**"
+    ],
+    "allowIn": [
+      "src/shared/api/client.ts",
+      "src/shared/api/client.tsx"
+    ],
+    "blockedPatterns": [
+      "\\bfetch\\s*\\(",
+      "\\baxios\\s*\\(",
+      "\\baxios\\s*\\.",
+      "from\\s+['\\\"]axios['\\\"]",
+      "new\\s+XMLHttpRequest\\s*\\("
+    ],
+    "message": "Use shared API client wrappers in UI scopes."
+  }
+}

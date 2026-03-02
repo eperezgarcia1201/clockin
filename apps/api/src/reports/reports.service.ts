@@ -6,12 +6,23 @@ import {
   PayloadTooLargeException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
-import { ExpensePaymentMethod, PunchType, Role } from '@prisma/client';
+import {
+  ExpensePaymentMethod,
+  LiquorInventoryMovementType,
+  PunchType,
+  Role,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
 
 const WORKING_TYPES = new Set<PunchType>([PunchType.IN]);
+const LIQUOR_OUTGOING_TYPES = new Set<LiquorInventoryMovementType>([
+  LiquorInventoryMovementType.SALE,
+  LiquorInventoryMovementType.WASTE,
+  LiquorInventoryMovementType.ADJUSTMENT_OUT,
+  LiquorInventoryMovementType.TRANSFER_OUT,
+]);
 const AUTO_SCHEDULE_OUT_TOKEN = '[AUTO_SCHEDULE_OUT]';
 const MAX_RECEIPT_SIZE_BYTES = 6 * 1024 * 1024;
 const ALLOWED_RECEIPT_MIME_TYPES = new Set([
@@ -83,6 +94,53 @@ type DailyExpenseRow = {
   submittedAt: string;
   createdAt: string;
   updatedAt: string;
+};
+
+type ComparisonPeriod = 'week' | 'month' | 'year';
+
+type ComparisonReportInput = {
+  period: ComparisonPeriod;
+  anchorDate?: string;
+  from?: string;
+  to?: string;
+  tzOffset: number;
+  weekStartsOn: number;
+  trendWeeks: number;
+  employeeId?: string;
+  officeId?: string;
+  groupId?: string;
+};
+
+type NamedRange = {
+  from: string;
+  to: string;
+};
+
+type ComparisonTotals = {
+  laborMinutes: number;
+  laborHours: number;
+  estimatedWages: number;
+  tips: number;
+  sales: number;
+  expenses: number;
+  net: number;
+};
+
+type EmployeeComparisonSummary = {
+  employeeId: string;
+  name: string;
+  currentMinutes: number;
+  previousMinutes: number;
+  currentHours: number;
+  previousHours: number;
+  currentWages: number;
+  previousWages: number;
+  currentTips: number;
+  previousTips: number;
+  deltaMinutes: number;
+  deltaHours: number;
+  deltaWages: number;
+  deltaTips: number;
 };
 
 @Injectable()
@@ -588,6 +646,902 @@ export class ReportsService {
         checkExpenses: toMoney(expenseTotals.checkExpenses),
       },
       expenses: expenseRows,
+    };
+  }
+
+  async getComparisonReport(authUser: AuthUser, input: ComparisonReportInput) {
+    await this.tenancy.requireFeature(authUser, 'reports');
+    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const settings = await this.prisma.tenantSettings.findUnique({
+      where: { tenantId: tenant.id },
+      select: {
+        reportsEnabled: true,
+        timezone: true,
+        liquorInventoryEnabled: true,
+      },
+    });
+    if (settings && settings.reportsEnabled === false) {
+      throw new ForbiddenException('Reports are disabled.');
+    }
+
+    const timezone = settings?.timezone || 'America/New_York';
+    const weekStartsOn = input.weekStartsOn === 0 ? 0 : 1;
+    const trendWeeks = Math.min(
+      Math.max(Math.round(input.trendWeeks || 8), 4),
+      26,
+    );
+    const hasExplicitRange = Boolean(input.from?.trim() || input.to?.trim());
+    let currentRange: NamedRange;
+    let previousRange: NamedRange;
+    let anchorDate: string;
+    if (hasExplicitRange) {
+      if (!input.from?.trim() || !input.to?.trim()) {
+        throw new BadRequestException(
+          'from and to must both be provided when using a custom date range.',
+        );
+      }
+      currentRange = {
+        from: parseIsoDateOnly(input.from, 'from').toISOString().slice(0, 10),
+        to: parseIsoDateOnly(input.to, 'to').toISOString().slice(0, 10),
+      };
+      if (currentRange.from > currentRange.to) {
+        throw new BadRequestException('from must be less than or equal to to.');
+      }
+      previousRange = buildPreviousRangeMatching(currentRange);
+      anchorDate = currentRange.to;
+    } else {
+      anchorDate = input.anchorDate?.trim()
+        ? parseIsoDateOnly(input.anchorDate, 'anchorDate')
+            .toISOString()
+            .slice(0, 10)
+        : getDateKeyInTimeZone(new Date(), timezone);
+      const periods = buildComparisonRanges(input.period, anchorDate);
+      currentRange = periods.current;
+      previousRange = periods.previous;
+    }
+
+    const trendEndWeekStart = getWeekStart(currentRange.to, weekStartsOn);
+    const trendRange: NamedRange = {
+      from: addDaysToDateKey(trendEndWeekStart, -(trendWeeks - 1) * 7),
+      to: addDaysToDateKey(trendEndWeekStart, 6),
+    };
+    const sourceRange = mergeRanges([currentRange, previousRange, trendRange]);
+
+    const context = await this.getPunchContext(authUser, {
+      from: sourceRange.from,
+      to: sourceRange.to,
+      tzOffset: input.tzOffset,
+      employeeId: input.employeeId,
+      officeId: input.officeId,
+      groupId: input.groupId,
+    });
+    if (!context.reportsEnabled) {
+      throw new ForbiddenException('Reports are disabled.');
+    }
+
+    const employeeSummaries = new Map<
+      string,
+      {
+        employeeId: string;
+        name: string;
+        currentMinutes: number;
+        previousMinutes: number;
+        currentWages: number;
+        previousWages: number;
+        currentTips: number;
+        previousTips: number;
+        currentPunches: number;
+        currentPunchIn: number;
+        currentPunchOut: number;
+        currentPunchBreak: number;
+        currentPunchLunch: number;
+        weekly: Map<string, { minutes: number; wages: number; tips: number }>;
+      }
+    >();
+    const dailyLaborCurrent = new Map<
+      string,
+      { minutes: number; wages: number; employees: Set<string> }
+    >();
+    const dailyLaborPrevious = new Map<
+      string,
+      { minutes: number; wages: number; employees: Set<string> }
+    >();
+    const dailyPunchCurrent = new Map<
+      string,
+      { punches: number; employees: Set<string> }
+    >();
+
+    for (const employee of context.employees) {
+      const summary = buildDailySummary({
+        punches: context.punchesByEmployee.get(employee.id) || [],
+        before: context.lastBeforeMap.get(employee.id),
+        rangeStartUtc: context.rangeStartUtc,
+        rangeEndUtc: context.rangeEndUtc,
+        offsetMs: context.offsetMs,
+        roundTo: 0,
+      });
+
+      const hourlyRate = employee.hourlyRate ?? 0;
+      const employeeSummary = {
+        employeeId: employee.id,
+        name: employee.displayName || employee.fullName,
+        currentMinutes: 0,
+        previousMinutes: 0,
+        currentWages: 0,
+        previousWages: 0,
+        currentTips: 0,
+        previousTips: 0,
+        currentPunches: 0,
+        currentPunchIn: 0,
+        currentPunchOut: 0,
+        currentPunchBreak: 0,
+        currentPunchLunch: 0,
+        weekly: new Map<
+          string,
+          { minutes: number; wages: number; tips: number }
+        >(),
+      };
+
+      for (const day of summary.days) {
+        const weekKey = getWeekStart(day.date, weekStartsOn);
+        const existingWeek = employeeSummary.weekly.get(weekKey) || {
+          minutes: 0,
+          wages: 0,
+          tips: 0,
+        };
+        existingWeek.minutes += day.minutes;
+        existingWeek.wages += (day.minutes / 60) * hourlyRate;
+        employeeSummary.weekly.set(weekKey, existingWeek);
+
+        if (isDateInRange(day.date, currentRange)) {
+          employeeSummary.currentMinutes += day.minutes;
+          employeeSummary.currentWages += (day.minutes / 60) * hourlyRate;
+          const existingDay = dailyLaborCurrent.get(day.date) || {
+            minutes: 0,
+            wages: 0,
+            employees: new Set<string>(),
+          };
+          existingDay.minutes += day.minutes;
+          existingDay.wages += (day.minutes / 60) * hourlyRate;
+          existingDay.employees.add(employee.id);
+          dailyLaborCurrent.set(day.date, existingDay);
+        }
+        if (isDateInRange(day.date, previousRange)) {
+          employeeSummary.previousMinutes += day.minutes;
+          employeeSummary.previousWages += (day.minutes / 60) * hourlyRate;
+          const existingDay = dailyLaborPrevious.get(day.date) || {
+            minutes: 0,
+            wages: 0,
+            employees: new Set<string>(),
+          };
+          existingDay.minutes += day.minutes;
+          existingDay.wages += (day.minutes / 60) * hourlyRate;
+          existingDay.employees.add(employee.id);
+          dailyLaborPrevious.set(day.date, existingDay);
+        }
+      }
+
+      const employeePunches = context.punchesByEmployee.get(employee.id) || [];
+      for (const punch of employeePunches) {
+        const dateKey = dayKeyFromUtc(
+          punch.occurredAt.getTime(),
+          context.offsetMs,
+        );
+        if (!isDateInRange(dateKey, currentRange)) {
+          continue;
+        }
+        employeeSummary.currentPunches += 1;
+        if (punch.type === PunchType.IN) {
+          employeeSummary.currentPunchIn += 1;
+        } else if (punch.type === PunchType.OUT) {
+          employeeSummary.currentPunchOut += 1;
+        } else if (punch.type === PunchType.BREAK) {
+          employeeSummary.currentPunchBreak += 1;
+        } else if (punch.type === PunchType.LUNCH) {
+          employeeSummary.currentPunchLunch += 1;
+        }
+
+        const punchDay = dailyPunchCurrent.get(dateKey) || {
+          punches: 0,
+          employees: new Set<string>(),
+        };
+        punchDay.punches += 1;
+        punchDay.employees.add(employee.id);
+        dailyPunchCurrent.set(dateKey, punchDay);
+      }
+
+      employeeSummaries.set(employee.id, employeeSummary);
+    }
+
+    const sourceFromUtc = parseIsoDateOnly(sourceRange.from, 'from');
+    const sourceToUtcExclusive = parseIsoDateOnly(sourceRange.to, 'to');
+    sourceToUtcExclusive.setUTCDate(sourceToUtcExclusive.getUTCDate() + 1);
+
+    const employeeIds = context.employees.map((employee) => employee.id);
+    const tipsByDateCurrent = new Map<string, number>();
+    const tipsByDatePrevious = new Map<string, number>();
+    if (employeeIds.length > 0) {
+      const tipsRows = await this.prisma.employeeTip.findMany({
+        where: {
+          tenantId: tenant.id,
+          employeeId: { in: employeeIds },
+          workDate: {
+            gte: sourceFromUtc,
+            lt: sourceToUtcExclusive,
+          },
+        },
+        select: {
+          employeeId: true,
+          workDate: true,
+          cashTips: true,
+          creditCardTips: true,
+        },
+      });
+
+      for (const tipRow of tipsRows) {
+        const summary = employeeSummaries.get(tipRow.employeeId);
+        if (!summary) {
+          continue;
+        }
+        const dateKey = tipRow.workDate.toISOString().slice(0, 10);
+        const totalTips = toMoney(tipRow.cashTips + tipRow.creditCardTips);
+        const weekKey = getWeekStart(dateKey, weekStartsOn);
+        const existingWeek = summary.weekly.get(weekKey) || {
+          minutes: 0,
+          wages: 0,
+          tips: 0,
+        };
+        existingWeek.tips += totalTips;
+        summary.weekly.set(weekKey, existingWeek);
+
+        if (isDateInRange(dateKey, currentRange)) {
+          summary.currentTips += totalTips;
+          tipsByDateCurrent.set(
+            dateKey,
+            (tipsByDateCurrent.get(dateKey) || 0) + totalTips,
+          );
+        }
+        if (isDateInRange(dateKey, previousRange)) {
+          summary.previousTips += totalTips;
+          tipsByDatePrevious.set(
+            dateKey,
+            (tipsByDatePrevious.get(dateKey) || 0) + totalTips,
+          );
+        }
+      }
+    }
+
+    const salesRows = await this.prisma.dailySalesReport.findMany({
+      where: {
+        tenantId: tenant.id,
+        reportDate: {
+          gte: sourceFromUtc,
+          lt: sourceToUtcExclusive,
+        },
+      },
+      select: {
+        reportDate: true,
+        foodSales: true,
+        liquorSales: true,
+      },
+    });
+
+    const expenseRows = await this.prisma.dailyExpense.findMany({
+      where: {
+        tenantId: tenant.id,
+        expenseDate: {
+          gte: sourceFromUtc,
+          lt: sourceToUtcExclusive,
+        },
+      },
+      select: {
+        expenseDate: true,
+        amount: true,
+        paymentMethod: true,
+      },
+    });
+
+    let currentSales = 0;
+    let previousSales = 0;
+    let currentExpenses = 0;
+    let previousExpenses = 0;
+    const weeklySales = new Map<string, number>();
+    const weeklyExpenses = new Map<string, number>();
+    const currentSalesByDate = new Map<
+      string,
+      { foodSales: number; liquorSales: number; totalSales: number }
+    >();
+    const previousSalesByDate = new Map<
+      string,
+      { foodSales: number; liquorSales: number; totalSales: number }
+    >();
+    const currentExpensesByDate = new Map<
+      string,
+      {
+        totalExpenses: number;
+        expenseCount: number;
+        cashExpenses: number;
+        debitCardExpenses: number;
+        checkExpenses: number;
+      }
+    >();
+    const previousExpensesByDate = new Map<
+      string,
+      {
+        totalExpenses: number;
+        expenseCount: number;
+        cashExpenses: number;
+        debitCardExpenses: number;
+        checkExpenses: number;
+      }
+    >();
+
+    for (const row of salesRows) {
+      const dateKey = row.reportDate.toISOString().slice(0, 10);
+      const foodSales = toMoney(row.foodSales);
+      const liquorSales = toMoney(row.liquorSales);
+      const totalSales = toMoney(row.foodSales + row.liquorSales);
+      const weekKey = getWeekStart(dateKey, weekStartsOn);
+      weeklySales.set(weekKey, (weeklySales.get(weekKey) || 0) + totalSales);
+
+      if (isDateInRange(dateKey, currentRange)) {
+        currentSales += totalSales;
+        const currentDay = currentSalesByDate.get(dateKey) || {
+          foodSales: 0,
+          liquorSales: 0,
+          totalSales: 0,
+        };
+        currentDay.foodSales += foodSales;
+        currentDay.liquorSales += liquorSales;
+        currentDay.totalSales += totalSales;
+        currentSalesByDate.set(dateKey, currentDay);
+      }
+      if (isDateInRange(dateKey, previousRange)) {
+        previousSales += totalSales;
+        const previousDay = previousSalesByDate.get(dateKey) || {
+          foodSales: 0,
+          liquorSales: 0,
+          totalSales: 0,
+        };
+        previousDay.foodSales += foodSales;
+        previousDay.liquorSales += liquorSales;
+        previousDay.totalSales += totalSales;
+        previousSalesByDate.set(dateKey, previousDay);
+      }
+    }
+
+    for (const row of expenseRows) {
+      const dateKey = row.expenseDate.toISOString().slice(0, 10);
+      const amount = toMoney(row.amount);
+      const weekKey = getWeekStart(dateKey, weekStartsOn);
+      weeklyExpenses.set(weekKey, (weeklyExpenses.get(weekKey) || 0) + amount);
+
+      if (isDateInRange(dateKey, currentRange)) {
+        currentExpenses += amount;
+        const currentDay = currentExpensesByDate.get(dateKey) || {
+          totalExpenses: 0,
+          expenseCount: 0,
+          cashExpenses: 0,
+          debitCardExpenses: 0,
+          checkExpenses: 0,
+        };
+        currentDay.totalExpenses += amount;
+        currentDay.expenseCount += 1;
+        if (row.paymentMethod === ExpensePaymentMethod.CASH) {
+          currentDay.cashExpenses += amount;
+        } else if (row.paymentMethod === ExpensePaymentMethod.DEBIT_CARD) {
+          currentDay.debitCardExpenses += amount;
+        } else if (row.paymentMethod === ExpensePaymentMethod.CHECK) {
+          currentDay.checkExpenses += amount;
+        }
+        currentExpensesByDate.set(dateKey, currentDay);
+      }
+      if (isDateInRange(dateKey, previousRange)) {
+        previousExpenses += amount;
+        const previousDay = previousExpensesByDate.get(dateKey) || {
+          totalExpenses: 0,
+          expenseCount: 0,
+          cashExpenses: 0,
+          debitCardExpenses: 0,
+          checkExpenses: 0,
+        };
+        previousDay.totalExpenses += amount;
+        previousDay.expenseCount += 1;
+        if (row.paymentMethod === ExpensePaymentMethod.CASH) {
+          previousDay.cashExpenses += amount;
+        } else if (row.paymentMethod === ExpensePaymentMethod.DEBIT_CARD) {
+          previousDay.debitCardExpenses += amount;
+        } else if (row.paymentMethod === ExpensePaymentMethod.CHECK) {
+          previousDay.checkExpenses += amount;
+        }
+        previousExpensesByDate.set(dateKey, previousDay);
+      }
+    }
+
+    const employeeStats: EmployeeComparisonSummary[] = Array.from(
+      employeeSummaries.values(),
+    ).map((row) => {
+      const currentHours = toHoursDecimal(row.currentMinutes);
+      const previousHours = toHoursDecimal(row.previousMinutes);
+      const currentWages = toMoney(row.currentWages);
+      const previousWages = toMoney(row.previousWages);
+      const currentTips = toMoney(row.currentTips);
+      const previousTips = toMoney(row.previousTips);
+      const deltaMinutes = row.currentMinutes - row.previousMinutes;
+      return {
+        employeeId: row.employeeId,
+        name: row.name,
+        currentMinutes: Math.round(row.currentMinutes),
+        previousMinutes: Math.round(row.previousMinutes),
+        currentHours,
+        previousHours,
+        currentWages,
+        previousWages,
+        currentTips,
+        previousTips,
+        deltaMinutes: Math.round(deltaMinutes),
+        deltaHours: toHoursDecimal(deltaMinutes),
+        deltaWages: toMoney(currentWages - previousWages),
+        deltaTips: toMoney(currentTips - previousTips),
+      };
+    });
+
+    const currentTotals = this.buildComparisonTotals(
+      employeeStats,
+      'current',
+      currentSales,
+      currentExpenses,
+    );
+    const previousTotals = this.buildComparisonTotals(
+      employeeStats,
+      'previous',
+      previousSales,
+      previousExpenses,
+    );
+
+    const weekStarts = buildWeekStartSeries(trendRange, weekStartsOn);
+    const weekly = weekStarts.map((weekStart) => {
+      const weekEnd = addDaysToDateKey(weekStart, 6);
+      const workers = employeeStats
+        .map((employee) => {
+          const weeklyRow =
+            employeeSummaries.get(employee.employeeId)?.weekly.get(weekStart) ||
+            null;
+          if (!weeklyRow || weeklyRow.minutes <= 0) {
+            return null;
+          }
+          return {
+            employeeId: employee.employeeId,
+            name: employee.name,
+            minutes: Math.round(weeklyRow.minutes),
+            hours: toHoursDecimal(weeklyRow.minutes),
+            wages: toMoney(weeklyRow.wages),
+            tips: toMoney(weeklyRow.tips),
+          };
+        })
+        .filter(
+          (
+            worker,
+          ): worker is {
+            employeeId: string;
+            name: string;
+            minutes: number;
+            hours: number;
+            wages: number;
+            tips: number;
+          } => Boolean(worker),
+        )
+        .sort((a, b) => b.minutes - a.minutes);
+
+      const laborMinutes = workers.reduce(
+        (sum, worker) => sum + worker.minutes,
+        0,
+      );
+      const wages = workers.reduce((sum, worker) => sum + worker.wages, 0);
+      const tips = workers.reduce((sum, worker) => sum + worker.tips, 0);
+      const sales = toMoney(weeklySales.get(weekStart) || 0);
+      const expenses = toMoney(weeklyExpenses.get(weekStart) || 0);
+      return {
+        weekStart,
+        weekEnd,
+        laborMinutes: Math.round(laborMinutes),
+        laborHours: toHoursDecimal(laborMinutes),
+        wages: toMoney(wages),
+        tips: toMoney(tips),
+        sales,
+        expenses,
+        net: toMoney(sales - expenses),
+        leader: workers[0] || null,
+      };
+    });
+
+    const leadersCurrent = [...employeeStats]
+      .sort((a, b) => b.currentMinutes - a.currentMinutes)
+      .slice(0, 10);
+    const leadersPrevious = [...employeeStats]
+      .sort((a, b) => b.previousMinutes - a.previousMinutes)
+      .slice(0, 10);
+    const changes = [...employeeStats]
+      .sort((a, b) => Math.abs(b.deltaMinutes) - Math.abs(a.deltaMinutes))
+      .slice(0, 10);
+
+    const currentDateSeries = buildDateSeries(
+      currentRange.from,
+      currentRange.to,
+    );
+    const previousDateSeries = buildDateSeries(
+      previousRange.from,
+      previousRange.to,
+    );
+    const employeeActivityDaily = currentDateSeries.map((date) => {
+      const labor = dailyLaborCurrent.get(date);
+      const punch = dailyPunchCurrent.get(date);
+      const employeeIds = new Set<string>();
+      labor?.employees.forEach((employeeId) => employeeIds.add(employeeId));
+      punch?.employees.forEach((employeeId) => employeeIds.add(employeeId));
+      return {
+        date,
+        laborHours: toHoursDecimal(labor?.minutes || 0),
+        estimatedWages: toMoney(labor?.wages || 0),
+        punches: punch?.punches || 0,
+        activeEmployees: employeeIds.size,
+      };
+    });
+
+    const payrollDailyCurrent = currentDateSeries.map((date) => {
+      const labor = dailyLaborCurrent.get(date);
+      const wages = toMoney(labor?.wages || 0);
+      const tips = toMoney(tipsByDateCurrent.get(date) || 0);
+      return {
+        date,
+        laborHours: toHoursDecimal(labor?.minutes || 0),
+        wages,
+        tips,
+        totalComp: toMoney(wages + tips),
+        employeeCount: labor?.employees.size || 0,
+      };
+    });
+    const payrollDailyPrevious = previousDateSeries.map((date) => {
+      const labor = dailyLaborPrevious.get(date);
+      const wages = toMoney(labor?.wages || 0);
+      const tips = toMoney(tipsByDatePrevious.get(date) || 0);
+      return {
+        date,
+        laborHours: toHoursDecimal(labor?.minutes || 0),
+        wages,
+        tips,
+        totalComp: toMoney(wages + tips),
+        employeeCount: labor?.employees.size || 0,
+      };
+    });
+    const highestPayrollCurrent =
+      maxBy(payrollDailyCurrent, (row) => row.wages) || null;
+    const highestPayrollPrevious =
+      maxBy(payrollDailyPrevious, (row) => row.wages) || null;
+    const salesDailyCurrent = currentDateSeries.map((date) => {
+      const row = currentSalesByDate.get(date);
+      return {
+        date,
+        foodSales: toMoney(row?.foodSales || 0),
+        liquorSales: toMoney(row?.liquorSales || 0),
+        totalSales: toMoney(row?.totalSales || 0),
+      };
+    });
+    const salesDailyPrevious = previousDateSeries.map((date) => {
+      const row = previousSalesByDate.get(date);
+      return {
+        date,
+        foodSales: toMoney(row?.foodSales || 0),
+        liquorSales: toMoney(row?.liquorSales || 0),
+        totalSales: toMoney(row?.totalSales || 0),
+      };
+    });
+    const highestSalesCurrent =
+      maxBy(salesDailyCurrent, (row) => row.totalSales) || null;
+    const highestSalesPrevious =
+      maxBy(salesDailyPrevious, (row) => row.totalSales) || null;
+    const expensesDailyCurrent = currentDateSeries.map((date) => {
+      const row = currentExpensesByDate.get(date);
+      return {
+        date,
+        totalExpenses: toMoney(row?.totalExpenses || 0),
+        expenseCount: row?.expenseCount || 0,
+        cashExpenses: toMoney(row?.cashExpenses || 0),
+        debitCardExpenses: toMoney(row?.debitCardExpenses || 0),
+        checkExpenses: toMoney(row?.checkExpenses || 0),
+      };
+    });
+    const expensesDailyPrevious = previousDateSeries.map((date) => {
+      const row = previousExpensesByDate.get(date);
+      return {
+        date,
+        totalExpenses: toMoney(row?.totalExpenses || 0),
+        expenseCount: row?.expenseCount || 0,
+        cashExpenses: toMoney(row?.cashExpenses || 0),
+        debitCardExpenses: toMoney(row?.debitCardExpenses || 0),
+        checkExpenses: toMoney(row?.checkExpenses || 0),
+      };
+    });
+    const highestExpenseCurrent =
+      maxBy(expensesDailyCurrent, (row) => row.totalExpenses) || null;
+    const highestExpensePrevious =
+      maxBy(expensesDailyPrevious, (row) => row.totalExpenses) || null;
+
+    let liquorCurrentQuantity = 0;
+    let liquorPreviousQuantity = 0;
+    let liquorCurrentCost = 0;
+    let liquorPreviousCost = 0;
+    const liquorByItem = new Map<
+      string,
+      {
+        itemId: string;
+        itemName: string;
+        company: string;
+        kind: string;
+        currentQuantity: number;
+        previousQuantity: number;
+        currentCost: number;
+        previousCost: number;
+      }
+    >();
+    const liquorByDate = new Map<string, { quantity: number; cost: number }>();
+
+    if (settings?.liquorInventoryEnabled) {
+      const movementRows = await this.prisma.liquorInventoryMovement.findMany({
+        where: {
+          tenantId: tenant.id,
+          officeId: input.officeId || undefined,
+          occurredAt: {
+            gte: sourceFromUtc,
+            lt: sourceToUtcExclusive,
+          },
+        },
+        select: {
+          itemId: true,
+          type: true,
+          quantity: true,
+          unitCostOverride: true,
+          occurredAt: true,
+          item: {
+            select: {
+              name: true,
+              supplierName: true,
+              brand: true,
+              unitCost: true,
+            },
+          },
+        },
+      });
+
+      for (const movement of movementRows) {
+        if (!LIQUOR_OUTGOING_TYPES.has(movement.type)) {
+          continue;
+        }
+        const dateKey = movement.occurredAt.toISOString().slice(0, 10);
+        const quantity = toQuantity(movement.quantity || 0);
+        const costPerUnit =
+          movement.unitCostOverride !== null
+            ? movement.unitCostOverride
+            : movement.item.unitCost;
+        const cost = toMoney(quantity * costPerUnit);
+        const existing = liquorByItem.get(movement.itemId) || {
+          itemId: movement.itemId,
+          itemName: movement.item.name,
+          company: movement.item.supplierName || 'Unknown',
+          kind: movement.item.brand || '',
+          currentQuantity: 0,
+          previousQuantity: 0,
+          currentCost: 0,
+          previousCost: 0,
+        };
+        if (isDateInRange(dateKey, currentRange)) {
+          existing.currentQuantity += quantity;
+          existing.currentCost += cost;
+          liquorCurrentQuantity += quantity;
+          liquorCurrentCost += cost;
+          const day = liquorByDate.get(dateKey) || { quantity: 0, cost: 0 };
+          day.quantity += quantity;
+          day.cost += cost;
+          liquorByDate.set(dateKey, day);
+        }
+        if (isDateInRange(dateKey, previousRange)) {
+          existing.previousQuantity += quantity;
+          existing.previousCost += cost;
+          liquorPreviousQuantity += quantity;
+          liquorPreviousCost += cost;
+        }
+        liquorByItem.set(movement.itemId, existing);
+      }
+    }
+
+    const liquorTopConsumed = Array.from(liquorByItem.values())
+      .map((row) => ({
+        itemId: row.itemId,
+        itemName: row.itemName,
+        company: row.company,
+        kind: row.kind,
+        currentQuantity: toQuantity(row.currentQuantity),
+        previousQuantity: toQuantity(row.previousQuantity),
+        deltaQuantity: toQuantity(row.currentQuantity - row.previousQuantity),
+        currentCost: toMoney(row.currentCost),
+        previousCost: toMoney(row.previousCost),
+        deltaCost: toMoney(row.currentCost - row.previousCost),
+      }))
+      .sort((a, b) => b.currentQuantity - a.currentQuantity)
+      .slice(0, 15);
+
+    const liquorDaily = currentDateSeries.map((date) => {
+      const row = liquorByDate.get(date);
+      return {
+        date,
+        quantity: toQuantity(row?.quantity || 0),
+        cost: toMoney(row?.cost || 0),
+      };
+    });
+
+    const highlights: string[] = [];
+    if (leadersCurrent[0]) {
+      highlights.push(
+        `${leadersCurrent[0].name} logged the most hours in the selected range (${leadersCurrent[0].currentHours.toFixed(2)}h).`,
+      );
+    }
+    if (leadersPrevious[0]) {
+      highlights.push(
+        `${leadersPrevious[0].name} led the previous range (${leadersPrevious[0].previousHours.toFixed(2)}h).`,
+      );
+    }
+    const largestChange = changes[0];
+    if (largestChange) {
+      const direction =
+        largestChange.deltaHours >= 0 ? 'increased' : 'decreased';
+      highlights.push(
+        `${largestChange.name} ${direction} by ${Math.abs(largestChange.deltaHours).toFixed(2)}h versus the previous range.`,
+      );
+    }
+    if (highestPayrollCurrent) {
+      highlights.push(
+        `Highest payroll date in current range: ${highestPayrollCurrent.date} (${toMoney(highestPayrollCurrent.wages)} wages).`,
+      );
+    }
+    if (highestSalesCurrent) {
+      highlights.push(
+        `Highest daily sales date in current range: ${highestSalesCurrent.date} (${toMoney(highestSalesCurrent.totalSales)} total sales).`,
+      );
+    }
+    if (highestExpenseCurrent) {
+      highlights.push(
+        `Highest daily expense date in current range: ${highestExpenseCurrent.date} (${toMoney(highestExpenseCurrent.totalExpenses)} expenses).`,
+      );
+    }
+    if (settings?.liquorInventoryEnabled && liquorTopConsumed[0]) {
+      highlights.push(
+        `Most consumed liquor item: ${liquorTopConsumed[0].itemName} (${liquorTopConsumed[0].currentQuantity} units in current range).`,
+      );
+    }
+    highlights.push(
+      `Sales are ${trendDirectionLabel(currentTotals.sales - previousTotals.sales)} by ${Math.abs(currentTotals.sales - previousTotals.sales).toFixed(2)} compared with the previous range.`,
+    );
+    highlights.push(
+      `Expenses are ${trendDirectionLabel(currentTotals.expenses - previousTotals.expenses)} by ${Math.abs(currentTotals.expenses - previousTotals.expenses).toFixed(2)} compared with the previous range.`,
+    );
+
+    return {
+      generatedAt: new Date().toISOString(),
+      period: {
+        type: input.period,
+        anchorDate,
+        current: currentRange,
+        previous: previousRange,
+        isCustomRange: hasExplicitRange,
+      },
+      totals: {
+        current: currentTotals,
+        previous: previousTotals,
+        delta: buildTotalsDelta(currentTotals, previousTotals),
+      },
+      employees: {
+        currentLeaders: leadersCurrent,
+        previousLeaders: leadersPrevious,
+        changes,
+      },
+      employeeActivity: {
+        daily: employeeActivityDaily,
+        topByPunches: [...employeeStats]
+          .map((employee) => {
+            const summary = employeeSummaries.get(employee.employeeId);
+            return {
+              employeeId: employee.employeeId,
+              name: employee.name,
+              punches: summary?.currentPunches || 0,
+              inPunches: summary?.currentPunchIn || 0,
+              outPunches: summary?.currentPunchOut || 0,
+              breakPunches: summary?.currentPunchBreak || 0,
+              lunchPunches: summary?.currentPunchLunch || 0,
+              hours: employee.currentHours,
+              wages: employee.currentWages,
+              tips: employee.currentTips,
+            };
+          })
+          .sort((a, b) => b.punches - a.punches)
+          .slice(0, 20),
+      },
+      payroll: {
+        currentDaily: payrollDailyCurrent,
+        previousDaily: payrollDailyPrevious,
+        highestCurrentDate: highestPayrollCurrent,
+        highestPreviousDate: highestPayrollPrevious,
+      },
+      salesComparison: {
+        currentDaily: salesDailyCurrent,
+        previousDaily: salesDailyPrevious,
+        highestCurrentDate: highestSalesCurrent,
+        highestPreviousDate: highestSalesPrevious,
+      },
+      expensesComparison: {
+        currentDaily: expensesDailyCurrent,
+        previousDaily: expensesDailyPrevious,
+        highestCurrentDate: highestExpenseCurrent,
+        highestPreviousDate: highestExpensePrevious,
+      },
+      liquor: {
+        enabled: Boolean(settings?.liquorInventoryEnabled),
+        summary: {
+          currentQuantity: toQuantity(liquorCurrentQuantity),
+          previousQuantity: toQuantity(liquorPreviousQuantity),
+          deltaQuantity: toQuantity(
+            liquorCurrentQuantity - liquorPreviousQuantity,
+          ),
+          currentCost: toMoney(liquorCurrentCost),
+          previousCost: toMoney(liquorPreviousCost),
+          deltaCost: toMoney(liquorCurrentCost - liquorPreviousCost),
+        },
+        topConsumed: liquorTopConsumed,
+        byDate: liquorDaily,
+      },
+      trend: {
+        weekStartsOn,
+        weeks: trendWeeks,
+        range: trendRange,
+        weekly,
+      },
+      highlights,
+      notes: [
+        input.officeId
+          ? 'Labor and tips are scoped by selected location. Sales and daily expenses are tenant-wide. Liquor is scoped by selected location.'
+          : 'Labor and tips reflect all matched employees. Sales and daily expenses are tenant-wide.',
+      ],
+    };
+  }
+
+  private buildComparisonTotals(
+    employeeStats: EmployeeComparisonSummary[],
+    period: 'current' | 'previous',
+    sales: number,
+    expenses: number,
+  ): ComparisonTotals {
+    const laborMinutes = employeeStats.reduce(
+      (sum, row) =>
+        sum + (period === 'current' ? row.currentMinutes : row.previousMinutes),
+      0,
+    );
+    const estimatedWages = employeeStats.reduce(
+      (sum, row) =>
+        sum + (period === 'current' ? row.currentWages : row.previousWages),
+      0,
+    );
+    const tips = employeeStats.reduce(
+      (sum, row) =>
+        sum + (period === 'current' ? row.currentTips : row.previousTips),
+      0,
+    );
+    return {
+      laborMinutes: Math.round(laborMinutes),
+      laborHours: toHoursDecimal(laborMinutes),
+      estimatedWages: toMoney(estimatedWages),
+      tips: toMoney(tips),
+      sales: toMoney(sales),
+      expenses: toMoney(expenses),
+      net: toMoney(sales - expenses),
     };
   }
 
@@ -1155,6 +2109,10 @@ function toMoney(value: number) {
   return Number(value.toFixed(2));
 }
 
+function toQuantity(value: number) {
+  return Number(value.toFixed(3));
+}
+
 function parseIsoDateOnly(raw: string, field: string) {
   const value = raw.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -1314,4 +2272,160 @@ function getWeekStart(dateKey: string, weekStartsOn: number) {
   const diff = (day - start + 7) % 7;
   date.setUTCDate(date.getUTCDate() - diff);
   return date.toISOString().slice(0, 10);
+}
+
+function isDateInRange(dateKey: string, range: NamedRange) {
+  return dateKey >= range.from && dateKey <= range.to;
+}
+
+function addDaysToDateKey(dateKey: string, days: number) {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function mergeRanges(ranges: NamedRange[]) {
+  const from = ranges
+    .map((range) => range.from)
+    .sort((a, b) => (a < b ? -1 : 1))[0];
+  const to = ranges
+    .map((range) => range.to)
+    .sort((a, b) => (a < b ? 1 : -1))[0];
+  return { from, to };
+}
+
+function buildPreviousRangeMatching(current: NamedRange) {
+  const days = diffDaysInclusive(current.from, current.to);
+  const previousTo = addDaysToDateKey(current.from, -1);
+  const previousFrom = addDaysToDateKey(previousTo, -(days - 1));
+  return {
+    from: previousFrom,
+    to: previousTo,
+  };
+}
+
+function buildDateSeries(from: string, to: string) {
+  const dates: string[] = [];
+  let cursor = from;
+  while (cursor <= to) {
+    dates.push(cursor);
+    cursor = addDaysToDateKey(cursor, 1);
+  }
+  return dates;
+}
+
+function diffDaysInclusive(from: string, to: string) {
+  const fromMs = new Date(`${from}T00:00:00.000Z`).getTime();
+  const toMs = new Date(`${to}T00:00:00.000Z`).getTime();
+  const diff = Math.round((toMs - fromMs) / (24 * 60 * 60 * 1000));
+  return diff + 1;
+}
+
+function maxBy<T>(rows: T[], score: (row: T) => number): T | undefined {
+  let winner: T | undefined;
+  let maxScore = Number.NEGATIVE_INFINITY;
+  for (const row of rows) {
+    const value = score(row);
+    if (value > maxScore) {
+      maxScore = value;
+      winner = row;
+    }
+  }
+  return winner;
+}
+
+function buildComparisonRanges(period: ComparisonPeriod, anchorDate: string) {
+  const anchor = new Date(`${anchorDate}T00:00:00.000Z`);
+  switch (period) {
+    case 'week': {
+      const current: NamedRange = {
+        from: addDaysToDateKey(anchorDate, -6),
+        to: anchorDate,
+      };
+      const previous: NamedRange = {
+        from: addDaysToDateKey(current.from, -7),
+        to: addDaysToDateKey(current.from, -1),
+      };
+      return { current, previous };
+    }
+    case 'year': {
+      const year = anchor.getUTCFullYear();
+      const current: NamedRange = {
+        from: `${year}-01-01`,
+        to: `${year}-12-31`,
+      };
+      const previous: NamedRange = {
+        from: `${year - 1}-01-01`,
+        to: `${year - 1}-12-31`,
+      };
+      return { current, previous };
+    }
+    case 'month':
+    default: {
+      const year = anchor.getUTCFullYear();
+      const month = anchor.getUTCMonth();
+      const currentStart = new Date(Date.UTC(year, month, 1));
+      const currentEnd = new Date(Date.UTC(year, month + 1, 0));
+      const previousStart = new Date(Date.UTC(year, month - 1, 1));
+      const previousEnd = new Date(Date.UTC(year, month, 0));
+      const current: NamedRange = {
+        from: currentStart.toISOString().slice(0, 10),
+        to: currentEnd.toISOString().slice(0, 10),
+      };
+      const previous: NamedRange = {
+        from: previousStart.toISOString().slice(0, 10),
+        to: previousEnd.toISOString().slice(0, 10),
+      };
+      return { current, previous };
+    }
+  }
+}
+
+function buildWeekStartSeries(range: NamedRange, weekStartsOn: number) {
+  const firstWeek = getWeekStart(range.from, weekStartsOn);
+  const starts: string[] = [];
+  let cursor = firstWeek;
+  while (cursor <= range.to) {
+    starts.push(cursor);
+    cursor = addDaysToDateKey(cursor, 7);
+  }
+  return starts;
+}
+
+function buildTotalsDelta(
+  current: ComparisonTotals,
+  previous: ComparisonTotals,
+) {
+  return {
+    laborHours: deltaWithPercent(current.laborHours, previous.laborHours),
+    estimatedWages: deltaWithPercent(
+      current.estimatedWages,
+      previous.estimatedWages,
+    ),
+    tips: deltaWithPercent(current.tips, previous.tips),
+    sales: deltaWithPercent(current.sales, previous.sales),
+    expenses: deltaWithPercent(current.expenses, previous.expenses),
+    net: deltaWithPercent(current.net, previous.net),
+  };
+}
+
+function deltaWithPercent(current: number, previous: number) {
+  const delta = toMoney(current - previous);
+  if (previous === 0) {
+    return {
+      delta,
+      percent: current === 0 ? 0 : null,
+    };
+  }
+  return {
+    delta,
+    percent: toMoney((delta / previous) * 100),
+  };
+}
+
+function trendDirectionLabel(value: number) {
+  if (Math.abs(value) < 0.005) {
+    return 'flat';
+  }
+  return value > 0 ? 'up' : 'down';
 }

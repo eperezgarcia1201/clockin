@@ -45,7 +45,7 @@ let PunchesService = class PunchesService {
                 userId: user.id,
             },
             orderBy: {
-                occurredAt: "desc",
+                occurredAt: 'desc',
             },
         });
     }

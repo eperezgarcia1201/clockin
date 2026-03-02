@@ -1,0 +1,233 @@
+{
+  "maxLines": {
+    "default": 300,
+    "include": [
+      "apps/web/src/app/admin/groups/**/*.tsx",
+      "apps/web/src/app/admin/offices/**/*.tsx",
+      "apps/web/src/app/admin/status/**/*.tsx",
+      "apps/web/src/app/admin/time/**/*.tsx",
+      "apps/web/src/app/admin/users/page.tsx",
+      "apps/web/src/app/admin/users/new/page.tsx",
+      "apps/web/src/app/admin/users/[id]/page.tsx",
+      "apps/web/src/app/admin/users/search/page.tsx",
+      "apps/web/src/app/admin/settings/page.tsx",
+      "apps/web/src/app/admin/company/page.tsx",
+      "apps/web/src/app/admin/page.tsx",
+      "apps/web/src/app/admin/schedules/page.tsx",
+      "apps/web/src/app/admin/notifications/page.tsx",
+      "apps/web/src/app/admin/company-orders/page.tsx",
+      "apps/web/src/app/admin/company-orders/catalog/page.tsx",
+      "apps/web/src/app/owner/page.tsx",
+      "apps/web/src/app/owner/tenants/page.tsx",
+      "apps/web/src/app/owner-login/page.tsx",
+      "apps/web/src/app/admin-login/page.tsx",
+      "apps/web/src/app/page.tsx",
+      "apps/web/src/app/reports/page.tsx",
+      "apps/web/src/app/reports/audit/page.tsx",
+      "apps/web/src/app/reports/daily/page.tsx",
+      "apps/web/src/app/reports/hours/page.tsx",
+      "apps/web/src/app/reports/payroll/page.tsx",
+      "apps/web/src/app/reports/tips/page.tsx",
+      "apps/web/src/app/reports/sales/page.tsx",
+      "apps/web/src/app/reports/liquor-control/page.tsx",
+      "apps/web/src/app/reports/comparison/shared.ts",
+      "apps/mobile/**/*.ts",
+      "apps/mobile/**/*.tsx",
+      "apps/mobile-admin/**/*.ts",
+      "apps/mobile-admin/**/*.tsx",
+      "apps/mobile/App.tsx",
+      "apps/mobile-admin/App.tsx"
+    ],
+    "exclude": [
+      "**/*.d.ts",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/__tests__/**",
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.next/**"
+    ],
+    "overrides": [
+      {
+        "file": "apps/web/src/app/admin/time/page.tsx",
+        "max": 620,
+        "expiresOn": "2026-06-30",
+        "reason": "Time admin controller extraction in progress."
+      },
+      {
+        "file": "apps/web/src/app/admin/users/page.tsx",
+        "max": 760,
+        "expiresOn": "2026-07-31",
+        "reason": "Users summary decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/admin/users/new/page.tsx",
+        "max": 520,
+        "expiresOn": "2026-07-31",
+        "reason": "Create-user form decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/admin/users/[id]/page.tsx",
+        "max": 900,
+        "expiresOn": "2026-07-31",
+        "reason": "Edit-user controller decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/admin/company/page.tsx",
+        "max": 500,
+        "expiresOn": "2026-07-31",
+        "reason": "Company-info page decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/admin/schedules/page.tsx",
+        "max": 520,
+        "expiresOn": "2026-07-31",
+        "reason": "Schedules controller decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/admin/company-orders/page.tsx",
+        "max": 780,
+        "expiresOn": "2026-07-31",
+        "reason": "Company-orders page decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/admin/company-orders/catalog/page.tsx",
+        "max": 450,
+        "expiresOn": "2026-07-31",
+        "reason": "Catalog page decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/owner/page.tsx",
+        "max": 520,
+        "expiresOn": "2026-07-31",
+        "reason": "Owner dashboard composition decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/owner/tenants/page.tsx",
+        "max": 1900,
+        "expiresOn": "2026-07-31",
+        "reason": "Tenant account management decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/admin-login/page.tsx",
+        "max": 620,
+        "expiresOn": "2026-07-31",
+        "reason": "Admin-login controller decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/page.tsx",
+        "max": 1100,
+        "expiresOn": "2026-07-31",
+        "reason": "Main terminal shell decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/reports/daily/page.tsx",
+        "max": 460,
+        "expiresOn": "2026-07-31",
+        "reason": "Daily report decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/reports/hours/page.tsx",
+        "max": 500,
+        "expiresOn": "2026-07-31",
+        "reason": "Hours report decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/reports/payroll/page.tsx",
+        "max": 480,
+        "expiresOn": "2026-07-31",
+        "reason": "Payroll report decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/reports/sales/page.tsx",
+        "max": 1600,
+        "expiresOn": "2026-07-31",
+        "reason": "Sales report controller decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/reports/liquor-control/page.tsx",
+        "max": 3400,
+        "expiresOn": "2026-07-31",
+        "reason": "Liquor-control page decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/reports/comparison/shared.ts",
+        "max": 650,
+        "expiresOn": "2026-07-31",
+        "reason": "Comparison shared controller decomposition in progress."
+      }
+    ]
+  },
+  "noDirectFetch": {
+    "include": [
+      "apps/web/src/app/admin/groups/**/*.tsx",
+      "apps/web/src/app/admin/offices/**/*.tsx",
+      "apps/web/src/app/admin/status/**/*.tsx",
+      "apps/web/src/app/admin/time/**/*.tsx",
+      "apps/web/src/app/admin/users/page.tsx",
+      "apps/web/src/app/admin/users/new/page.tsx",
+      "apps/web/src/app/admin/users/[id]/page.tsx",
+      "apps/web/src/app/admin/users/search/page.tsx",
+      "apps/web/src/app/admin/settings/page.tsx",
+      "apps/web/src/app/admin/company/page.tsx",
+      "apps/web/src/app/admin/page.tsx",
+      "apps/web/src/app/admin/schedules/page.tsx",
+      "apps/web/src/app/admin/notifications/page.tsx",
+      "apps/web/src/app/admin/company-orders/page.tsx",
+      "apps/web/src/app/admin/company-orders/catalog/page.tsx",
+      "apps/web/src/app/owner/page.tsx",
+      "apps/web/src/app/owner/tenants/page.tsx",
+      "apps/web/src/app/owner-login/page.tsx",
+      "apps/web/src/app/admin-login/page.tsx",
+      "apps/web/src/app/page.tsx",
+      "apps/web/src/app/reports/page.tsx",
+      "apps/web/src/app/reports/audit/page.tsx",
+      "apps/web/src/app/reports/daily/page.tsx",
+      "apps/web/src/app/reports/hours/page.tsx",
+      "apps/web/src/app/reports/payroll/page.tsx",
+      "apps/web/src/app/reports/tips/page.tsx",
+      "apps/web/src/app/reports/sales/page.tsx",
+      "apps/web/src/app/reports/liquor-control/page.tsx",
+      "apps/web/src/app/reports/comparison/shared.ts"
+    ],
+    "exclude": [
+      "**/*.d.ts",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/__tests__/**"
+    ],
+    "allowIn": [
+      "apps/web/src/lib/api/client.ts",
+      "apps/web/src/lib/api/groups.ts",
+      "apps/web/src/lib/api/offices.ts",
+      "apps/web/src/lib/api/statuses.ts",
+      "apps/web/src/lib/api/access.ts",
+      "apps/web/src/lib/api/time-admin.ts",
+      "apps/web/src/lib/api/users-admin.ts",
+      "apps/web/src/lib/api/settings-admin.ts",
+      "apps/web/src/lib/api/admin-dashboard.ts",
+      "apps/web/src/lib/api/schedules-admin.ts",
+      "apps/web/src/lib/api/notifications-admin.ts",
+      "apps/web/src/lib/api/company-orders-admin.ts",
+      "apps/web/src/lib/api/owner-auth.ts",
+      "apps/web/src/lib/api/owner-tenants.ts",
+      "apps/web/src/lib/api/reports-core.ts",
+      "apps/web/src/lib/api/reports-sales.ts",
+      "apps/web/src/lib/api/reports-liquor-control.ts",
+      "apps/web/src/lib/api/admin-login.ts",
+      "apps/web/src/lib/api/employee-terminal.ts"
+    ],
+    "blockedPatterns": [
+      "\\bfetch\\s*\\(",
+      "\\baxios\\s*\\(",
+      "\\baxios\\s*\\.",
+      "from\\s+['\\\"]axios['\\\"]",
+      "new\\s+XMLHttpRequest\\s*\\("
+    ],
+    "message": "Use shared API client wrappers in this migrated UI scope."
+  }
+}

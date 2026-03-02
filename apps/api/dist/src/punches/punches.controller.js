@@ -45,14 +45,14 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], PunchesController.prototype, "createPunch", null);
 __decorate([
-    (0, common_1.Get)("current"),
+    (0, common_1.Get)('current'),
     __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], PunchesController.prototype, "getCurrent", null);
 exports.PunchesController = PunchesController = __decorate([
-    (0, common_1.Controller)("punches"),
+    (0, common_1.Controller)('punches'),
     (0, common_1.UseGuards)(auth_guard_1.AuthOrDevGuard),
     __metadata("design:paramtypes", [punches_service_1.PunchesService])
 ], PunchesController);

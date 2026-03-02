@@ -18,6 +18,9 @@ class CreateEmployeePunchDto {
     notes;
     deviceLabel;
     ipAddress;
+    officeId;
+    latitude;
+    longitude;
     pin;
 }
 exports.CreateEmployeePunchDto = CreateEmployeePunchDto;
@@ -45,6 +48,25 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateEmployeePunchDto.prototype, "ipAddress", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], CreateEmployeePunchDto.prototype, "officeId", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(-90),
+    (0, class_validator_1.Max)(90),
+    __metadata("design:type", Number)
+], CreateEmployeePunchDto.prototype, "latitude", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(-180),
+    (0, class_validator_1.Max)(180),
+    __metadata("design:type", Number)
+], CreateEmployeePunchDto.prototype, "longitude", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),

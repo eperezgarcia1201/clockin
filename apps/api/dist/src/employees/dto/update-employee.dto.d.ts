@@ -6,8 +6,13 @@ export declare class UpdateEmployeeDto {
     hourlyRate?: number;
     officeId?: string;
     groupId?: string;
+    isManager?: boolean;
+    isOwnerManager?: boolean;
+    managerPermissions?: string[];
     isAdmin?: boolean;
     isTimeAdmin?: boolean;
     isReports?: boolean;
+    isServer?: boolean;
+    isKitchenManager?: boolean;
     disabled?: boolean;
 }

@@ -8,12 +8,12 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
-} from "@nestjs/common";
-import { AuthOrDevGuard } from "../auth/auth.guard";
-import type { RequestWithUser } from "../auth/auth.types";
-import { AdminDevicesService } from "./admin-devices.service";
+} from '@nestjs/common';
+import { AuthOrDevGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.types';
+import { AdminDevicesService } from './admin-devices.service';
 
-@Controller("admin-devices")
+@Controller('admin-devices')
 @UseGuards(AuthOrDevGuard)
 export class AdminDevicesController {
   constructor(private readonly devices: AdminDevicesService) {}
@@ -38,8 +38,8 @@ export class AdminDevicesController {
     });
   }
 
-  @Delete(":id")
-  async remove(@Req() req: RequestWithUser, @Param("id") id: string) {
+  @Delete(':id')
+  async remove(@Req() req: RequestWithUser, @Param('id') id: string) {
     if (!req.user) {
       throw new UnauthorizedException();
     }

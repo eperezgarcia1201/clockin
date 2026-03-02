@@ -8,6 +8,19 @@ import {
 
 export const runtime = "nodejs";
 
+type AuditRecord = {
+  employeeName?: string;
+  type?: string;
+  occurredAt?: string;
+  office?: string;
+  group?: string;
+  notes?: string;
+};
+
+type AuditReportResponse = {
+  records?: AuditRecord[];
+};
+
 export async function GET(request: Request) {
   const query = await scopedQueryFromRequest(request);
   const response = await clockinFetch(withQuery("/reports/audit", query));
@@ -15,7 +28,7 @@ export async function GET(request: Request) {
     const error = await response.json().catch(() => ({}));
     return new Response(JSON.stringify(error), { status: response.status });
   }
-  const data = await response.json();
+  const data = (await response.json()) as AuditReportResponse;
   const company = await getCompanyExportProfile();
 
   return excelResponse("audit-report.xlsx", (workbook) => {
@@ -35,11 +48,15 @@ export async function GET(request: Request) {
       { header: "Notes", key: "notes", width: 30 },
     ];
 
-    data.records?.forEach((record: any) => {
+    data.records?.forEach((record) => {
+      const occurredAt =
+        typeof record.occurredAt === "string" && record.occurredAt
+          ? new Date(record.occurredAt).toLocaleString()
+          : "";
       sheet.addRow({
-        employee: record.employeeName,
-        type: record.type,
-        occurredAt: new Date(record.occurredAt).toLocaleString(),
+        employee: record.employeeName || "",
+        type: record.type || "",
+        occurredAt,
         office: record.office || "",
         group: record.group || "",
         notes: record.notes || "",

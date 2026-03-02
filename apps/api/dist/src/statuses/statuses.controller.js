@@ -50,7 +50,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], StatusesController.prototype, "create", null);
 exports.StatusesController = StatusesController = __decorate([
-    (0, common_1.Controller)("statuses"),
+    (0, common_1.Controller)('statuses'),
     (0, common_1.UseGuards)(auth_guard_1.AuthOrDevGuard),
     __metadata("design:paramtypes", [statuses_service_1.StatusesService])
 ], StatusesController);

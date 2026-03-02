@@ -5,12 +5,12 @@ const core_1 = require("@nestjs/core");
 const app_module_1 = require("./app.module");
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
-    app.setGlobalPrefix("api");
+    app.setGlobalPrefix('api');
     app.enableCors();
     const adapter = app.getHttpAdapter();
     const instance = adapter.getInstance();
     if (instance?.set) {
-        instance.set("trust proxy", 1);
+        instance.set('trust proxy', 1);
     }
     app.useGlobalPipes(new common_1.ValidationPipe({
         whitelist: true,

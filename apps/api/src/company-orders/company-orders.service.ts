@@ -150,7 +150,11 @@ export class CompanyOrdersService {
 
     const orders = (await this.prisma.companyOrder.findMany({
       where,
-      orderBy: [{ updatedAt: 'desc' }, { orderDate: 'desc' }, { createdAt: 'desc' }],
+      orderBy: [
+        { updatedAt: 'desc' },
+        { orderDate: 'desc' },
+        { createdAt: 'desc' },
+      ],
       take: Math.min(400, Math.max(limit * 8, limit)),
       include: {
         office: { select: { name: true } },
@@ -167,9 +171,9 @@ export class CompanyOrdersService {
       },
     })) as CompanyOrderDbRow[];
 
-    const mergedOrders = this
-      .aggregateOrdersForList(orders.map((order) => this.serializeOrder(order)))
-      .slice(0, Math.min(200, limit));
+    const mergedOrders = this.aggregateOrdersForList(
+      orders.map((order) => this.serializeOrder(order)),
+    ).slice(0, Math.min(200, limit));
 
     return {
       orders: mergedOrders,
@@ -212,14 +216,17 @@ export class CompanyOrdersService {
       throw new BadRequestException('At least one item quantity is required.');
     }
 
-    const actorName = this.normalizeContributor(access.displayName, 'Team Member');
+    const actorName = this.normalizeContributor(
+      access.displayName,
+      'Team Member',
+    );
     const submittedDateKey = this.toDateKey(submissionDate);
     const rawSubmissionNote = dto.notes?.trim() || '';
     const submissionNote = rawSubmissionNote
       ? `${submittedDateKey} - ${actorName}: ${rawSubmissionNote}`
       : '';
 
-    const order = (await this.prisma.$transaction(async (tx) => {
+    const order = await this.prisma.$transaction(async (tx) => {
       const existingOrders = (await tx.companyOrder.findMany({
         where: {
           tenantId,
@@ -256,7 +263,12 @@ export class CompanyOrdersService {
 
       existingOrders.forEach((existingOrder) => {
         existingOrder.items.forEach((item) => {
-          this.accumulateOrderItem(mergedItems, item.nameEs, item.nameEn, item.quantity);
+          this.accumulateOrderItem(
+            mergedItems,
+            item.nameEs,
+            item.nameEn,
+            item.quantity,
+          );
         });
 
         const parsed = this.readStoredOrderNotes(existingOrder.notes);
@@ -279,7 +291,12 @@ export class CompanyOrdersService {
       });
 
       normalizedItems.forEach((item) => {
-        this.accumulateOrderItem(mergedItems, item.nameEs, item.nameEn, item.quantity);
+        this.accumulateOrderItem(
+          mergedItems,
+          item.nameEs,
+          item.nameEn,
+          item.quantity,
+        );
       });
 
       contributors.add(actorName);
@@ -290,7 +307,9 @@ export class CompanyOrdersService {
 
       const mergedItemsList = Array.from(mergedItems.values());
       if (!mergedItemsList.length) {
-        throw new BadRequestException('At least one item quantity is required.');
+        throw new BadRequestException(
+          'At least one item quantity is required.',
+        );
       }
 
       const metadata: StoredOrderMetadata = {
@@ -323,7 +342,9 @@ export class CompanyOrdersService {
           },
           include: {
             office: { select: { name: true } },
-            createdByEmployee: { select: { fullName: true, displayName: true } },
+            createdByEmployee: {
+              select: { fullName: true, displayName: true },
+            },
             items: {
               orderBy: [{ createdAt: 'asc' }],
               select: {
@@ -381,7 +402,7 @@ export class CompanyOrdersService {
           },
         },
       })) as CompanyOrderDbRow;
-    })) as CompanyOrderDbRow;
+    });
 
     return this.serializeOrder(order);
   }
@@ -434,7 +455,11 @@ export class CompanyOrdersService {
           lte: weekEnd,
         },
       },
-      orderBy: [{ supplierName: 'asc' }, { orderDate: 'desc' }, { createdAt: 'desc' }],
+      orderBy: [
+        { supplierName: 'asc' },
+        { orderDate: 'desc' },
+        { createdAt: 'desc' },
+      ],
       include: {
         office: { select: { name: true } },
         createdByEmployee: { select: { fullName: true, displayName: true } },
@@ -495,7 +520,11 @@ export class CompanyOrdersService {
           lte: week.weekEnd,
         },
       },
-      orderBy: [{ supplierName: 'asc' }, { orderDate: 'desc' }, { createdAt: 'desc' }],
+      orderBy: [
+        { supplierName: 'asc' },
+        { orderDate: 'desc' },
+        { createdAt: 'desc' },
+      ],
       include: {
         office: { select: { name: true } },
         createdByEmployee: { select: { fullName: true, displayName: true } },
@@ -577,7 +606,10 @@ export class CompanyOrdersService {
     return 'Multiple locations';
   }
 
-  private buildWeeklyCsv(orders: SerializedCompanyOrder[], weekStartDate: string) {
+  private buildWeeklyCsv(
+    orders: SerializedCompanyOrder[],
+    weekStartDate: string,
+  ) {
     const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`;
     const rows: string[][] = [
       [
@@ -630,7 +662,9 @@ export class CompanyOrdersService {
       });
     }
 
-    return rows.map((row) => row.map((cell) => escapeCsv(cell || '')).join(',')).join('\n');
+    return rows
+      .map((row) => row.map((cell) => escapeCsv(cell || '')).join(','))
+      .join('\n');
   }
 
   private buildWeeklyExcelHtml(
@@ -661,18 +695,7 @@ export class CompanyOrdersService {
     const bodyRows: string[] = [];
     if (!orders.length) {
       bodyRows.push(
-        `<tr>${[
-          weekStartDate,
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-        ]
+        `<tr>${[weekStartDate, '', '', '', '', '', '', '', '', '']
           .map((cell) => `<td>${escapeHtml(cell)}</td>`)
           .join('')}</tr>`,
       );
@@ -689,13 +712,7 @@ export class CompanyOrdersService {
 
         if (!order.items.length) {
           bodyRows.push(
-            `<tr>${[
-              ...baseCells,
-              '',
-              '',
-              '',
-              order.notes || '',
-            ]
+            `<tr>${[...baseCells, '', '', '', order.notes || '']
               .map((cell) => `<td>${escapeHtml(cell)}</td>`)
               .join('')}</tr>`,
           );
@@ -720,7 +737,9 @@ export class CompanyOrdersService {
 
     return `<!doctype html><html><head><meta charset="utf-8" /></head><body><table border="1"><thead><tr>${header
       .map((cell) => `<th>${escapeHtml(cell)}</th>`)
-      .join('')}</tr></thead><tbody>${bodyRows.join('')}</tbody></table></body></html>`;
+      .join(
+        '',
+      )}</tr></thead><tbody>${bodyRows.join('')}</tbody></table></body></html>`;
   }
 
   private async resolveSupplier(tenantId: string, rawSupplierName: string) {
@@ -744,7 +763,9 @@ export class CompanyOrdersService {
 
   private async getCatalogForTenant(tenantId: string) {
     await this.ensureCatalogOverridesTable();
-    const rows = await this.prisma.$queryRawUnsafe<Array<{ catalogJson: unknown }>>(
+    const rows = await this.prisma.$queryRawUnsafe<
+      Array<{ catalogJson: unknown }>
+    >(
       'SELECT "catalogJson" FROM "CompanyOrderCatalogOverride" WHERE "tenantId" = $1 LIMIT 1',
       tenantId,
     );
@@ -819,7 +840,9 @@ export class CompanyOrdersService {
         bySupplier.set(supplierKey, existing);
       }
 
-      const rawItems = Array.isArray(rawSupplier?.items) ? rawSupplier.items : [];
+      const rawItems = Array.isArray(rawSupplier?.items)
+        ? rawSupplier.items
+        : [];
       rawItems.forEach((rawItem) => {
         const nameEs = (rawItem?.nameEs || '')
           .trim()
@@ -832,7 +855,10 @@ export class CompanyOrdersService {
         if (!nameEs || !nameEn) {
           return;
         }
-        existing.itemsByKey.set(catalogItemKey(nameEs, nameEn), { nameEs, nameEn });
+        existing.itemsByKey.set(catalogItemKey(nameEs, nameEn), {
+          nameEs,
+          nameEn,
+        });
       });
     });
 
@@ -858,7 +884,8 @@ export class CompanyOrdersService {
         : [this.toDateKey(order.orderDate)],
     );
     const lastSubmittedDate =
-      submittedDates[submittedDates.length - 1] || this.toDateKey(order.orderDate);
+      submittedDates[submittedDates.length - 1] ||
+      this.toDateKey(order.orderDate);
     const createdBy = this.resolveOrderContributor(order) || null;
     const contributors = this.normalizeContributors(
       parsedNotes.contributors.length
@@ -912,7 +939,10 @@ export class CompanyOrdersService {
       submittedDates: Set<string>;
       contributors: Set<string>;
       noteLines: Set<string>;
-      items: Map<string, { id: string; nameEs: string; nameEn: string; quantity: number }>;
+      items: Map<
+        string,
+        { id: string; nameEs: string; nameEn: string; quantity: number }
+      >;
       createdAtMs: number;
       updatedAtMs: number;
       orderDateMs: number;
@@ -927,7 +957,9 @@ export class CompanyOrdersService {
       const updatedAtMs = Date.parse(order.updatedAt || order.orderDate);
       const orderDateMs = Date.parse(order.orderDate);
       const nowMs = Date.now();
-      const safeOrderDateMs = Number.isFinite(orderDateMs) ? orderDateMs : nowMs;
+      const safeOrderDateMs = Number.isFinite(orderDateMs)
+        ? orderDateMs
+        : nowMs;
       const safeCreatedAtMs = Number.isFinite(createdAtMs)
         ? createdAtMs
         : safeOrderDateMs;
@@ -977,32 +1009,40 @@ export class CompanyOrdersService {
         aggregate.createdBy = order.createdBy;
       }
 
-      [order.supplierName, ...(order.supplierNames || [])].forEach((supplierName) => {
-        const normalized = supplierName.trim();
-        if (!normalized) {
-          return;
-        }
-        const key = normalized.toLowerCase();
-        if (!aggregate.supplierNames.has(key)) {
-          aggregate.supplierNames.set(key, normalized);
-        }
-      });
+      [order.supplierName, ...(order.supplierNames || [])].forEach(
+        (supplierName) => {
+          const normalized = supplierName.trim();
+          if (!normalized) {
+            return;
+          }
+          const key = normalized.toLowerCase();
+          if (!aggregate.supplierNames.has(key)) {
+            aggregate.supplierNames.set(key, normalized);
+          }
+        },
+      );
 
       this.normalizeDateKeys(order.submittedDates || []).forEach((dateKey) => {
         aggregate.submittedDates.add(dateKey);
       });
-      this.normalizeContributors(order.contributors || []).forEach((contributor) => {
-        aggregate.contributors.add(contributor);
-      });
-      this.normalizeNoteLines((order.notes || '').split('\n')).forEach((line) => {
-        aggregate.noteLines.add(line);
-      });
+      this.normalizeContributors(order.contributors || []).forEach(
+        (contributor) => {
+          aggregate.contributors.add(contributor);
+        },
+      );
+      this.normalizeNoteLines((order.notes || '').split('\n')).forEach(
+        (line) => {
+          aggregate.noteLines.add(line);
+        },
+      );
 
       order.items.forEach((item) => {
         const key = `${order.supplierName.trim().toLowerCase()}|${catalogItemKey(item.nameEs, item.nameEn)}`;
         const existing = aggregate.items.get(key);
         if (existing) {
-          existing.quantity = Number((existing.quantity + item.quantity).toFixed(2));
+          existing.quantity = Number(
+            (existing.quantity + item.quantity).toFixed(2),
+          );
           return;
         }
         aggregate.items.set(key, {
@@ -1025,9 +1065,9 @@ export class CompanyOrdersService {
         const contributors = this.normalizeContributors(
           Array.from(aggregate.contributors.values()),
         );
-        const notes = this.normalizeNoteLines(Array.from(aggregate.noteLines.values())).join(
-          '\n',
-        );
+        const notes = this.normalizeNoteLines(
+          Array.from(aggregate.noteLines.values()),
+        ).join('\n');
         const items = Array.from(aggregate.items.values()).sort((a, b) =>
           catalogItemKey(a.nameEs, a.nameEn).localeCompare(
             catalogItemKey(b.nameEs, b.nameEn),
@@ -1049,7 +1089,10 @@ export class CompanyOrdersService {
           orderDate: orderDate.toISOString(),
           weekStartDate: aggregate.weekStartDate,
           weekEndDate: aggregate.weekEndDate,
-          orderLabel: this.formatOrderLabel(aggregate.weekStartDate, lastSubmittedDate),
+          orderLabel: this.formatOrderLabel(
+            aggregate.weekStartDate,
+            lastSubmittedDate,
+          ),
           submittedDates,
           contributors,
           notes,
@@ -1184,7 +1227,9 @@ export class CompanyOrdersService {
     return `${COMPANY_ORDER_META_PREFIX}${serialized}`;
   }
 
-  private readStoredOrderNotes(rawNotes?: string | null): ParsedStoredOrderNotes {
+  private readStoredOrderNotes(
+    rawNotes?: string | null,
+  ): ParsedStoredOrderNotes {
     const source = rawNotes?.trim() || '';
     if (!source.startsWith(COMPANY_ORDER_META_PREFIX)) {
       return {
@@ -1442,7 +1487,14 @@ export class CompanyOrdersService {
         10,
       );
       cursorY -= 16;
-      drawLine(LEFT, cursorY, LEFT + CONTENT_WIDTH, cursorY, 1, TABLE_BORDER_GRAY);
+      drawLine(
+        LEFT,
+        cursorY,
+        LEFT + CONTENT_WIDTH,
+        cursorY,
+        1,
+        TABLE_BORDER_GRAY,
+      );
       cursorY -= 18;
     };
 
@@ -1503,10 +1555,7 @@ export class CompanyOrdersService {
           const finalRowsThatFit = Math.floor(
             (tableTop - BOTTOM - 52 - TABLE_HEADER_HEIGHT) / TABLE_ROW_HEIGHT,
           );
-          rowsThisPage = Math.min(
-            rowsThisPage,
-            Math.max(1, finalRowsThatFit),
-          );
+          rowsThisPage = Math.min(rowsThisPage, Math.max(1, finalRowsThatFit));
         }
         if (rowsThisPage <= 0) {
           pushPage();
@@ -1527,8 +1576,7 @@ export class CompanyOrdersService {
         drawText('Qty', tableX + 358.8, tableTop - 13, 10);
 
         chunkRows.forEach((row, rowIndex) => {
-          const textY =
-            tableTop - 13 - TABLE_ROW_HEIGHT * (rowIndex + 1);
+          const textY = tableTop - 13 - TABLE_ROW_HEIGHT * (rowIndex + 1);
           drawText(String(row.rowNumber), tableX + 6, textY, 10);
           drawText(
             this.truncatePdfText(row.nameEs, 146, 10),
@@ -1544,7 +1592,10 @@ export class CompanyOrdersService {
           );
           const qtyText = this.truncatePdfText(row.quantity, 44, 10);
           const qtyWidth = this.estimatePdfTextWidth(qtyText, 10);
-          const qtyX = Math.max(colDescriptionRight + 6, tableRight - 6 - qtyWidth);
+          const qtyX = Math.max(
+            colDescriptionRight + 6,
+            tableRight - 6 - qtyWidth,
+          );
           drawText(qtyText, qtyX, textY, 10);
         });
 
@@ -1630,7 +1681,9 @@ export class CompanyOrdersService {
     if (!normalized.length) {
       return 'N/A';
     }
-    return normalized.map((dateKey) => this.formatDateKeyUs(dateKey)).join(', ');
+    return normalized
+      .map((dateKey) => this.formatDateKeyUs(dateKey))
+      .join(', ');
   }
 
   private formatPdfQuantity(value: number) {
@@ -1673,9 +1726,7 @@ export class CompanyOrdersService {
     let end = normalized.length;
     while (end > 0) {
       const candidate = `${normalized.slice(0, end)}${suffix}`;
-      if (
-        this.estimatePdfTextWidth(candidate, fontSize, bold) <= maxWidth
-      ) {
+      if (this.estimatePdfTextWidth(candidate, fontSize, bold) <= maxWidth) {
         return candidate;
       }
       end -= 1;
@@ -1690,11 +1741,7 @@ export class CompanyOrdersService {
       .replace(/\)/g, '\\)');
   }
 
-  private buildPdfDocument(
-    pages: string[],
-    pageWidth = 595,
-    pageHeight = 842,
-  ) {
+  private buildPdfDocument(pages: string[], pageWidth = 595, pageHeight = 842) {
     const pageCount = pages.length;
     const pageObjectStart = 5;
     const objectCount = 4 + pageCount * 2;

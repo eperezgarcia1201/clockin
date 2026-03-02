@@ -1,0 +1,259 @@
+import { extractPendingTipsWorkDate } from "./api-runtime";
+import { normalizePinInput } from "./app-helpers";
+import { buildEmployeeActiveShift } from "./active-shift-storage";
+import {
+  buildPunchPayloads,
+  isAlreadyHasActiveShiftError,
+  isEmployeeNotFoundPunchError,
+  isInvalidPinPunchError,
+  isServerTipsRequiredPunchError,
+} from "./punch-runtime";
+import {
+  getClockInCoordinates,
+  showManagerPunchMessage,
+  submitPunchWithOptionalRetry,
+} from "./punch-tip-runtime";
+import {
+  isAlreadySubmittedTipsError,
+  parseTipsAmounts,
+  resolveTipsWorkDate,
+} from "./tips-runtime";
+import type { UsePunchTipActionsParams } from "./punch-tip-action-types";
+
+export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
+  const handlePunch = async () => {
+    if (!params.tenant) {
+      params.setStatus(params.t.tenantNotConfigured);
+      return;
+    }
+
+    const targetEmployee = params.selectedEmployee;
+
+    if (!targetEmployee) {
+      if (params.punchType !== "IN") {
+        params.setStatus(params.t.noActiveShiftUser);
+      } else if (!params.employeeName.trim()) {
+        params.setStatus(params.t.enterUsernameFirst);
+      } else {
+        params.setStatus(params.t.employeeNotFoundUseFullName);
+      }
+      return;
+    }
+
+    if (
+      params.punchType === "OUT" &&
+      params.requiresTipsForOut &&
+      !params.hasSubmittedTips
+    ) {
+      params.setStatus(params.t.submitTipsBeforeOut);
+      params.setTipsStatus(params.t.tapSubmitTipsFirst);
+      params.setTipsAlert(true);
+      params.scrollToBottom();
+      return;
+    }
+    if (params.punchType === "IN" && targetEmployee.isServer && params.pendingTipDate) {
+      params.setStatus(
+        params.t.pendingTipsBeforeClockIn.replace("{date}", params.pendingTipDate),
+      );
+      params.setTipsStatus(
+        params.t.pendingTipsStatus.replace("{date}", params.pendingTipDate),
+      );
+      params.setTipsAlert(true);
+      params.scrollToBottom();
+      return;
+    }
+
+    const typedPin = normalizePinInput(params.pin);
+    if (typedPin.length > 0 && typedPin.length !== 4) {
+      params.setStatus(params.t.pinMustBe4Digits);
+      return;
+    }
+    const requestPin =
+      params.punchType === "IN"
+        ? typedPin || undefined
+        : typedPin || params.activeShift?.pin || undefined;
+
+    params.setLoading(true);
+    params.setStatus(null);
+    try {
+      const needsGeofenceCheck =
+        params.punchType === "IN" &&
+        Boolean(params.selectedOffice) &&
+        typeof params.selectedOffice?.latitude === "number" &&
+        typeof params.selectedOffice?.longitude === "number";
+      const coordinates = needsGeofenceCheck
+        ? await getClockInCoordinates({
+            locationPermissionRequired: params.t.locationPermissionRequired,
+            unableToReadLocation: params.t.unableToReadLocation,
+          })
+        : null;
+
+      const { basePayload: basePunchPayload, payloadWithGeo: geoPunchPayload } =
+        buildPunchPayloads({
+          type: params.punchType,
+          pin: requestPin,
+          coordinates,
+        });
+      const punchResponse = await submitPunchWithOptionalRetry({
+        fetchJson: params.fetchJson,
+        employeeId: targetEmployee.id,
+        basePayload: basePunchPayload,
+        payloadWithGeo: geoPunchPayload,
+      });
+      params.setStatus(params.t.punchRecorded);
+      params.setServerTipsRequired(false);
+      params.setLastPunch({
+        name: targetEmployee.name,
+        type: params.punchType,
+        occurredAt: new Date(),
+      });
+      if (params.punchType === "IN") {
+        const shift = buildEmployeeActiveShift({
+          tenant: params.tenant,
+          employee: targetEmployee,
+          pin: typedPin,
+        });
+        params.setActiveShift(shift);
+        await params.persistActiveShift(shift);
+        params.setEmployeeName(targetEmployee.name);
+        params.setTipsAlert(false);
+        params.setPendingTipWorkDate(null);
+      }
+      if (
+        params.punchType !== "IN" &&
+        params.activeShift &&
+        !params.activeShift.pin &&
+        typedPin
+      ) {
+        const shifted = { ...params.activeShift, pin: typedPin };
+        params.setActiveShift(shifted);
+        await params.persistActiveShift(shifted);
+      }
+      if (params.punchType === "IN" && targetEmployee.isServer) {
+        params.setTipsReminderEmployeeId(targetEmployee.id);
+      }
+      showManagerPunchMessage({
+        punchResponse,
+        punchType: params.punchType,
+        t: params.t,
+      });
+      params.setPin("");
+      await params.loadWorkingNow();
+      if (params.punchType === "OUT") {
+        if (params.requiresTipsForOut) {
+          params.setCashTips("0");
+          params.setCreditCardTips("0");
+        }
+        params.clearActiveShiftSession(true);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : params.t.punchFailed;
+      if (params.punchType !== "IN" && isEmployeeNotFoundPunchError(message)) {
+        params.clearActiveShiftSession(true);
+        params.setStatus(params.t.noActiveShiftUser);
+      } else if (isServerTipsRequiredPunchError(message)) {
+        params.setServerTipsRequired(true);
+        params.setStatus(params.t.submitTipsBeforeOut);
+        params.setTipsStatus(params.t.tapSubmitTipsFirst);
+        params.setTipsAlert(true);
+        params.scrollToBottom();
+      } else if (params.punchType === "IN" && extractPendingTipsWorkDate(message)) {
+        const pendingDate = extractPendingTipsWorkDate(message) as string;
+        params.setPendingTipWorkDate(pendingDate);
+        params.setServerTipsRequired(true);
+        params.setStatus(`Submit tips for ${pendingDate} before clocking in.`);
+        params.setTipsStatus(`Pending tips for ${pendingDate}.`);
+        params.setTipsAlert(true);
+        params.scrollToBottom();
+      } else if (params.punchType === "IN" && isAlreadyHasActiveShiftError(message)) {
+        const recoveredShift = buildEmployeeActiveShift({
+          tenant: params.tenant,
+          employee: targetEmployee,
+          pin: typedPin,
+        });
+        params.setActiveShift(recoveredShift);
+        await params.persistActiveShift(recoveredShift);
+        params.setEmployeeName(targetEmployee.name);
+        params.setPin("");
+        params.setStatus(params.t.activeShiftRestored);
+        void params.loadWorkingNow();
+      } else if (isInvalidPinPunchError(message)) {
+        params.setStatus(params.t.invalidPinResetHint);
+      } else {
+        params.setStatus(message);
+      }
+    } finally {
+      params.setLoading(false);
+    }
+  };
+
+  const handleSubmitTips = async () => {
+    const targetEmployee = params.selectedEmployee;
+
+    if (!targetEmployee) {
+      params.setTipsStatus(params.t.selectValidEmployee);
+      return;
+    }
+    if (!targetEmployee.isServer) {
+      params.setTipsStatus(params.t.tipsOnlyForServers);
+      return;
+    }
+    const targetWorkDate = resolveTipsWorkDate(params.pendingTipDate);
+    const targetTipKey = params.getTipSubmissionKey(targetEmployee.id, targetWorkDate);
+    if (params.tipsSubmittedByDay[targetTipKey]) {
+      params.setTipsStatus(params.t.tipsSaved);
+      params.setTipsAlert(false);
+      if (params.pendingTipDate) {
+        params.setPendingTipWorkDate(null);
+      }
+      return;
+    }
+
+    const parsedTips = parseTipsAmounts(params.cashTips, params.creditCardTips);
+    if (!parsedTips.ok) {
+      params.setTipsStatus(params.t.tipsMustBeValid);
+      return;
+    }
+
+    params.setSavingTips(true);
+    params.setTipsStatus(null);
+    try {
+      await params.fetchJson(`/employee-tips/${targetEmployee.id}`, {
+        method: "POST",
+        body: JSON.stringify({
+          cashTips: parsedTips.cash,
+          creditCardTips: parsedTips.credit,
+          workDate: targetWorkDate,
+        }),
+      });
+      params.setServerTipsRequired(false);
+      params.markTipsSubmitted(targetTipKey);
+      if (params.pendingTipDate) {
+        params.setPendingTipWorkDate(null);
+      }
+      params.setTipsStatus(params.t.tipsSaved);
+      params.setTipsAlert(false);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : params.t.unableToSaveTips;
+      if (isAlreadySubmittedTipsError(message)) {
+        params.markTipsSubmitted(targetTipKey);
+        params.setServerTipsRequired(false);
+        if (params.pendingTipDate) {
+          params.setPendingTipWorkDate(null);
+        }
+        params.setTipsStatus(params.t.tipsSaved);
+        params.setTipsAlert(false);
+      } else {
+        params.setTipsStatus(message);
+      }
+    } finally {
+      params.setSavingTips(false);
+    }
+  };
+
+  return {
+    handlePunch,
+    handleSubmitTips,
+  };
+};

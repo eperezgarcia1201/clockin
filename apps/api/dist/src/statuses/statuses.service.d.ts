@@ -1,7 +1,7 @@
-import { PrismaService } from "../prisma/prisma.service";
-import { TenancyService } from "../tenancy/tenancy.service";
-import type { AuthUser } from "../auth/auth.types";
-import type { CreateStatusDto } from "./dto/create-status.dto";
+import { PrismaService } from '../prisma/prisma.service';
+import { TenancyService } from '../tenancy/tenancy.service';
+import type { AuthUser } from '../auth/auth.types';
+import type { CreateStatusDto } from './dto/create-status.dto';
 export declare class StatusesService {
     private readonly prisma;
     private readonly tenancy;

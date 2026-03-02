@@ -1,39 +1,28 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   type ManagerFeatureKey,
   managerFeatureOptions,
 } from "../../../../lib/manager-features";
-
-type Office = { id: string; name: string };
-type Group = { id: string; name: string };
-
-type Employee = {
-  id: string;
-  fullName: string;
-  displayName: string | null;
-  email: string | null;
-  hourlyRate?: number | null;
-  officeId: string | null;
-  groupId: string | null;
-  isManager: boolean;
-  managerPermissions: ManagerFeatureKey[];
-  isOwnerManager?: boolean;
-  isAdmin: boolean;
-  isTimeAdmin: boolean;
-  isReports: boolean;
-  isServer: boolean;
-  isKitchenManager: boolean;
-  disabled: boolean;
-};
-
-type PunchRecord = {
-  id: string;
-  type: string;
-  occurredAt: string;
-};
+import { useUiLanguage } from "../../../../lib/ui-language";
+import { ClientApiError } from "../../../../lib/api/client";
+import { listGroups, type Group } from "../../../../lib/api/groups";
+import { listOffices, type Office } from "../../../../lib/api/offices";
+import {
+  createPunchRecord,
+  getTimeAdminSettings,
+  listPunchRecords,
+  type PunchRecord,
+} from "../../../../lib/api/time-admin";
+import {
+  archiveEmployee,
+  getEmployeeById,
+  type EmployeePayload,
+  updateEmployee,
+} from "../../../../lib/api/users-admin";
 
 type FormState = {
   fullName: string;
@@ -83,6 +72,8 @@ const toLocalInput = (value: string | Date) => {
 };
 
 export default function EditUser() {
+  const lang = useUiLanguage();
+  const tr = (en: string, es: string) => (lang === "es" ? es : en);
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const [employeeId, setEmployeeId] = useState("");
@@ -121,14 +112,8 @@ export default function EditUser() {
   useEffect(() => {
     if (!employeeId) return;
     const load = async () => {
-      const [employeeRes, officesRes, groupsRes] = await Promise.all([
-        fetch(`/api/employees/${employeeId}`, { cache: "no-store" }),
-        fetch("/api/offices"),
-        fetch("/api/groups"),
-      ]);
-
-      if (employeeRes.ok) {
-        const employee = (await employeeRes.json()) as Employee;
+      try {
+        const employee = await getEmployeeById(employeeId);
         setForm({
           fullName: employee.fullName,
           displayName: employee.displayName || "",
@@ -142,7 +127,8 @@ export default function EditUser() {
           groupId: employee.groupId || "",
           isManager: Boolean(employee.isManager),
           isOwnerManager: Boolean(employee.isOwnerManager),
-          managerPermissions: employee.managerPermissions || [],
+          managerPermissions:
+            (employee.managerPermissions as ManagerFeatureKey[]) || [],
           isAdmin: employee.isAdmin,
           isTimeAdmin: employee.isTimeAdmin,
           isReports: employee.isReports,
@@ -150,55 +136,64 @@ export default function EditUser() {
           isKitchenManager: employee.isKitchenManager,
           disabled: employee.disabled,
         });
-      } else {
-        setStatus(`Unable to load user (status ${employeeRes.status}).`);
+      } catch (error) {
+        if (error instanceof ClientApiError) {
+          setStatus(
+            tr(
+              `Unable to load user (status ${error.status}).`,
+              `No se pudo cargar el usuario (estado ${error.status}).`,
+            ),
+          );
+        } else {
+          setStatus(
+            tr("Unable to load user.", "No se pudo cargar el usuario."),
+          );
+        }
       }
 
-      if (officesRes.ok) {
-        const data = (await officesRes.json()) as { offices: Office[] };
-        setOffices(data.offices || []);
-      }
-      if (groupsRes.ok) {
-        const data = (await groupsRes.json()) as { groups: Group[] };
-        setGroups(data.groups || []);
-      }
+      const officesTask = listOffices()
+        .then((data) => setOffices(data))
+        .catch(() => {
+          // Keep current behavior: silently ignore failed loads.
+        });
+      const groupsTask = listGroups()
+        .then((data) => setGroups(data))
+        .catch(() => {
+          // Keep current behavior: silently ignore failed loads.
+        });
+
+      await Promise.all([officesTask, groupsTask]);
     };
 
-    load();
+    void load();
   }, [employeeId]);
 
   useEffect(() => {
     if (!employeeId) return;
     const loadTimeInfo = async () => {
-      const [settingsRes, recordsRes] = await Promise.all([
-        fetch("/api/settings", { cache: "no-store" }),
-        fetch(
-          `/api/employee-punches/records?${new URLSearchParams({
-            employeeId,
-            limit: "1",
-          }).toString()}`,
-          { cache: "no-store" },
-        ),
-      ]);
+      const settingsTask = getTimeAdminSettings()
+        .then((data) => {
+          if (typeof data.allowManualTimeEdits === "boolean") {
+            setAllowManual(data.allowManualTimeEdits);
+          }
+        })
+        .catch(() => {
+          // Keep current behavior: silently ignore failed loads.
+        });
+      const recordsTask = listPunchRecords({ employeeId, limit: 1 })
+        .then((data) => {
+          setLatestPunch(data[0] ?? null);
+        })
+        .catch(() => {
+          // Keep current behavior: silently ignore failed loads.
+        });
 
-      if (settingsRes.ok) {
-        const data = (await settingsRes.json()) as {
-          allowManualTimeEdits?: boolean;
-        };
-        if (typeof data.allowManualTimeEdits === "boolean") {
-          setAllowManual(data.allowManualTimeEdits);
-        }
-      }
-
-      if (recordsRes.ok) {
-        const data = (await recordsRes.json()) as { records: PunchRecord[] };
-        setLatestPunch(data.records?.[0] ?? null);
-      }
+      await Promise.all([settingsTask, recordsTask]);
 
       setClockOutAt((prev) => prev || toLocalInput(new Date()));
     };
 
-    loadTimeInfo();
+    void loadTimeInfo();
   }, [employeeId]);
 
   const update = (key: keyof FormState, value: string | boolean) => {
@@ -224,7 +219,12 @@ export default function EditUser() {
     setStatus(null);
 
     if (form.pin && form.pin.length !== 4) {
-      setStatus("PIN must be exactly 4 digits.");
+      setStatus(
+        tr(
+          "PIN must be exactly 4 digits.",
+          "El PIN debe tener exactamente 4 digitos.",
+        ),
+      );
       return;
     }
 
@@ -233,38 +233,42 @@ export default function EditUser() {
       : undefined;
 
     if (form.hourlyRate && Number.isNaN(hourlyRateValue)) {
-      setStatus("Hourly rate must be a number.");
+      setStatus(
+        tr(
+          "Hourly rate must be a number.",
+          "La tarifa por hora debe ser un numero.",
+        ),
+      );
       return;
     }
 
-    const response = await fetch(`/api/employees/${employeeId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fullName: form.fullName,
-        displayName: form.displayName || undefined,
-        email: form.email || undefined,
-        pin: form.pin || undefined,
-        hourlyRate: hourlyRateValue,
-        officeId: form.officeId || undefined,
-        groupId: form.groupId || undefined,
-        isManager: form.isManager,
-        isOwnerManager: form.isManager ? form.isOwnerManager : false,
-        managerPermissions: form.isManager ? form.managerPermissions : [],
-        isAdmin: form.isAdmin,
-        isTimeAdmin: form.isTimeAdmin,
-        isReports: form.isReports,
-        isServer: form.isServer,
-        isKitchenManager: form.isKitchenManager,
-        disabled: form.disabled,
-      }),
-    });
+    const payload: Partial<EmployeePayload> = {
+      fullName: form.fullName,
+      displayName: form.displayName || undefined,
+      email: form.email || undefined,
+      pin: form.pin || undefined,
+      hourlyRate: hourlyRateValue,
+      officeId: form.officeId || undefined,
+      groupId: form.groupId || undefined,
+      isManager: form.isManager,
+      isOwnerManager: form.isManager ? form.isOwnerManager : false,
+      managerPermissions: form.isManager ? form.managerPermissions : [],
+      isAdmin: form.isAdmin,
+      isTimeAdmin: form.isTimeAdmin,
+      isReports: form.isReports,
+      isServer: form.isServer,
+      isKitchenManager: form.isKitchenManager,
+      disabled: form.disabled,
+    };
 
-    if (response.ok) {
-      setStatus("User updated.");
+    try {
+      await updateEmployee(employeeId, payload);
+      setStatus(tr("User updated.", "Usuario actualizado."));
       setForm((prev) => ({ ...prev, pin: "" }));
-    } else {
-      setStatus("Unable to update user.");
+    } catch {
+      setStatus(
+        tr("Unable to update user.", "No se pudo actualizar el usuario."),
+      );
     }
   };
 
@@ -273,37 +277,32 @@ export default function EditUser() {
     setTimeStatus(null);
 
     if (!clockOutAt) {
-      setTimeStatus("Select a date & time.");
+      setTimeStatus(tr("Select a date & time.", "Selecciona fecha y hora."));
       return;
     }
 
-    const response = await fetch("/api/employee-punches/records", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      await createPunchRecord({
         employeeId,
         type: clockOutType,
         occurredAt: new Date(clockOutAt).toISOString(),
         notes: clockOutNotes || undefined,
-      }),
-    });
-
-    if (response.ok) {
-      setTimeStatus("Time entry added.");
-      setClockOutNotes("Manual clock-out");
-      const latestRes = await fetch(
-        `/api/employee-punches/records?${new URLSearchParams({
-          employeeId,
-          limit: "1",
-        }).toString()}`,
-        { cache: "no-store" },
-      );
-      if (latestRes.ok) {
-        const data = (await latestRes.json()) as { records: PunchRecord[] };
-        setLatestPunch(data.records?.[0] ?? null);
+      });
+      setTimeStatus(tr("Time entry added.", "Registro de tiempo agregado."));
+      setClockOutNotes(tr("Manual clock-out", "Salida manual"));
+      try {
+        const data = await listPunchRecords({ employeeId, limit: 1 });
+        setLatestPunch(data[0] ?? null);
+      } catch {
+        // Keep current behavior: silently ignore latest-refresh failures.
       }
-    } else {
-      setTimeStatus("Unable to add time entry.");
+    } catch {
+      setTimeStatus(
+        tr(
+          "Unable to add time entry.",
+          "No se pudo agregar el registro de tiempo.",
+        ),
+      );
     }
   };
 
@@ -311,17 +310,16 @@ export default function EditUser() {
     setDeletingUser(true);
     setStatus(null);
     try {
-      const response = await fetch(`/api/employees/${employeeId}`, {
-        method: "DELETE",
-      });
-      if (response.ok) {
-        setConfirmDeleteOpen(false);
-        router.push("/admin/users");
-      } else {
-        setStatus("Unable to move user to Deleted Users.");
-      }
+      await archiveEmployee(employeeId);
+      setConfirmDeleteOpen(false);
+      router.push("/admin/users");
     } catch {
-      setStatus("Unable to move user to Deleted Users.");
+      setStatus(
+        tr(
+          "Unable to move user to Deleted Users.",
+          'No se pudo mover el usuario a "Usuarios Eliminados".',
+        ),
+      );
     } finally {
       setDeletingUser(false);
     }
@@ -330,14 +328,16 @@ export default function EditUser() {
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>Edit User</h1>
+        <h1>{tr("Edit User", "Editar Usuario")}</h1>
       </div>
 
       <div className="admin-card">
         {status && <div className="alert alert-info">{status}</div>}
         <form onSubmit={handleSubmit} className="row g-3">
           <div className="col-12 col-md-6">
-            <label className="form-label">Username *</label>
+            <label className="form-label">
+              {tr("Username *", "Usuario *")}
+            </label>
             <input
               className="form-control"
               value={form.fullName}
@@ -346,7 +346,9 @@ export default function EditUser() {
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Display Name *</label>
+            <label className="form-label">
+              {tr("Display Name *", "Nombre Visible *")}
+            </label>
             <input
               className="form-control"
               value={form.displayName}
@@ -355,7 +357,9 @@ export default function EditUser() {
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Reset PIN (4 digits)</label>
+            <label className="form-label">
+              {tr("Reset PIN (4 digits)", "Restablecer PIN (4 digitos)")}
+            </label>
             <div className="d-flex flex-column gap-2">
               <input
                 className="form-control"
@@ -364,7 +368,7 @@ export default function EditUser() {
                 inputMode="numeric"
                 maxLength={4}
                 onChange={(e) => update("pin", sanitizePin(e.target.value))}
-                placeholder="4-digit PIN"
+                placeholder={tr("4-digit PIN", "PIN de 4 digitos")}
               />
               <div className="d-flex gap-2 flex-wrap">
                 <button
@@ -372,20 +376,22 @@ export default function EditUser() {
                   className="btn btn-outline-secondary btn-sm"
                   onClick={() => update("pin", "1234")}
                 >
-                  Use 1234
+                  {tr("Use 1234", "Usar 1234")}
                 </button>
                 <button
                   type="button"
                   className="btn btn-outline-secondary btn-sm"
                   onClick={() => update("pin", "0000")}
                 >
-                  Use 0000
+                  {tr("Use 0000", "Usar 0000")}
                 </button>
               </div>
             </div>
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Hourly Rate ($)</label>
+            <label className="form-label">
+              {tr("Hourly Rate ($)", "Tarifa por Hora ($)")}
+            </label>
             <input
               className="form-control"
               type="number"
@@ -393,11 +399,11 @@ export default function EditUser() {
               step="0.01"
               value={form.hourlyRate}
               onChange={(e) => update("hourlyRate", e.target.value)}
-              placeholder="e.g. 15.00"
+              placeholder={tr("e.g. 15.00", "ej. 15.00")}
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Email *</label>
+            <label className="form-label">{tr("Email *", "Correo *")}</label>
             <input
               className="form-control"
               type="email"
@@ -407,14 +413,18 @@ export default function EditUser() {
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Location *</label>
+            <label className="form-label">
+              {tr("Location *", "Ubicacion *")}
+            </label>
             <select
               className="form-select"
               value={form.officeId}
               onChange={(e) => update("officeId", e.target.value)}
               required
             >
-              <option value="">Select location</option>
+              <option value="">
+                {tr("Select location", "Selecciona ubicacion")}
+              </option>
               {offices.map((office) => (
                 <option key={office.id} value={office.id}>
                   {office.name}
@@ -423,14 +433,14 @@ export default function EditUser() {
             </select>
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Group *</label>
+            <label className="form-label">{tr("Group *", "Grupo *")}</label>
             <select
               className="form-select"
               value={form.groupId}
               onChange={(e) => update("groupId", e.target.value)}
               required
             >
-              <option value="">Select group</option>
+              <option value="">{tr("Select group", "Selecciona grupo")}</option>
               {groups.map((group) => (
                 <option key={group.id} value={group.id}>
                   {group.name}
@@ -439,7 +449,9 @@ export default function EditUser() {
             </select>
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Manager Access?</label>
+            <label className="form-label">
+              {tr("Manager Access?", "Acceso de Manager?")}
+            </label>
             <select
               className="form-select"
               value={form.isManager ? "yes" : "no"}
@@ -453,12 +465,14 @@ export default function EditUser() {
                 }));
               }}
             >
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
+              <option value="no">{tr("No", "No")}</option>
+              <option value="yes">{tr("Yes", "Si")}</option>
             </select>
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Manager Is Owner?</label>
+            <label className="form-label">
+              {tr("Manager Is Owner?", "Manager es Owner?")}
+            </label>
             <select
               className="form-select"
               value={form.isOwnerManager ? "yes" : "no"}
@@ -467,12 +481,14 @@ export default function EditUser() {
               }
               disabled={!form.isManager}
             >
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
+              <option value="no">{tr("No", "No")}</option>
+              <option value="yes">{tr("Yes", "Si")}</option>
             </select>
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Kitchen Manager User?</label>
+            <label className="form-label">
+              {tr("Kitchen Manager User?", "Usuario Kitchen Manager?")}
+            </label>
             <select
               className="form-select"
               value={form.isKitchenManager ? "yes" : "no"}
@@ -480,13 +496,15 @@ export default function EditUser() {
                 update("isKitchenManager", e.target.value === "yes")
               }
             >
-              <option value="no">No</option>
-              <option value="yes">Yes</option>
+              <option value="no">{tr("No", "No")}</option>
+              <option value="yes">{tr("Yes", "Si")}</option>
             </select>
           </div>
           {form.isManager && (
             <div className="col-12">
-              <label className="form-label">Manager Feature Access</label>
+              <label className="form-label">
+                {tr("Manager Feature Access", "Accesos del Manager")}
+              </label>
               <div className="d-flex flex-wrap gap-2">
                 {managerFeatureOptions.map((feature) => {
                   const checked = form.managerPermissions.includes(feature.key);
@@ -511,74 +529,84 @@ export default function EditUser() {
             </div>
           )}
           <div className="col-12 col-md-6">
-            <label className="form-label">Sys Admin User?</label>
+            <label className="form-label">
+              {tr("Sys Admin User?", "Usuario Admin del Sistema?")}
+            </label>
             <select
               className="form-select"
               value={form.isAdmin ? "yes" : "no"}
               onChange={(e) => update("isAdmin", e.target.value === "yes")}
             >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
+              <option value="yes">{tr("Yes", "Si")}</option>
+              <option value="no">{tr("No", "No")}</option>
             </select>
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Time Admin User?</label>
+            <label className="form-label">
+              {tr("Time Admin User?", "Usuario Admin de Tiempo?")}
+            </label>
             <select
               className="form-select"
               value={form.isTimeAdmin ? "yes" : "no"}
               onChange={(e) => update("isTimeAdmin", e.target.value === "yes")}
             >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
+              <option value="yes">{tr("Yes", "Si")}</option>
+              <option value="no">{tr("No", "No")}</option>
             </select>
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Reports User?</label>
+            <label className="form-label">
+              {tr("Reports User?", "Usuario de Reportes?")}
+            </label>
             <select
               className="form-select"
               value={form.isReports ? "yes" : "no"}
               onChange={(e) => update("isReports", e.target.value === "yes")}
             >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
+              <option value="yes">{tr("Yes", "Si")}</option>
+              <option value="no">{tr("No", "No")}</option>
             </select>
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Server User?</label>
+            <label className="form-label">
+              {tr("Server User?", "Usuario Mesero?")}
+            </label>
             <select
               className="form-select"
               value={form.isServer ? "yes" : "no"}
               onChange={(e) => update("isServer", e.target.value === "yes")}
             >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
+              <option value="yes">{tr("Yes", "Si")}</option>
+              <option value="no">{tr("No", "No")}</option>
             </select>
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">User Account Disabled?</label>
+            <label className="form-label">
+              {tr("User Account Disabled?", "Cuenta de Usuario Deshabilitada?")}
+            </label>
             <select
               className="form-select"
               value={form.disabled ? "yes" : "no"}
               onChange={(e) => update("disabled", e.target.value === "yes")}
             >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
+              <option value="yes">{tr("Yes", "Si")}</option>
+              <option value="no">{tr("No", "No")}</option>
             </select>
           </div>
           <div className="col-12 d-flex gap-2">
             <button className="btn btn-primary" type="submit">
-              Save Changes
+              {tr("Save Changes", "Guardar Cambios")}
             </button>
             <button
               className="btn btn-outline-danger"
               type="button"
               onClick={() => setConfirmDeleteOpen(true)}
             >
-              Delete User
+              {tr("Delete User", "Eliminar Usuario")}
             </button>
-            <a className="btn btn-outline-secondary" href="/admin/users">
-              Cancel
-            </a>
+            <Link className="btn btn-outline-secondary" href="/admin/users">
+              {tr("Cancel", "Cancelar")}
+            </Link>
           </div>
         </form>
       </div>
@@ -596,10 +624,14 @@ export default function EditUser() {
             className="embedded-confirm-dialog"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 className="embedded-confirm-title">Archive User</h2>
+            <h2 className="embedded-confirm-title">
+              {tr("Archive User", "Archivar Usuario")}
+            </h2>
             <p className="embedded-confirm-message">
-              Move this user to Deleted Users? Records will be preserved and can
-              be restored later.
+              {tr(
+                "Move this user to Deleted Users? Records will be preserved and can be restored later.",
+                'Mover este usuario a "Usuarios Eliminados"? Los registros se conservaran y se pueden restaurar despues.',
+              )}
             </p>
             <div className="embedded-confirm-actions">
               <button
@@ -608,7 +640,7 @@ export default function EditUser() {
                 disabled={deletingUser}
                 onClick={() => setConfirmDeleteOpen(false)}
               >
-                Cancel
+                {tr("Cancel", "Cancelar")}
               </button>
               <button
                 type="button"
@@ -616,7 +648,9 @@ export default function EditUser() {
                 disabled={deletingUser}
                 onClick={() => void handleDelete()}
               >
-                {deletingUser ? "Processing..." : "Confirm"}
+                {deletingUser
+                  ? tr("Processing...", "Procesando...")
+                  : tr("Confirm", "Confirmar")}
               </button>
             </div>
           </div>
@@ -625,7 +659,9 @@ export default function EditUser() {
 
       <div className="admin-card">
         <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-          <h2 className="h5 mb-0">Fix Missing Clock-Out</h2>
+          <h2 className="h5 mb-0">
+            {tr("Fix Missing Clock-Out", "Corregir Salida Faltante")}
+          </h2>
           <a
             className="btn btn-outline-secondary"
             href={`/admin/time?${new URLSearchParams({
@@ -633,38 +669,44 @@ export default function EditUser() {
               returnTo: `/admin/users/${employeeId}`,
             }).toString()}`}
           >
-            Open Time Admin
+            {tr("Open Time Admin", "Abrir Admin de Tiempo")}
           </a>
         </div>
         {!allowManual && (
           <div className="alert alert-warning mb-3">
-            Manual time edits are disabled in System Settings.
+            {tr(
+              "Manual time edits are disabled in System Settings.",
+              "Las ediciones manuales de tiempo estan deshabilitadas en Configuracion del Sistema.",
+            )}
           </div>
         )}
         {latestPunch && (
           <div className="alert alert-light border mb-3">
-            <strong>Latest Punch:</strong> {latestPunch.type} at{" "}
+            <strong>{tr("Latest Punch:", "Ultimo Registro:")}</strong>{" "}
+            {latestPunch.type} {tr("at", "a las")}{" "}
             {new Date(latestPunch.occurredAt).toLocaleString()}
           </div>
         )}
         {timeStatus && <div className="alert alert-info">{timeStatus}</div>}
         <form onSubmit={handleClockOut} className="row g-3">
           <div className="col-12 col-md-4">
-            <label className="form-label">Type</label>
+            <label className="form-label">{tr("Type", "Tipo")}</label>
             <select
               className="form-select"
               value={clockOutType}
               onChange={(event) => setClockOutType(event.target.value)}
               disabled={!allowManual}
             >
-              <option value="OUT">OUT</option>
-              <option value="BREAK">BREAK</option>
-              <option value="LUNCH">LUNCH</option>
-              <option value="IN">IN</option>
+              <option value="OUT">{tr("OUT", "SALIDA")}</option>
+              <option value="BREAK">{tr("BREAK", "DESCANSO")}</option>
+              <option value="LUNCH">{tr("LUNCH", "COMIDA")}</option>
+              <option value="IN">{tr("IN", "ENTRADA")}</option>
             </select>
           </div>
           <div className="col-12 col-md-4">
-            <label className="form-label">Date & Time</label>
+            <label className="form-label">
+              {tr("Date & Time", "Fecha y Hora")}
+            </label>
             <input
               className="form-control"
               type="datetime-local"
@@ -675,7 +717,7 @@ export default function EditUser() {
             />
           </div>
           <div className="col-12 col-md-4">
-            <label className="form-label">Notes</label>
+            <label className="form-label">{tr("Notes", "Notas")}</label>
             <input
               className="form-control"
               value={clockOutNotes}
@@ -689,7 +731,7 @@ export default function EditUser() {
               type="submit"
               disabled={!allowManual}
             >
-              Add Time Entry
+              {tr("Add Time Entry", "Agregar Registro de Tiempo")}
             </button>
           </div>
         </form>

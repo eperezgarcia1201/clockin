@@ -14,9 +14,9 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AccessController = void 0;
 const common_1 = require("@nestjs/common");
-const client_1 = require("@prisma/client");
 const auth_guard_1 = require("../auth/auth.guard");
 const tenancy_service_1 = require("../tenancy/tenancy.service");
+const manager_features_1 = require("../tenancy/manager-features");
 let AccessController = class AccessController {
     tenancy;
     constructor(tenancy) {
@@ -26,26 +26,33 @@ let AccessController = class AccessController {
         if (!request.user) {
             throw new common_1.UnauthorizedException();
         }
-        const { membership } = await this.tenancy.requireTenantAndUser(request.user);
-        const adminRoles = [client_1.Role.OWNER, client_1.Role.ADMIN];
-        const isAdmin = adminRoles.includes(membership.role);
+        const access = await this.tenancy.resolveAdminAccess(request.user);
         return {
-            role: membership.role,
-            status: membership.status,
-            isAdmin,
+            role: access.membership.role,
+            status: access.membership.status,
+            isAdmin: access.featurePermissions.length > 0,
+            actorType: access.actorType,
+            actorName: access.displayName,
+            employeeId: access.employeeId,
+            ownerClockExempt: access.ownerClockExempt,
+            adminUsername: access.settings.adminUsername,
+            multiLocationEnabled: access.settings.multiLocationEnabled,
+            liquorInventoryEnabled: access.settings.liquorInventoryEnabled,
+            premiumFeaturesEnabled: access.settings.premiumFeaturesEnabled,
+            permissions: (0, manager_features_1.managerFeaturesToMap)(access.featurePermissions),
         };
     }
 };
 exports.AccessController = AccessController;
 __decorate([
-    (0, common_1.Get)("me"),
+    (0, common_1.Get)('me'),
     __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AccessController.prototype, "getAccess", null);
 exports.AccessController = AccessController = __decorate([
-    (0, common_1.Controller)("access"),
+    (0, common_1.Controller)('access'),
     (0, common_1.UseGuards)(auth_guard_1.AuthOrDevGuard),
     __metadata("design:paramtypes", [tenancy_service_1.TenancyService])
 ], AccessController);

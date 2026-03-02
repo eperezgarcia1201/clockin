@@ -2,24 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-
-type Employee = {
-  id: string;
-  name: string;
-};
-
-type PunchRecord = {
-  id: string;
-  employeeId: string;
-  employeeName: string;
-  office: string | null;
-  group: string | null;
-  type: string;
-  occurredAt: string;
-  notes: string;
-};
-
-const apiBase = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/$/, "");
+import { useUiLanguage } from "../../../lib/ui-language";
+import {
+  createPunchRecord,
+  deletePunchRecord,
+  getTimeAdminSettings,
+  listEmployees,
+  listPunchRecords,
+  type Employee,
+  type PunchRecord,
+  updatePunchRecord,
+} from "../../../lib/api/time-admin";
 
 const toLocalInput = (value: string) => {
   const date = new Date(value);
@@ -29,6 +22,8 @@ const toLocalInput = (value: string) => {
 };
 
 export default function TimeAdmin() {
+  const lang = useUiLanguage();
+  const tr = (en: string, es: string) => (lang === "es" ? es : en);
   const searchParams = useSearchParams();
   const initializedRef = useRef(false);
   const lockedEmployeeId = useMemo(() => {
@@ -64,19 +59,18 @@ export default function TimeAdmin() {
     to = filterTo,
   ) => {
     const scopedFilterId = lockedEmployeeId || filterId;
-    const query = new URLSearchParams();
-    query.set("limit", "50");
-    if (scopedFilterId) query.set("employeeId", scopedFilterId);
-    if (from) query.set("from", from);
-    if (to) query.set("to", to);
-    query.set("tzOffset", String(tzOffset));
-    const response = await fetch(
-      `${apiBase}/employee-punches/records?${query.toString()}`,
-      { cache: "no-store" },
-    );
-    if (!response.ok) return;
-    const data = (await response.json()) as { records: PunchRecord[] };
-    setRecords(data.records || []);
+    try {
+      const data = await listPunchRecords({
+        employeeId: scopedFilterId || undefined,
+        from: from || undefined,
+        to: to || undefined,
+        tzOffset,
+        limit: 50,
+      });
+      setRecords(data);
+    } catch {
+      // Keep current behavior: silently ignore failed loads.
+    }
   };
 
   useEffect(() => {
@@ -99,30 +93,28 @@ export default function TimeAdmin() {
 
   useEffect(() => {
     const loadEmployees = async () => {
-      const response = await fetch(`${apiBase}/employees`, {
-        cache: "no-store",
-      });
-      if (!response.ok) return;
-      const data = (await response.json()) as {
-        employees: { id: string; name: string }[];
-      };
-      setEmployees(data.employees || []);
-    };
-
-    const loadSettings = async () => {
-      const response = await fetch(`${apiBase}/settings`, {
-        cache: "no-store",
-      });
-      if (!response.ok) return;
-      const data = (await response.json()) as { allowManualTimeEdits?: boolean };
-      if (typeof data.allowManualTimeEdits === "boolean") {
-        setAllowManual(data.allowManualTimeEdits);
+      try {
+        const data = await listEmployees();
+        setEmployees(data);
+      } catch {
+        // Keep current behavior: silently ignore failed loads.
       }
     };
 
-    loadEmployees();
-    loadSettings();
-    loadRecords();
+    const loadSettings = async () => {
+      try {
+        const data = await getTimeAdminSettings();
+        if (typeof data.allowManualTimeEdits === "boolean") {
+          setAllowManual(data.allowManualTimeEdits);
+        }
+      } catch {
+        // Keep current behavior: silently ignore failed loads.
+      }
+    };
+
+    void loadEmployees();
+    void loadSettings();
+    void loadRecords();
   }, []);
 
   useEffect(() => {
@@ -141,7 +133,7 @@ export default function TimeAdmin() {
     setStatus(null);
 
     if (!employeeId) {
-      setStatus("Please select an employee.");
+      setStatus(tr("Please select an employee.", "Selecciona un empleado."));
       return false;
     }
 
@@ -152,28 +144,31 @@ export default function TimeAdmin() {
       notes: notes || undefined,
     };
 
-    const response = await fetch(
-      editingId
-        ? `${apiBase}/employee-punches/records/${editingId}`
-        : `${apiBase}/employee-punches/records`,
-      {
-        method: editingId ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-    );
-
-    if (response.ok) {
-      setStatus(editingId ? "Time updated." : "Time entry added.");
+    try {
+      if (editingId) {
+        await updatePunchRecord(editingId, payload);
+      } else {
+        await createPunchRecord(payload);
+      }
+      setStatus(
+        editingId
+          ? tr("Time updated.", "Tiempo actualizado.")
+          : tr("Time entry added.", "Entrada de tiempo agregada."),
+      );
       resetForm();
-      loadRecords(filterEmployeeId);
+      void loadRecords(filterEmployeeId);
       if (afterSave && returnTo) {
         window.location.href = returnTo;
       }
       return true;
-    } else {
-      const data = await response.json().catch(() => ({}));
-      setStatus(data?.error || "Unable to save time entry.");
+    } catch (error) {
+      setStatus(
+        (error instanceof Error && error.message) ||
+          tr(
+            "Unable to save time entry.",
+            "No se pudo guardar la entrada de tiempo.",
+          ),
+      );
       return false;
     }
   };
@@ -189,7 +184,12 @@ export default function TimeAdmin() {
     setType(record.type);
     setOccurredAt(toLocalInput(record.occurredAt));
     setNotes(record.notes || "");
-    setStatus("Editing time entry. Update fields and click Save Changes.");
+    setStatus(
+      tr(
+        "Editing time entry. Update fields and click Save Changes.",
+        "Editando entrada de tiempo. Actualiza los campos y haz clic en Guardar Cambios.",
+      ),
+    );
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -198,21 +198,17 @@ export default function TimeAdmin() {
   const handleDelete = async (id: string) => {
     setDeletingRecordId(id);
     try {
-      const response = await fetch(
-        `${apiBase}/employee-punches/records/${id}`,
-        {
-          method: "DELETE",
-        },
+      await deletePunchRecord(id);
+      setStatus(tr("Time entry deleted.", "Entrada de tiempo eliminada."));
+      void loadRecords(filterEmployeeId);
+    } catch (error) {
+      setStatus(
+        (error instanceof Error && error.message) ||
+          tr(
+            "Unable to delete time entry.",
+            "No se pudo eliminar la entrada de tiempo.",
+          ),
       );
-      if (response.ok) {
-        setStatus("Time entry deleted.");
-        loadRecords(filterEmployeeId);
-      } else {
-        const data = await response.json().catch(() => ({}));
-        setStatus(data?.error || "Unable to delete time entry.");
-      }
-    } catch {
-      setStatus("Unable to delete time entry.");
     } finally {
       setDeletingRecordId(null);
     }
@@ -227,8 +223,7 @@ export default function TimeAdmin() {
   };
 
   const pendingDeleteBusy =
-    pendingDeleteRecord !== null &&
-    deletingRecordId === pendingDeleteRecord.id;
+    pendingDeleteRecord !== null && deletingRecordId === pendingDeleteRecord.id;
 
   const canSave = useMemo(
     () => Boolean(employeeId && occurredAt),
@@ -238,10 +233,12 @@ export default function TimeAdmin() {
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>Add / Edit / Delete Time</h1>
+        <h1>
+          {tr("Add / Edit / Delete Time", "Agregar / Editar / Eliminar Tiempo")}
+        </h1>
         <div className="admin-actions">
           <a className="btn btn-outline-secondary" href={returnTo}>
-            Back
+            {tr("Back", "Volver")}
           </a>
         </div>
       </div>
@@ -249,13 +246,16 @@ export default function TimeAdmin() {
       <div className="admin-card">
         {!allowManual && (
           <div className="alert alert-warning">
-            Manual time edits are disabled in System Settings.
+            {tr(
+              "Manual time edits are disabled in System Settings.",
+              "Las ediciones manuales de tiempo están desactivadas en Configuración del Sistema.",
+            )}
           </div>
         )}
         {status && <div className="alert alert-info">{status}</div>}
         <form onSubmit={handleSubmit} className="row g-3">
           <div className="col-12 col-md-6">
-            <label className="form-label">Employee</label>
+            <label className="form-label">{tr("Employee", "Empleado")}</label>
             <select
               className="form-select"
               value={employeeId}
@@ -264,27 +264,37 @@ export default function TimeAdmin() {
               disabled={!allowManual || lockedFromContext}
             >
               {lockedFromContext && !employeeId && (
-                <option value={lockedEmployeeId}>Loading selected employee...</option>
+                <option value={lockedEmployeeId}>
+                  {tr(
+                    "Loading selected employee...",
+                    "Cargando empleado seleccionado...",
+                  )}
+                </option>
               )}
-              <option value="">Select employee</option>
+              <option value="">
+                {tr("Select employee", "Seleccionar empleado")}
+              </option>
               {employees
                 .filter((employee) =>
                   lockedFromContext ? employee.id === lockedEmployeeId : true,
                 )
                 .map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.name}
-                </option>
+                  <option key={employee.id} value={employee.id}>
+                    {employee.name}
+                  </option>
                 ))}
             </select>
             {lockedFromContext && (
               <div className="form-text">
-                Employee scope is locked from the previous screen.
+                {tr(
+                  "Employee scope is locked from the previous screen.",
+                  "El alcance del empleado está bloqueado desde la pantalla anterior.",
+                )}
               </div>
             )}
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Type</label>
+            <label className="form-label">{tr("Type", "Tipo")}</label>
             <select
               className="form-select"
               value={type}
@@ -298,7 +308,9 @@ export default function TimeAdmin() {
             </select>
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Date & Time</label>
+            <label className="form-label">
+              {tr("Date & Time", "Fecha y Hora")}
+            </label>
             <input
               className="form-control"
               type="datetime-local"
@@ -309,7 +321,7 @@ export default function TimeAdmin() {
             />
           </div>
           <div className="col-12">
-            <label className="form-label">Notes</label>
+            <label className="form-label">{tr("Notes", "Notas")}</label>
             <input
               className="form-control"
               value={notes}
@@ -323,7 +335,9 @@ export default function TimeAdmin() {
               type="submit"
               disabled={!canSave || !allowManual}
             >
-              {editingId ? "Save Changes" : "Add Entry"}
+              {editingId
+                ? tr("Save Changes", "Guardar Cambios")
+                : tr("Add Entry", "Agregar Entrada")}
             </button>
             <button
               className="btn btn-outline-secondary"
@@ -331,7 +345,7 @@ export default function TimeAdmin() {
               disabled={!canSave || !allowManual}
               onClick={() => saveEntry(true)}
             >
-              Save &amp; Back
+              {tr("Save & Back", "Guardar y Volver")}
             </button>
             {editingId && (
               <button
@@ -339,7 +353,7 @@ export default function TimeAdmin() {
                 type="button"
                 onClick={resetForm}
               >
-                Cancel
+                {tr("Cancel", "Cancelar")}
               </button>
             )}
           </div>
@@ -348,31 +362,37 @@ export default function TimeAdmin() {
 
       <div className="admin-card">
         <div className="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-          <h2 className="h5 mb-0">Recent Time Entries</h2>
+          <h2 className="h5 mb-0">
+            {tr("Recent Time Entries", "Entradas de Tiempo Recientes")}
+          </h2>
           <div className="d-flex align-items-center gap-2">
-            <label className="form-label mb-0">Filter</label>
+            <label className="form-label mb-0">{tr("Filter", "Filtro")}</label>
             <select
               className="form-select"
               value={lockedEmployeeId || filterEmployeeId}
               onChange={(event) => setFilterEmployeeId(event.target.value)}
               disabled={lockedFromContext}
             >
-              {!lockedFromContext && <option value="">All Employees</option>}
+              {!lockedFromContext && (
+                <option value="">
+                  {tr("All Employees", "Todos los Empleados")}
+                </option>
+              )}
               {employees
                 .filter((employee) =>
                   lockedFromContext ? employee.id === lockedEmployeeId : true,
                 )
                 .map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employee.name}
-                </option>
+                  <option key={employee.id} value={employee.id}>
+                    {employee.name}
+                  </option>
                 ))}
             </select>
           </div>
         </div>
         <div className="row g-3 align-items-end mb-3">
           <div className="col-12 col-md-3">
-            <label className="form-label">From</label>
+            <label className="form-label">{tr("From", "Desde")}</label>
             <input
               className="form-control"
               type="date"
@@ -381,7 +401,7 @@ export default function TimeAdmin() {
             />
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">To</label>
+            <label className="form-label">{tr("To", "Hasta")}</label>
             <input
               className="form-control"
               type="date"
@@ -398,7 +418,7 @@ export default function TimeAdmin() {
                 setFilterTo("");
               }}
             >
-              Clear dates
+              {tr("Clear dates", "Limpiar fechas")}
             </button>
           </div>
         </div>
@@ -406,12 +426,12 @@ export default function TimeAdmin() {
           <table className="table table-striped align-middle mb-0">
             <thead>
               <tr>
-                <th>Employee</th>
-                <th>Type</th>
-                <th>Date</th>
-                <th>Location</th>
-                <th>Group</th>
-                <th>Notes</th>
+                <th>{tr("Employee", "Empleado")}</th>
+                <th>{tr("Type", "Tipo")}</th>
+                <th>{tr("Date", "Fecha")}</th>
+                <th>{tr("Location", "Ubicación")}</th>
+                <th>{tr("Group", "Grupo")}</th>
+                <th>{tr("Notes", "Notas")}</th>
                 <th />
               </tr>
             </thead>
@@ -420,9 +440,7 @@ export default function TimeAdmin() {
                 <tr key={record.id}>
                   <td>{record.employeeName}</td>
                   <td>{record.type}</td>
-                  <td>
-                    {new Date(record.occurredAt).toLocaleString()}
-                  </td>
+                  <td>{new Date(record.occurredAt).toLocaleString()}</td>
                   <td>{record.office || "—"}</td>
                   <td>{record.group || "—"}</td>
                   <td>{record.notes || "—"}</td>
@@ -433,14 +451,18 @@ export default function TimeAdmin() {
                         onClick={() => handleEdit(record)}
                         disabled={!allowManual}
                       >
-                        Edit
+                        {tr("Edit", "Editar")}
                       </button>
                       <button
                         className="btn btn-sm btn-outline-danger"
                         onClick={() => setPendingDeleteRecord(record)}
-                        disabled={!allowManual || deletingRecordId === record.id}
+                        disabled={
+                          !allowManual || deletingRecordId === record.id
+                        }
                       >
-                        {deletingRecordId === record.id ? "Deleting..." : "Delete"}
+                        {deletingRecordId === record.id
+                          ? tr("Deleting...", "Eliminando...")
+                          : tr("Delete", "Eliminar")}
                       </button>
                     </div>
                   </td>
@@ -449,7 +471,10 @@ export default function TimeAdmin() {
               {records.length === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center text-muted py-4">
-                    No time entries found.
+                    {tr(
+                      "No time entries found.",
+                      "No se encontraron entradas de tiempo.",
+                    )}
                   </td>
                 </tr>
               )}
@@ -471,10 +496,13 @@ export default function TimeAdmin() {
             className="embedded-confirm-dialog"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 className="embedded-confirm-title">Delete Time Entry</h2>
+            <h2 className="embedded-confirm-title">
+              {tr("Delete Time Entry", "Eliminar Entrada de Tiempo")}
+            </h2>
             <p className="embedded-confirm-message">
-              Delete {pendingDeleteRecord.type} entry for{" "}
-              {pendingDeleteRecord.employeeName} on{" "}
+              {tr("Delete", "Eliminar")} {pendingDeleteRecord.type}{" "}
+              {tr("entry for", "para")} {pendingDeleteRecord.employeeName}{" "}
+              {tr("on", "el")}{" "}
               {new Date(pendingDeleteRecord.occurredAt).toLocaleString()}?
             </p>
             <div className="embedded-confirm-actions">
@@ -484,7 +512,7 @@ export default function TimeAdmin() {
                 disabled={pendingDeleteBusy}
                 onClick={() => setPendingDeleteRecord(null)}
               >
-                Cancel
+                {tr("Cancel", "Cancelar")}
               </button>
               <button
                 type="button"
@@ -492,7 +520,9 @@ export default function TimeAdmin() {
                 disabled={pendingDeleteBusy}
                 onClick={() => void onConfirmDeleteRecord()}
               >
-                {pendingDeleteBusy ? "Deleting..." : "Confirm Delete"}
+                {pendingDeleteBusy
+                  ? tr("Deleting...", "Eliminando...")
+                  : tr("Confirm Delete", "Confirmar Eliminación")}
               </button>
             </div>
           </div>

@@ -1,8 +1,43 @@
 "use client";
 
 import { useState } from "react";
+import {
+  useUiCopy,
+  useUiLanguage,
+  type UiLang,
+} from "../../../../lib/ui-language";
+import { createStatus } from "../../../../lib/api/statuses";
+
+const copy: Record<UiLang, Record<string, string>> = {
+  en: {
+    created: "Status created successfully.",
+    createFailed: "Unable to create status.",
+    title: "Create Status",
+    statusLabel: "Status Label",
+    color: "Color",
+    countsAsIn: "Counts as In?",
+    yes: "Yes",
+    no: "No",
+    createStatus: "Create Status",
+    cancel: "Cancel",
+  },
+  es: {
+    created: "Estatus creado correctamente.",
+    createFailed: "No se pudo crear el estatus.",
+    title: "Crear Estatus",
+    statusLabel: "Etiqueta del Estatus",
+    color: "Color",
+    countsAsIn: "¿Cuenta como Entrada?",
+    yes: "Sí",
+    no: "No",
+    createStatus: "Crear Estatus",
+    cancel: "Cancelar",
+  },
+};
 
 export default function CreateStatus() {
+  const lang = useUiLanguage();
+  const t = useUiCopy(copy, lang);
   const [label, setLabel] = useState("");
   const [color, setColor] = useState("#2a4d8f");
   const [isIn, setIsIn] = useState(false);
@@ -11,32 +46,28 @@ export default function CreateStatus() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setStatus(null);
-    const response = await fetch("/api/statuses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label, color, isIn }),
-    });
-    if (response.ok) {
-      setStatus("Status created successfully.");
+    try {
+      await createStatus({ label, color, isIn });
+      setStatus(t.created);
       setLabel("");
       setColor("#2a4d8f");
       setIsIn(false);
-    } else {
-      setStatus("Unable to create status.");
+    } catch {
+      setStatus(t.createFailed);
     }
   };
 
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>Create Status</h1>
+        <h1>{t.title}</h1>
       </div>
 
       <div className="admin-card">
         {status && <div className="alert alert-info">{status}</div>}
         <form onSubmit={submit} className="row g-3">
           <div className="col-12 col-md-6">
-            <label className="form-label">Status Label</label>
+            <label className="form-label">{t.statusLabel}</label>
             <input
               className="form-control"
               value={label}
@@ -45,7 +76,7 @@ export default function CreateStatus() {
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Color</label>
+            <label className="form-label">{t.color}</label>
             <input
               className="form-control form-control-color"
               type="color"
@@ -54,22 +85,22 @@ export default function CreateStatus() {
             />
           </div>
           <div className="col-12">
-            <label className="form-label">Counts as In?</label>
+            <label className="form-label">{t.countsAsIn}</label>
             <select
               className="form-select"
               value={isIn ? "yes" : "no"}
               onChange={(e) => setIsIn(e.target.value === "yes")}
             >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
+              <option value="yes">{t.yes}</option>
+              <option value="no">{t.no}</option>
             </select>
           </div>
           <div className="col-12 d-flex gap-2">
             <button className="btn btn-primary" type="submit">
-              Create Status
+              {t.createStatus}
             </button>
             <a className="btn btn-outline-secondary" href="/admin/status">
-              Cancel
+              {t.cancel}
             </a>
           </div>
         </form>

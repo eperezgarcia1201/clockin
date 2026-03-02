@@ -52,7 +52,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SettingsController.prototype, "update", null);
 exports.SettingsController = SettingsController = __decorate([
-    (0, common_1.Controller)("settings"),
+    (0, common_1.Controller)('settings'),
     (0, common_1.UseGuards)(auth_guard_1.AuthOrDevGuard),
     __metadata("design:paramtypes", [settings_service_1.SettingsService])
 ], SettingsController);

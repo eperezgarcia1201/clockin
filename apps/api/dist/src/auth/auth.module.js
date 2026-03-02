@@ -17,7 +17,7 @@ let AuthModule = class AuthModule {
 exports.AuthModule = AuthModule;
 exports.AuthModule = AuthModule = __decorate([
     (0, common_1.Module)({
-        imports: [config_1.ConfigModule, passport_1.PassportModule.register({ defaultStrategy: "jwt" })],
+        imports: [config_1.ConfigModule, passport_1.PassportModule.register({ defaultStrategy: 'jwt' })],
         providers: [jwt_strategy_1.JwtStrategy, auth_guard_1.AuthOrDevGuard],
         exports: [auth_guard_1.AuthOrDevGuard],
     })

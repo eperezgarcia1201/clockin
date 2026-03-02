@@ -1,0 +1,3 @@
+# Keep Firebase credentials out of VCS.
+GoogleService-Info.plist
+google-services.json

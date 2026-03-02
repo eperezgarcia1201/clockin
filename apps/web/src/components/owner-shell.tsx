@@ -5,51 +5,54 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+type Lang = "en" | "es";
+type Theme = "light" | "dark";
+
+const ownerTranslations: Record<Lang, Record<string, string>> = {
+  en: {
+    ownerDashboard: "Owner Dashboard",
+    tenants: "Tenants",
+    logout: "Logout",
+    owner: "Owner",
+    dashboard: "Dashboard",
+    tenantAccounts: "Tenant Accounts",
+    language: "Language",
+    theme: "Theme",
+    light: "Light",
+    dark: "Dark",
+  },
+  es: {
+    ownerDashboard: "Panel de Dueño",
+    tenants: "Inquilinos",
+    logout: "Salir",
+    owner: "Dueño",
+    dashboard: "Tablero",
+    tenantAccounts: "Cuentas de Inquilino",
+    language: "Idioma",
+    theme: "Tema",
+    light: "Claro",
+    dark: "Oscuro",
+  },
+};
+
 export function OwnerShell({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  type Lang = "en" | "es";
-  type Theme = "light" | "dark";
-
-  const translations: Record<Lang, Record<string, string>> = {
-    en: {
-      ownerDashboard: "Owner Dashboard",
-      tenants: "Tenants",
-      logout: "Logout",
-      owner: "Owner",
-      dashboard: "Dashboard",
-      tenantAccounts: "Tenant Accounts",
-      language: "Language",
-      theme: "Theme",
-      light: "Light",
-      dark: "Dark",
-    },
-    es: {
-      ownerDashboard: "Panel de Dueño",
-      tenants: "Inquilinos",
-      logout: "Salir",
-      owner: "Dueño",
-      dashboard: "Tablero",
-      tenantAccounts: "Cuentas de Inquilino",
-      language: "Idioma",
-      theme: "Tema",
-      light: "Claro",
-      dark: "Oscuro",
-    },
-  };
-
   const pathname = usePathname();
   const router = useRouter();
-  const [lang, setLang] = useState<Lang>("en");
-  const [theme, setTheme] = useState<Theme>("light");
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    setLang(localStorage.getItem("clockin-lang") === "es" ? "es" : "en");
-    setTheme(localStorage.getItem("clockin-theme") === "dark" ? "dark" : "light");
-  }, []);
+  const [lang, setLang] = useState<Lang>(() =>
+    typeof window !== "undefined" && localStorage.getItem("clockin-lang") === "es"
+      ? "es"
+      : "en",
+  );
+  const [theme, setTheme] = useState<Theme>(() =>
+    typeof window !== "undefined" &&
+    localStorage.getItem("clockin-theme") === "dark"
+      ? "dark"
+      : "light",
+  );
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -63,7 +66,7 @@ export function OwnerShell({
     }
   }, [lang, theme]);
 
-  const t = useMemo(() => translations[lang] ?? translations.en, [lang]);
+  const t = useMemo(() => ownerTranslations[lang] ?? ownerTranslations.en, [lang]);
 
   const logout = async () => {
     await fetch("/api/owner/logout", { method: "POST" });

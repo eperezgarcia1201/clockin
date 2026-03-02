@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "check:lines": "node ./scripts/check-max-lines.mjs --config ./guardrails.config.json",
+    "check:no-direct-fetch": "node ./scripts/check-no-direct-fetch.mjs --config ./guardrails.config.json",
+    "validate:refactor-chunk": "npm run check:lines && npm run check:no-direct-fetch && npm run build && npm run test"
+  }
+}

@@ -1,24 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-type CompanyOrderCatalogItem = {
-  nameEs: string;
-  nameEn: string;
-};
-
-type CompanyOrderCatalogSupplier = {
-  supplierName: string;
-  items: CompanyOrderCatalogItem[];
-};
-
-const readErrorMessage = async (response: Response, fallback: string) => {
-  const payload = (await response.json().catch(() => ({}))) as {
-    error?: string;
-    message?: string;
-  };
-  return payload.error || payload.message || fallback;
-};
+import { useUiLanguage } from "../../../../lib/ui-language";
+import {
+  getCompanyOrderCatalog,
+  updateCompanyOrderCatalog,
+  type CompanyOrderCatalogItem,
+  type CompanyOrderCatalogSupplier,
+} from "../../../../lib/api/company-orders-admin";
 
 const sanitizeCatalogForSave = (
   catalog: CompanyOrderCatalogSupplier[],
@@ -49,6 +38,11 @@ const sanitizeCatalogForSave = (
 };
 
 export default function AdminCompanyOrdersCatalogPage() {
+  const lang = useUiLanguage();
+  const tr = useCallback(
+    (en: string, es: string) => (lang === "es" ? es : en),
+    [lang],
+  );
   const [catalog, setCatalog] = useState<CompanyOrderCatalogSupplier[]>([]);
   const [selectedSupplierIndex, setSelectedSupplierIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -67,35 +61,24 @@ export default function AdminCompanyOrdersCatalogPage() {
     setLoading(true);
     setStatus(null);
     try {
-      const response = await fetch("/api/company-orders/catalog", {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error(
-          await readErrorMessage(
-            response,
-            "Unable to load company order catalog.",
-          ),
-        );
-      }
-      const payload = (await response.json()) as {
-        suppliers?: CompanyOrderCatalogSupplier[];
-      };
-      const suppliers = Array.isArray(payload.suppliers) ? payload.suppliers : [];
+      const suppliers = await getCompanyOrderCatalog();
       setCatalog(suppliers);
       setStatusKind("success");
-      setStatus("Catalog loaded.");
+      setStatus(tr("Catalog loaded.", "Catálogo cargado."));
     } catch (error) {
       setStatusKind("danger");
       setStatus(
         error instanceof Error
           ? error.message
-          : "Unable to load company order catalog.",
+          : tr(
+              "Unable to load company order catalog.",
+              "No se pudo cargar el catálogo de órdenes de empresa.",
+            ),
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tr]);
 
   useEffect(() => {
     void loadCatalog();
@@ -115,7 +98,9 @@ export default function AdminCompanyOrdersCatalogPage() {
 
   const updateSupplier = (
     supplierIndex: number,
-    updater: (supplier: CompanyOrderCatalogSupplier) => CompanyOrderCatalogSupplier,
+    updater: (
+      supplier: CompanyOrderCatalogSupplier,
+    ) => CompanyOrderCatalogSupplier,
   ) => {
     setCatalog((previous) =>
       previous.map((supplier, index) =>
@@ -136,13 +121,20 @@ export default function AdminCompanyOrdersCatalogPage() {
       ];
     });
     setStatusKind("info");
-    setStatus("New supplier added. Set supplier name and items, then save.");
+    setStatus(
+      tr(
+        "New supplier added. Set supplier name and items, then save.",
+        "Proveedor nuevo agregado. Define el nombre y artículos, luego guarda.",
+      ),
+    );
   };
 
   const handleRemoveSupplier = (supplierIndex: number) => {
-    setCatalog((previous) => previous.filter((_, index) => index !== supplierIndex));
+    setCatalog((previous) =>
+      previous.filter((_, index) => index !== supplierIndex),
+    );
     setStatusKind("info");
-    setStatus("Supplier removed.");
+    setStatus(tr("Supplier removed.", "Proveedor eliminado."));
   };
 
   const handleAddItem = (supplierIndex: number) => {
@@ -164,7 +156,10 @@ export default function AdminCompanyOrdersCatalogPage() {
     if (!suppliers.length) {
       setStatusKind("danger");
       setStatus(
-        "Add at least one supplier with at least one valid item (Spanish and English names).",
+        tr(
+          "Add at least one supplier with at least one valid item (Spanish and English names).",
+          "Agrega al menos un proveedor con un artículo válido (nombre en español e inglés).",
+        ),
       );
       return;
     }
@@ -172,32 +167,21 @@ export default function AdminCompanyOrdersCatalogPage() {
     setSaving(true);
     setStatus(null);
     try {
-      const response = await fetch("/api/company-orders/catalog", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ suppliers }),
-      });
-      if (!response.ok) {
-        throw new Error(
-          await readErrorMessage(response, "Unable to save company order catalog."),
-        );
-      }
-
-      const payload = (await response.json()) as {
-        suppliers?: CompanyOrderCatalogSupplier[];
-      };
-      const nextCatalog = Array.isArray(payload.suppliers)
-        ? payload.suppliers
-        : suppliers;
+      const nextCatalog = await updateCompanyOrderCatalog({ suppliers });
       setCatalog(nextCatalog);
       setStatusKind("success");
-      setStatus("Catalog saved successfully.");
+      setStatus(
+        tr("Catalog saved successfully.", "Catálogo guardado correctamente."),
+      );
     } catch (error) {
       setStatusKind("danger");
       setStatus(
         error instanceof Error
           ? error.message
-          : "Unable to save company order catalog.",
+          : tr(
+              "Unable to save company order catalog.",
+              "No se pudo guardar el catálogo de órdenes de empresa.",
+            ),
       );
     } finally {
       setSaving(false);
@@ -207,16 +191,22 @@ export default function AdminCompanyOrdersCatalogPage() {
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>Company Order Catalog</h1>
+        <h1>{tr("Company Order Catalog", "Catálogo de Órdenes de Empresa")}</h1>
         <p className="text-muted mb-0">
-          Manage suppliers and items used by Company Orders.
+          {tr(
+            "Manage suppliers and items used by Company Orders.",
+            "Administra proveedores y artículos usados por Órdenes de Empresa.",
+          )}
         </p>
       </div>
 
       <div className="admin-card d-flex flex-column gap-3">
         <div className="d-flex flex-wrap gap-2 justify-content-between align-items-center">
           <div className="text-muted small">
-            Use this screen to add, edit, or remove supplier items.
+            {tr(
+              "Use this screen to add, edit, or remove supplier items.",
+              "Usa esta pantalla para agregar, editar o eliminar artículos de proveedores.",
+            )}
           </div>
           <div className="d-flex flex-wrap gap-2">
             <button
@@ -227,7 +217,7 @@ export default function AdminCompanyOrdersCatalogPage() {
               }}
               disabled={loading || saving}
             >
-              Refresh
+              {tr("Refresh", "Actualizar")}
             </button>
             <button
               type="button"
@@ -235,7 +225,7 @@ export default function AdminCompanyOrdersCatalogPage() {
               onClick={handleAddSupplier}
               disabled={loading || saving}
             >
-              Add Supplier
+              {tr("Add Supplier", "Agregar Proveedor")}
             </button>
             <button
               type="button"
@@ -243,7 +233,9 @@ export default function AdminCompanyOrdersCatalogPage() {
               onClick={handleSave}
               disabled={loading || saving}
             >
-              {saving ? "Saving..." : "Save Catalog"}
+              {saving
+                ? tr("Saving...", "Guardando...")
+                : tr("Save Catalog", "Guardar Catálogo")}
             </button>
           </div>
         </div>
@@ -255,14 +247,19 @@ export default function AdminCompanyOrdersCatalogPage() {
         ) : null}
 
         {loading ? (
-          <div className="text-muted">Loading catalog...</div>
+          <div className="text-muted">
+            {tr("Loading catalog...", "Cargando catálogo...")}
+          </div>
         ) : (
           <div className="row g-3">
             <div className="col-12 col-lg-4">
               <div className="list-group">
                 {catalog.length === 0 ? (
                   <div className="text-muted small border rounded p-3">
-                    No suppliers yet. Add a supplier to start.
+                    {tr(
+                      "No suppliers yet. Add a supplier to start.",
+                      "Aún no hay proveedores. Agrega uno para comenzar.",
+                    )}
                   </div>
                 ) : (
                   catalog.map((supplier, index) => (
@@ -274,7 +271,10 @@ export default function AdminCompanyOrdersCatalogPage() {
                       }`}
                       onClick={() => setSelectedSupplierIndex(index)}
                     >
-                      <span>{supplier.supplierName || `Supplier ${index + 1}`}</span>
+                      <span>
+                        {supplier.supplierName ||
+                          tr(`Supplier ${index + 1}`, `Proveedor ${index + 1}`)}
+                      </span>
                       <span className="badge text-bg-secondary rounded-pill">
                         {supplier.items.length}
                       </span>
@@ -286,12 +286,19 @@ export default function AdminCompanyOrdersCatalogPage() {
 
             <div className="col-12 col-lg-8">
               {!selectedSupplier ? (
-                <div className="text-muted">Select a supplier to edit.</div>
+                <div className="text-muted">
+                  {tr(
+                    "Select a supplier to edit.",
+                    "Selecciona un proveedor para editar.",
+                  )}
+                </div>
               ) : (
                 <div className="d-flex flex-column gap-3">
                   <div className="row g-2 align-items-end">
                     <div className="col-12 col-md-8">
-                      <label className="form-label">Supplier Name</label>
+                      <label className="form-label">
+                        {tr("Supplier Name", "Nombre del Proveedor")}
+                      </label>
                       <input
                         className="form-control"
                         value={selectedSupplier.supplierName}
@@ -301,7 +308,10 @@ export default function AdminCompanyOrdersCatalogPage() {
                             supplierName: event.target.value,
                           }))
                         }
-                        placeholder="Supplier name"
+                        placeholder={tr(
+                          "Supplier name",
+                          "Nombre del proveedor",
+                        )}
                       />
                     </div>
                     <div className="col-6 col-md-2">
@@ -310,16 +320,18 @@ export default function AdminCompanyOrdersCatalogPage() {
                         className="btn btn-outline-primary w-100"
                         onClick={() => handleAddItem(selectedSupplierIndex)}
                       >
-                        Add Item
+                        {tr("Add Item", "Agregar Artículo")}
                       </button>
                     </div>
                     <div className="col-6 col-md-2">
                       <button
                         type="button"
                         className="btn btn-outline-danger w-100"
-                        onClick={() => handleRemoveSupplier(selectedSupplierIndex)}
+                        onClick={() =>
+                          handleRemoveSupplier(selectedSupplierIndex)
+                        }
                       >
-                        Delete
+                        {tr("Delete", "Eliminar")}
                       </button>
                     </div>
                   </div>
@@ -327,7 +339,10 @@ export default function AdminCompanyOrdersCatalogPage() {
                   <div className="d-flex flex-column gap-2">
                     {selectedSupplier.items.length === 0 ? (
                       <div className="text-muted small border rounded p-3">
-                        No items for this supplier. Add an item.
+                        {tr(
+                          "No items for this supplier. Add an item.",
+                          "No hay artículos para este proveedor. Agrega un artículo.",
+                        )}
                       </div>
                     ) : (
                       selectedSupplier.items.map((item, itemIndex) => (
@@ -338,42 +353,56 @@ export default function AdminCompanyOrdersCatalogPage() {
                           <div className="row g-2 align-items-end">
                             <div className="col-12 col-md-5">
                               <label className="form-label mb-1">
-                                Spanish Name
+                                {tr("Spanish Name", "Nombre en Español")}
                               </label>
                               <input
                                 className="form-control"
                                 value={item.nameEs}
                                 onChange={(event) =>
-                                  updateSupplier(selectedSupplierIndex, (supplier) => ({
-                                    ...supplier,
-                                    items: supplier.items.map((entry, index) =>
-                                      index === itemIndex
-                                        ? { ...entry, nameEs: event.target.value }
-                                        : entry,
-                                    ),
-                                  }))
+                                  updateSupplier(
+                                    selectedSupplierIndex,
+                                    (supplier) => ({
+                                      ...supplier,
+                                      items: supplier.items.map(
+                                        (entry, index) =>
+                                          index === itemIndex
+                                            ? {
+                                                ...entry,
+                                                nameEs: event.target.value,
+                                              }
+                                            : entry,
+                                      ),
+                                    }),
+                                  )
                                 }
-                                placeholder="nameEs"
+                                placeholder={tr("nameEs", "nombreEs")}
                               />
                             </div>
                             <div className="col-12 col-md-5">
                               <label className="form-label mb-1">
-                                English Name
+                                {tr("English Name", "Nombre en Inglés")}
                               </label>
                               <input
                                 className="form-control"
                                 value={item.nameEn}
                                 onChange={(event) =>
-                                  updateSupplier(selectedSupplierIndex, (supplier) => ({
-                                    ...supplier,
-                                    items: supplier.items.map((entry, index) =>
-                                      index === itemIndex
-                                        ? { ...entry, nameEn: event.target.value }
-                                        : entry,
-                                    ),
-                                  }))
+                                  updateSupplier(
+                                    selectedSupplierIndex,
+                                    (supplier) => ({
+                                      ...supplier,
+                                      items: supplier.items.map(
+                                        (entry, index) =>
+                                          index === itemIndex
+                                            ? {
+                                                ...entry,
+                                                nameEn: event.target.value,
+                                              }
+                                            : entry,
+                                      ),
+                                    }),
+                                  )
                                 }
-                                placeholder="nameEn"
+                                placeholder={tr("nameEn", "nombreEn")}
                               />
                             </div>
                             <div className="col-12 col-md-2">
@@ -381,10 +410,13 @@ export default function AdminCompanyOrdersCatalogPage() {
                                 type="button"
                                 className="btn btn-outline-danger w-100"
                                 onClick={() =>
-                                  handleRemoveItem(selectedSupplierIndex, itemIndex)
+                                  handleRemoveItem(
+                                    selectedSupplierIndex,
+                                    itemIndex,
+                                  )
                                 }
                               >
-                                Remove
+                                {tr("Remove", "Quitar")}
                               </button>
                             </div>
                           </div>

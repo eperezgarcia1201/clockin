@@ -1,6 +1,6 @@
 {
   "name": "mobile-admin",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -13,6 +13,7 @@
     "build:android": "eas build --platform android"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
     "expo": "~54.0.33",
     "expo-constants": "~18.0.8",
     "expo-dev-client": "^6.0.20",

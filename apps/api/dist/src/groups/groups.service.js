@@ -20,15 +20,21 @@ let GroupsService = class GroupsService {
         this.prisma = prisma;
         this.tenancy = tenancy;
     }
-    async list(authUser) {
-        const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    async list(authUser, officeId) {
+        const { tenant } = await this.tenancy.requireFeature(authUser, 'groups');
+        const scopedOfficeId = officeId?.trim() || undefined;
         return this.prisma.group.findMany({
-            where: { tenantId: tenant.id },
-            orderBy: { name: "asc" },
+            where: scopedOfficeId
+                ? {
+                    tenantId: tenant.id,
+                    OR: [{ officeId: scopedOfficeId }, { officeId: null }],
+                }
+                : { tenantId: tenant.id },
+            orderBy: { name: 'asc' },
         });
     }
     async create(authUser, dto) {
-        const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+        const { tenant } = await this.tenancy.requireFeature(authUser, 'groups');
         return this.prisma.group.create({
             data: {
                 tenantId: tenant.id,

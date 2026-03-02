@@ -13,20 +13,20 @@ exports.AuthOrDevGuard = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const passport_1 = require("@nestjs/passport");
-let AuthOrDevGuard = class AuthOrDevGuard extends (0, passport_1.AuthGuard)("jwt") {
+let AuthOrDevGuard = class AuthOrDevGuard extends (0, passport_1.AuthGuard)('jwt') {
     config;
     constructor(config) {
         super();
         this.config = config;
     }
     async canActivate(context) {
-        const allowDev = this.config.get("DEV_BYPASS_AUTH") === "true";
+        const allowDev = this.config.get('DEV_BYPASS_AUTH') === 'true';
         if (allowDev) {
             const request = context.switchToHttp().getRequest();
-            const userId = request.headers["x-dev-user-id"] || "dev-user";
-            const tenantId = request.headers["x-dev-tenant-id"] || "dev-tenant";
-            const email = request.headers["x-dev-email"] || "dev@clockin.local";
-            const name = request.headers["x-dev-name"] || "Dev User";
+            const userId = request.headers['x-dev-user-id'] || 'dev-user';
+            const tenantId = request.headers['x-dev-tenant-id'] || 'dev-tenant';
+            const email = request.headers['x-dev-email'] || 'dev@clockin.local';
+            const name = request.headers['x-dev-name'] || 'Dev User';
             request.user = {
                 authUserId: userId,
                 tenantExternalId: tenantId,

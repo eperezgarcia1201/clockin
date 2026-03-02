@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { fetchTenantAccountsRequest } from "../../lib/api/owner-tenants";
 import { useUiLanguage } from "../../lib/ui-language";
 
 type TenantFeatures = {
@@ -75,7 +76,7 @@ export default function OwnerDashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch("/api/tenant-accounts", { cache: "no-store" });
+        const response = await fetchTenantAccountsRequest();
         const data = (await response.json()) as TenantsResponse;
         if (!response.ok) {
           throw new Error(

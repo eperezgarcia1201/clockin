@@ -1,33 +1,19 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-
-type EmployeeRow = {
-  id: string;
-  name: string;
-  active: boolean;
-  email?: string;
-  officeId?: string | null;
-  groupId?: string | null;
-  isManager?: boolean;
-  managerPermissions?: string[];
-  isOwnerManager?: boolean;
-  isAdmin?: boolean;
-  isTimeAdmin?: boolean;
-  isReports?: boolean;
-  isServer?: boolean;
-  isKitchenManager?: boolean;
-  deletedAt?: string | null;
-  deletedBy?: string | null;
-  hoursRecordCount?: number;
-  tipRecordCount?: number;
-  scheduleRecordCount?: number;
-  notificationRecordCount?: number;
-};
-
-type Office = { id: string; name: string };
-type Group = { id: string; name: string };
+import { useUiLanguage } from "../../../lib/ui-language";
+import { listGroups } from "../../../lib/api/groups";
+import { listOffices } from "../../../lib/api/offices";
+import {
+  archiveEmployee,
+  deleteEmployeePermanent,
+  listEmployees as listEmployeesApi,
+  restoreEmployee,
+  type EmployeeRow,
+  updateEmployee,
+} from "../../../lib/api/users-admin";
 type ViewMode = "active" | "deleted";
 type PendingAction =
   | { kind: "toggle"; employee: EmployeeRow }
@@ -41,6 +27,8 @@ type PendingAction =
   | null;
 
 export default function UsersSummary() {
+  const lang = useUiLanguage();
+  const tr = (en: string, es: string) => (lang === "es" ? es : en);
   const searchParams = useSearchParams();
   const [viewMode, setViewMode] = useState<ViewMode>("active");
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
@@ -58,21 +46,16 @@ export default function UsersSummary() {
   const [restoringEmployeeId, setRestoringEmployeeId] = useState<string | null>(
     null,
   );
-  const [purgingEmployeeId, setPurgingEmployeeId] = useState<string | null>(null);
+  const [purgingEmployeeId, setPurgingEmployeeId] = useState<string | null>(
+    null,
+  );
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
 
   const loadEmployees = useCallback(async (mode: ViewMode) => {
     try {
-      const response = await fetch(
-        mode === "deleted" ? "/api/employees?scope=deleted" : "/api/employees",
-        { cache: "no-store" },
+      const rows = await listEmployeesApi(
+        mode === "deleted" ? { scope: "deleted" } : undefined,
       );
-      if (!response.ok) {
-        setEmployees([]);
-        return;
-      }
-      const data = (await response.json()) as { employees: EmployeeRow[] };
-      const rows = data.employees || [];
       setEmployees(
         mode === "deleted"
           ? rows.filter((employee) => Boolean(employee.deletedAt))
@@ -89,31 +72,147 @@ export default function UsersSummary() {
 
   useEffect(() => {
     const loadLookups = async () => {
-      const [officesRes, groupsRes] = await Promise.all([
-        fetch("/api/offices"),
-        fetch("/api/groups"),
-      ]);
-      if (officesRes.ok) {
-        const data = (await officesRes.json()) as { offices: Office[] };
-        const map: Record<string, string> = {};
-        data.offices?.forEach((office) => {
-          map[office.id] = office.name;
+      const officesTask = listOffices()
+        .then((offices) => {
+          const map: Record<string, string> = {};
+          offices.forEach((office) => {
+            map[office.id] = office.name;
+          });
+          setOfficeMap(map);
+        })
+        .catch(() => {
+          // Keep current behavior: silently ignore failed loads.
         });
-        setOfficeMap(map);
-      }
-      if (groupsRes.ok) {
-        const data = (await groupsRes.json()) as { groups: Group[] };
-        const map: Record<string, string> = {};
-        data.groups?.forEach((group) => {
-          map[group.id] = group.name;
+
+      const groupsTask = listGroups()
+        .then((groups) => {
+          const map: Record<string, string> = {};
+          groups.forEach((group) => {
+            map[group.id] = group.name;
+          });
+          setGroupMap(map);
+        })
+        .catch(() => {
+          // Keep current behavior: silently ignore failed loads.
         });
-        setGroupMap(map);
-      }
+
+      await Promise.all([officesTask, groupsTask]);
     };
 
-    loadLookups();
+    void loadLookups();
   }, []);
 
+  const fallbackStatus = (en: string, es: string) => tr(en, es);
+
+  const statusFromError = (
+    error: unknown,
+    fallbackEn: string,
+    fallbackEs: string,
+  ) =>
+    (error instanceof Error && error.message) ||
+    fallbackStatus(fallbackEn, fallbackEs);
+
+  const handleToggleDisabled = async (employee: EmployeeRow) => {
+    setStatus(null);
+    setDisablingEmployeeId(employee.id);
+    try {
+      await updateEmployee(employee.id, { disabled: employee.active });
+      setEmployees((prev) =>
+        prev.map((item) =>
+          item.id === employee.id
+            ? { ...item, active: !employee.active }
+            : item,
+        ),
+      );
+      setStatus(
+        employee.active
+          ? tr("User disabled.", "Usuario deshabilitado.")
+          : tr("User enabled.", "Usuario habilitado."),
+      );
+    } catch (error) {
+      setStatus(
+        statusFromError(
+          error,
+          "Unable to update user status.",
+          "No se pudo actualizar el estado del usuario.",
+        ),
+      );
+    } finally {
+      setDisablingEmployeeId(null);
+    }
+  };
+
+  const handleDelete = async (employee: EmployeeRow) => {
+    setStatus(null);
+    setDeletingEmployeeId(employee.id);
+    try {
+      await archiveEmployee(employee.id);
+      setEmployees((prev) => prev.filter((item) => item.id !== employee.id));
+      setStatus(
+        tr(
+          'User moved to "Deleted Users". Records are preserved and can be restored anytime.',
+          'Usuario movido a "Usuarios Eliminados". Los registros se conservan y se pueden restaurar en cualquier momento.',
+        ),
+      );
+    } catch (error) {
+      setStatus(
+        statusFromError(
+          error,
+          "Unable to archive user.",
+          "No se pudo archivar el usuario.",
+        ),
+      );
+    } finally {
+      setDeletingEmployeeId(null);
+    }
+  };
+
+  const handleRestore = async (employee: EmployeeRow) => {
+    setStatus(null);
+    setRestoringEmployeeId(employee.id);
+    try {
+      await restoreEmployee(employee.id);
+      setEmployees((prev) => prev.filter((item) => item.id !== employee.id));
+      setStatus(
+        tr(
+          "User restored to active users.",
+          "Usuario restaurado a usuarios activos.",
+        ),
+      );
+    } catch (error) {
+      setStatus(
+        statusFromError(
+          error,
+          "Unable to restore user.",
+          "No se pudo restaurar el usuario.",
+        ),
+      );
+    } finally {
+      setRestoringEmployeeId(null);
+    }
+  };
+
+  const handlePermanentDelete = async (employee: EmployeeRow) => {
+    setStatus(null);
+    setPurgingEmployeeId(employee.id);
+    try {
+      await deleteEmployeePermanent(employee.id);
+      setEmployees((prev) => prev.filter((item) => item.id !== employee.id));
+      setStatus(
+        tr("User deleted permanently.", "Usuario eliminado permanentemente."),
+      );
+    } catch (error) {
+      setStatus(
+        statusFromError(
+          error,
+          "Unable to delete user permanently.",
+          "No se pudo eliminar el usuario permanentemente.",
+        ),
+      );
+    } finally {
+      setPurgingEmployeeId(null);
+    }
+  };
   useEffect(() => {
     const role = searchParams.get("role") || "";
     setRoleFilter(role);
@@ -142,116 +241,6 @@ export default function UsersSummary() {
     () => employees.filter((employee) => Boolean(employee.deletedAt)),
     [employees],
   );
-
-  const handleToggleDisabled = async (employee: EmployeeRow) => {
-    setStatus(null);
-    setDisablingEmployeeId(employee.id);
-    try {
-      const response = await fetch(`/api/employees/${employee.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disabled: employee.active }),
-      });
-
-      if (response.ok) {
-        setEmployees((prev) =>
-          prev.map((item) =>
-            item.id === employee.id
-              ? { ...item, active: !employee.active }
-              : item,
-          ),
-        );
-        setStatus(employee.active ? "User disabled." : "User enabled.");
-      } else {
-        const data = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          message?: string;
-        };
-        setStatus(data.error || data.message || "Unable to update user status.");
-      }
-    } catch {
-      setStatus("Unable to update user status.");
-    } finally {
-      setDisablingEmployeeId(null);
-    }
-  };
-
-  const handleDelete = async (employee: EmployeeRow) => {
-    setStatus(null);
-    setDeletingEmployeeId(employee.id);
-    try {
-      const response = await fetch(`/api/employees/${employee.id}`, {
-        method: "DELETE",
-      });
-
-      if (response.ok) {
-        setEmployees((prev) => prev.filter((item) => item.id !== employee.id));
-        setStatus(
-          'User moved to "Deleted Users". Records are preserved and can be restored anytime.',
-        );
-      } else {
-        const data = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          message?: string;
-        };
-        setStatus(data.error || data.message || "Unable to archive user.");
-      }
-    } catch {
-      setStatus("Unable to archive user.");
-    } finally {
-      setDeletingEmployeeId(null);
-    }
-  };
-
-  const handleRestore = async (employee: EmployeeRow) => {
-    setStatus(null);
-    setRestoringEmployeeId(employee.id);
-    try {
-      const response = await fetch(`/api/employees/${employee.id}/restore`, {
-        method: "PATCH",
-      });
-      if (response.ok) {
-        setEmployees((prev) => prev.filter((item) => item.id !== employee.id));
-        setStatus("User restored to active users.");
-      } else {
-        const data = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          message?: string;
-        };
-        setStatus(data.error || data.message || "Unable to restore user.");
-      }
-    } catch {
-      setStatus("Unable to restore user.");
-    } finally {
-      setRestoringEmployeeId(null);
-    }
-  };
-
-  const handlePermanentDelete = async (employee: EmployeeRow) => {
-    setStatus(null);
-    setPurgingEmployeeId(employee.id);
-    try {
-      const response = await fetch(`/api/employees/${employee.id}/permanent`, {
-        method: "DELETE",
-      });
-      if (response.ok) {
-        setEmployees((prev) => prev.filter((item) => item.id !== employee.id));
-        setStatus("User deleted permanently.");
-      } else {
-        const data = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          message?: string;
-        };
-        setStatus(
-          data.error || data.message || "Unable to delete user permanently.",
-        );
-      }
-    } catch {
-      setStatus("Unable to delete user permanently.");
-    } finally {
-      setPurgingEmployeeId(null);
-    }
-  };
 
   const onConfirmPendingAction = async () => {
     if (!pendingAction) return;
@@ -299,12 +288,12 @@ export default function UsersSummary() {
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>User Summary</h1>
+        <h1>{tr("User Summary", "Resumen de Usuarios")}</h1>
         {viewMode === "active" && (
           <div className="admin-actions">
-            <a className="btn btn-primary" href="/admin/users/new">
-              Create New User
-            </a>
+            <Link className="btn btn-primary" href="/admin/users/new">
+              {tr("Create New User", "Crear Nuevo Usuario")}
+            </Link>
           </div>
         )}
       </div>
@@ -312,7 +301,14 @@ export default function UsersSummary() {
       <div className="admin-card">
         {status && <div className="alert alert-info">{status}</div>}
         <div className="d-flex align-items-center justify-content-between gap-3 mb-3 flex-wrap">
-          <div className="btn-group" role="group" aria-label="User scope tabs">
+          <div
+            className="btn-group"
+            role="group"
+            aria-label={tr(
+              "User scope tabs",
+              "Pestanas de alcance de usuarios",
+            )}
+          >
             <button
               type="button"
               className={`btn btn-sm ${
@@ -323,7 +319,7 @@ export default function UsersSummary() {
                 setPendingAction(null);
               }}
             >
-              Active Users
+              {tr("Active Users", "Usuarios Activos")}
             </button>
             <button
               type="button"
@@ -335,7 +331,7 @@ export default function UsersSummary() {
                 setPendingAction(null);
               }}
             >
-              Deleted Users
+              {tr("Deleted Users", "Usuarios Eliminados")}
             </button>
           </div>
 
@@ -347,14 +343,16 @@ export default function UsersSummary() {
                 checked={showAdminsOnly}
                 onChange={(event) => setShowAdminsOnly(event.target.checked)}
               />
-              <label htmlFor="adminsOnly">Show admins only</label>
+              <label htmlFor="adminsOnly">
+                {tr("Show admins only", "Mostrar solo admins")}
+              </label>
               {roleFilter && (
-                <a
+                <Link
                   className="btn btn-sm btn-outline-secondary"
                   href="/admin/users"
                 >
-                  Clear role filter
-                </a>
+                  {tr("Clear role filter", "Limpiar filtro de rol")}
+                </Link>
               )}
             </div>
           )}
@@ -362,8 +360,10 @@ export default function UsersSummary() {
 
         {viewMode === "deleted" && (
           <div className="alert alert-warning">
-            Deleted users are archived here. Their records remain in the
-            database until you use "Delete Forever".
+            {tr(
+              'Deleted users are archived here. Their records remain in the database until you use "Delete Forever".',
+              'Los usuarios eliminados se archivan aqui. Sus registros permanecen en la base de datos hasta que uses "Eliminar para siempre".',
+            )}
           </div>
         )}
 
@@ -373,20 +373,20 @@ export default function UsersSummary() {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Username</th>
-                  <th>Email</th>
-                  <th>Location</th>
-                  <th>Group</th>
-                  <th>Manager</th>
-                  <th>Owner</th>
-                  <th>Hours Records</th>
-                  <th>Disabled</th>
-                  <th>Sys Admin</th>
-                  <th>Time Admin</th>
-                  <th>Reports</th>
-                  <th>Server</th>
-                  <th>Kitchen Mgr</th>
-                  <th>Actions</th>
+                  <th>{tr("Username", "Usuario")}</th>
+                  <th>{tr("Email", "Correo")}</th>
+                  <th>{tr("Location", "Ubicacion")}</th>
+                  <th>{tr("Group", "Grupo")}</th>
+                  <th>{tr("Manager", "Manager")}</th>
+                  <th>{tr("Owner", "Owner")}</th>
+                  <th>{tr("Hours Records", "Registros de Horas")}</th>
+                  <th>{tr("Disabled", "Deshabilitado")}</th>
+                  <th>{tr("Sys Admin", "Admin Sistema")}</th>
+                  <th>{tr("Time Admin", "Admin Tiempo")}</th>
+                  <th>{tr("Reports", "Reportes")}</th>
+                  <th>{tr("Server", "Mesero")}</th>
+                  <th>{tr("Kitchen Mgr", "Mgr Cocina")}</th>
+                  <th>{tr("Actions", "Acciones")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -405,28 +405,28 @@ export default function UsersSummary() {
                         ? groupMap[employee.groupId] || "—"
                         : "—"}
                     </td>
-                    <td>{employee.isManager ? "Yes" : ""}</td>
+                    <td>{employee.isManager ? tr("Yes", "Si") : ""}</td>
                     <td>
                       {employee.isManager
                         ? employee.isOwnerManager
-                          ? "Yes"
-                          : "No"
+                          ? tr("Yes", "Si")
+                          : tr("No", "No")
                         : "—"}
                     </td>
                     <td>{employee.hoursRecordCount ?? 0}</td>
-                    <td>{employee.active ? "" : "Yes"}</td>
-                    <td>{employee.isAdmin ? "Yes" : ""}</td>
-                    <td>{employee.isTimeAdmin ? "Yes" : ""}</td>
-                    <td>{employee.isReports ? "Yes" : ""}</td>
-                    <td>{employee.isServer ? "Yes" : ""}</td>
-                    <td>{employee.isKitchenManager ? "Yes" : ""}</td>
+                    <td>{employee.active ? "" : tr("Yes", "Si")}</td>
+                    <td>{employee.isAdmin ? tr("Yes", "Si") : ""}</td>
+                    <td>{employee.isTimeAdmin ? tr("Yes", "Si") : ""}</td>
+                    <td>{employee.isReports ? tr("Yes", "Si") : ""}</td>
+                    <td>{employee.isServer ? tr("Yes", "Si") : ""}</td>
+                    <td>{employee.isKitchenManager ? tr("Yes", "Si") : ""}</td>
                     <td>
                       <div className="d-flex gap-2">
                         <a
                           className="btn btn-sm btn-outline-primary"
                           href={`/admin/users/${employee.id}`}
                         >
-                          Edit
+                          {tr("Edit", "Editar")}
                         </a>
                         <a
                           className="btn btn-sm btn-outline-secondary"
@@ -435,7 +435,7 @@ export default function UsersSummary() {
                             returnTo: "/admin/users",
                           }).toString()}`}
                         >
-                          Edit Times
+                          {tr("Edit Times", "Editar Horas")}
                         </a>
                         <button
                           className="btn btn-sm btn-outline-warning"
@@ -448,10 +448,10 @@ export default function UsersSummary() {
                           }
                         >
                           {disablingEmployeeId === employee.id
-                            ? "Saving..."
+                            ? tr("Saving...", "Guardando...")
                             : employee.active
-                              ? "Disable"
-                              : "Enable"}
+                              ? tr("Disable", "Deshabilitar")
+                              : tr("Enable", "Habilitar")}
                         </button>
                         <button
                           className="btn btn-sm btn-outline-danger"
@@ -468,8 +468,8 @@ export default function UsersSummary() {
                           }
                         >
                           {deletingEmployeeId === employee.id
-                            ? "Deleting..."
-                            : "Delete"}
+                            ? tr("Deleting...", "Eliminando...")
+                            : tr("Delete", "Eliminar")}
                         </button>
                       </div>
                     </td>
@@ -478,7 +478,10 @@ export default function UsersSummary() {
                 {filteredEmployees.length === 0 && (
                   <tr>
                     <td colSpan={14} className="text-center text-muted py-4">
-                      No active users found.
+                      {tr(
+                        "No active users found.",
+                        "No se encontraron usuarios activos.",
+                      )}
                     </td>
                   </tr>
                 )}
@@ -489,12 +492,12 @@ export default function UsersSummary() {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Username</th>
-                  <th>Email</th>
-                  <th>Hours Records</th>
-                  <th>Deleted At</th>
-                  <th>Deleted By</th>
-                  <th>Actions</th>
+                  <th>{tr("Username", "Usuario")}</th>
+                  <th>{tr("Email", "Correo")}</th>
+                  <th>{tr("Hours Records", "Registros de Horas")}</th>
+                  <th>{tr("Deleted At", "Eliminado En")}</th>
+                  <th>{tr("Deleted By", "Eliminado Por")}</th>
+                  <th>{tr("Actions", "Acciones")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -524,8 +527,8 @@ export default function UsersSummary() {
                           }
                         >
                           {restoringEmployeeId === employee.id
-                            ? "Restoring..."
-                            : "Restore"}
+                            ? tr("Restoring...", "Restaurando...")
+                            : tr("Restore", "Restaurar")}
                         </button>
                         <button
                           type="button"
@@ -543,8 +546,8 @@ export default function UsersSummary() {
                           }
                         >
                           {purgingEmployeeId === employee.id
-                            ? "Deleting..."
-                            : "Delete Forever"}
+                            ? tr("Deleting...", "Eliminando...")
+                            : tr("Delete Forever", "Eliminar para Siempre")}
                         </button>
                       </div>
                     </td>
@@ -553,7 +556,7 @@ export default function UsersSummary() {
                 {deletedEmployees.length === 0 && (
                   <tr>
                     <td colSpan={7} className="text-center text-muted py-4">
-                      No deleted users.
+                      {tr("No deleted users.", "No hay usuarios eliminados.")}
                     </td>
                   </tr>
                 )}
@@ -579,38 +582,64 @@ export default function UsersSummary() {
             <h2 className="embedded-confirm-title">
               {pendingAction.kind === "toggle"
                 ? pendingAction.employee.active
-                  ? "Disable User"
-                  : "Enable User"
+                  ? tr("Disable User", "Deshabilitar Usuario")
+                  : tr("Enable User", "Habilitar Usuario")
                 : pendingAction.kind === "soft-delete"
                   ? pendingAction.step === "warning"
-                    ? "Archive User"
-                    : "Final Confirmation"
+                    ? tr("Archive User", "Archivar Usuario")
+                    : tr("Final Confirmation", "Confirmacion Final")
                   : pendingAction.kind === "restore"
-                    ? "Restore User"
+                    ? tr("Restore User", "Restaurar Usuario")
                     : pendingAction.step === "warning"
-                      ? "Delete Forever"
-                      : "Final Permanent Delete"}
+                      ? tr("Delete Forever", "Eliminar para Siempre")
+                      : tr(
+                          "Final Permanent Delete",
+                          "Eliminacion Final Permanente",
+                        )}
             </h2>
             <p className="embedded-confirm-message">
               {pendingAction.kind === "toggle"
                 ? pendingAction.employee.active
-                  ? `Disable user "${pendingAction.employee.name}"? They will not be active in the system.`
-                  : `Enable user "${pendingAction.employee.name}" again?`
+                  ? tr(
+                      `Disable user "${pendingAction.employee.name}"? They will not be active in the system.`,
+                      `Deshabilitar al usuario "${pendingAction.employee.name}"? No estara activo en el sistema.`,
+                    )
+                  : tr(
+                      `Enable user "${pendingAction.employee.name}" again?`,
+                      `Habilitar nuevamente al usuario "${pendingAction.employee.name}"?`,
+                    )
                 : pendingAction.kind === "soft-delete"
                   ? pendingAction.step === "warning"
-                    ? `You are deleting "${pendingAction.employee.name}". This account has ${pendingAction.employee.hoursRecordCount || 0} time records in this database. Labor law requires keeping employee records for 5 years.`
-                    : `Proceed and move "${pendingAction.employee.name}" to Deleted Users? The records will be kept and recoverable.`
+                    ? tr(
+                        `You are deleting "${pendingAction.employee.name}". This account has ${pendingAction.employee.hoursRecordCount || 0} time records in this database. Labor law requires keeping employee records for 5 years.`,
+                        `Estas eliminando a "${pendingAction.employee.name}". Esta cuenta tiene ${pendingAction.employee.hoursRecordCount || 0} registros de tiempo en esta base de datos. La ley laboral exige mantener los registros de empleados por 5 anos.`,
+                      )
+                    : tr(
+                        `Proceed and move "${pendingAction.employee.name}" to Deleted Users? The records will be kept and recoverable.`,
+                        `Continuar y mover a "${pendingAction.employee.name}" a Usuarios Eliminados? Los registros se conservaran y podran recuperarse.`,
+                      )
                   : pendingAction.kind === "restore"
-                    ? `Restore "${pendingAction.employee.name}" to active users now?`
+                    ? tr(
+                        `Restore "${pendingAction.employee.name}" to active users now?`,
+                        `Restaurar ahora a "${pendingAction.employee.name}" a usuarios activos?`,
+                      )
                     : pendingAction.step === "warning"
-                      ? `You are about to permanently delete "${pendingAction.employee.name}" from Deleted Users. This removes all associated records forever.`
-                      : `Final check: permanently delete "${pendingAction.employee.name}" forever? This cannot be undone.`}
+                      ? tr(
+                          `You are about to permanently delete "${pendingAction.employee.name}" from Deleted Users. This removes all associated records forever.`,
+                          `Estas por eliminar permanentemente a "${pendingAction.employee.name}" de Usuarios Eliminados. Esto elimina todos los registros asociados para siempre.`,
+                        )
+                      : tr(
+                          `Final check: permanently delete "${pendingAction.employee.name}" forever? This cannot be undone.`,
+                          `Ultima verificacion: eliminar permanentemente a "${pendingAction.employee.name}" para siempre? Esto no se puede deshacer.`,
+                        )}
             </p>
             {pendingAction.kind === "soft-delete" &&
               pendingAction.step === "warning" && (
                 <p className="embedded-confirm-message text-danger mb-0">
-                  Continue only if you intentionally want this user moved to
-                  Deleted Users. You can restore later.
+                  {tr(
+                    "Continue only if you intentionally want this user moved to Deleted Users. You can restore later.",
+                    'Continua solo si realmente deseas mover este usuario a "Usuarios Eliminados". Puedes restaurarlo despues.',
+                  )}
                 </p>
               )}
             <div className="embedded-confirm-actions">
@@ -620,7 +649,7 @@ export default function UsersSummary() {
                 disabled={pendingActionBusy}
                 onClick={() => setPendingAction(null)}
               >
-                Cancel
+                {tr("Cancel", "Cancelar")}
               </button>
               <button
                 type="button"
@@ -641,18 +670,18 @@ export default function UsersSummary() {
                 onClick={() => void onConfirmPendingAction()}
               >
                 {pendingActionBusy
-                  ? "Processing..."
+                  ? tr("Processing...", "Procesando...")
                   : pendingAction.kind === "soft-delete"
                     ? pendingAction.step === "warning"
-                      ? "Continue"
-                      : "Yes, Move To Deleted"
+                      ? tr("Continue", "Continuar")
+                      : tr("Yes, Move To Deleted", "Si, mover a Eliminados")
                     : pendingAction.kind === "permanent-delete"
                       ? pendingAction.step === "warning"
-                        ? "Continue"
-                        : "Delete Forever"
+                        ? tr("Continue", "Continuar")
+                        : tr("Delete Forever", "Eliminar para Siempre")
                       : pendingAction.kind === "restore"
-                        ? "Restore User"
-                        : "Confirm"}
+                        ? tr("Restore User", "Restaurar Usuario")
+                        : tr("Confirm", "Confirmar")}
               </button>
             </div>
           </div>

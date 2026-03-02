@@ -38,10 +38,10 @@
       "lastName": "perez",
       "email": "elmerperez1201@gmail.com",
       "phone": "+19204616022",
-      "demoUsername": "elmer",
-      "demoPassword": "0909",
+      "demoUsername": "reviewemployee",
+      "demoPassword": "1111",
       "demoRequired": true,
-      "notes": "this is going to be the app only to clock in and clock out "
+      "notes": "Demo tenant: apple-review-demo (ClockIn Apple Review Demo). Employee test users (username + PIN): reviewemployee/1111, reviewserver/2222, reviewmanager/3333. All users have full weekly schedules (00:00-23:59, Sun-Sat). Use reviewemployee for standard IN/OUT flow."
     }
   }
 }

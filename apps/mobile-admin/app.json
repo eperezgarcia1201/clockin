@@ -2,7 +2,7 @@
   "expo": {
     "name": "ClockIn Admin Plus",
     "slug": "clockin-admin",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "entryPoint": "./index.ts",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -27,6 +27,7 @@
     "android": {
       "icon": "./assets/icon.png",
       "package": "com.websys.clockinadminplus",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

@@ -25,6 +25,7 @@
     "android": {
       "icon": "./assets/icon.png",
       "package": "com.websys.clockinemployee",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
       "permissions": [
         "ACCESS_FINE_LOCATION",

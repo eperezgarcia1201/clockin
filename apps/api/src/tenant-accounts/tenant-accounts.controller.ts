@@ -35,10 +35,7 @@ export class TenantAccountsController {
   }
 
   @Get(':id/deletion-report')
-  async deletionReport(
-    @Req() req: RequestWithUser,
-    @Param('id') id: string,
-  ) {
+  async deletionReport(@Req() req: RequestWithUser, @Param('id') id: string) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -69,7 +66,7 @@ export class TenantAccountsController {
     const file = await this.tenantAccounts.exportTenantData(
       req.user,
       id,
-      normalizedFormat as 'summary' | 'excel' | 'sql',
+      normalizedFormat,
     );
     response.setHeader('Content-Type', file.contentType);
     response.setHeader(

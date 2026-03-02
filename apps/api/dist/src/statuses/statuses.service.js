@@ -21,19 +21,19 @@ let StatusesService = class StatusesService {
         this.tenancy = tenancy;
     }
     async list(authUser) {
-        const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+        const { tenant } = await this.tenancy.requireFeature(authUser, 'statuses');
         return this.prisma.punchStatus.findMany({
             where: { tenantId: tenant.id },
-            orderBy: { label: "asc" },
+            orderBy: { label: 'asc' },
         });
     }
     async create(authUser, dto) {
-        const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+        const { tenant } = await this.tenancy.requireFeature(authUser, 'statuses');
         return this.prisma.punchStatus.create({
             data: {
                 tenantId: tenant.id,
                 label: dto.label,
-                color: dto.color || "#2a4d8f",
+                color: dto.color || '#2a4d8f',
                 isIn: dto.isIn ?? false,
             },
         });

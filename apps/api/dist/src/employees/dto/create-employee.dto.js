@@ -12,6 +12,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CreateEmployeeDto = void 0;
 const class_validator_1 = require("class-validator");
 const class_transformer_1 = require("class-transformer");
+const manager_features_1 = require("../../tenancy/manager-features");
 class CreateEmployeeDto {
     fullName;
     displayName;
@@ -20,9 +21,14 @@ class CreateEmployeeDto {
     hourlyRate;
     officeId;
     groupId;
+    isManager;
+    isOwnerManager;
+    managerPermissions;
     isAdmin;
     isTimeAdmin;
     isReports;
+    isServer;
+    isKitchenManager;
     disabled;
 }
 exports.CreateEmployeeDto = CreateEmployeeDto;
@@ -71,6 +77,23 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
+], CreateEmployeeDto.prototype, "isManager", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateEmployeeDto.prototype, "isOwnerManager", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsArray)(),
+    (0, class_validator_1.IsString)({ each: true }),
+    (0, class_validator_1.IsIn)(manager_features_1.MANAGER_FEATURE_KEYS, { each: true }),
+    __metadata("design:type", Array)
+], CreateEmployeeDto.prototype, "managerPermissions", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
 ], CreateEmployeeDto.prototype, "isAdmin", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
@@ -82,6 +105,16 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateEmployeeDto.prototype, "isReports", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateEmployeeDto.prototype, "isServer", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateEmployeeDto.prototype, "isKitchenManager", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsBoolean)(),

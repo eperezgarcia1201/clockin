@@ -1,6 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  fetchEmployeesRequest,
+  fetchPayrollReportRequest,
+} from "../../../lib/api/reports-core";
+import {
+  useUiCopy,
+  useUiLanguage,
+  type UiLang,
+} from "../../../lib/ui-language";
 
 type Employee = { id: string; name: string };
 
@@ -38,9 +47,92 @@ type PayrollResponse = {
   employees: EmployeePayroll[];
 };
 
+const copy: Record<UiLang, Record<string, string>> = {
+  en: {
+    title: "Payroll Summary",
+    period: "Period",
+    weekly: "Weekly",
+    biweekly: "Bi-Weekly",
+    monthly: "Monthly",
+    custom: "Custom",
+    from: "From",
+    to: "To",
+    employee: "Employee",
+    allEmployees: "All Employees",
+    roundMinutes: "Round Minutes",
+    doNotRound: "Do not round",
+    nearest5: "Nearest 5 minutes",
+    nearest10: "Nearest 10 minutes",
+    nearest15: "Nearest 15 minutes",
+    nearest20: "Nearest 20 minutes",
+    nearest30: "Nearest 30 minutes",
+    weekStartsOn: "Week Starts On",
+    sunday: "Sunday",
+    monday: "Monday",
+    overtimeHours: "Overtime (hrs)",
+    running: "Running...",
+    runReport: "Run Report",
+    exportExcel: "Export Excel",
+    noPayrollData: "No payroll data for this range.",
+    hourlyRate: "Hourly Rate",
+    totalHours: "Total Hours",
+    hoursAbbr: "hrs",
+    totalPay: "Total Pay",
+    editTimes: "Edit Times",
+    weekStart: "Week Start",
+    total: "Total",
+    regular: "Regular",
+    overtime: "Overtime",
+    decimal: "Decimal",
+    regularPay: "Regular Pay",
+    overtimePay: "OT Pay",
+  },
+  es: {
+    title: "Resumen de Nómina",
+    period: "Periodo",
+    weekly: "Semanal",
+    biweekly: "Quincenal",
+    monthly: "Mensual",
+    custom: "Personalizado",
+    from: "Desde",
+    to: "Hasta",
+    employee: "Empleado",
+    allEmployees: "Todos los empleados",
+    roundMinutes: "Redondeo de minutos",
+    doNotRound: "No redondear",
+    nearest5: "Cada 5 minutos",
+    nearest10: "Cada 10 minutos",
+    nearest15: "Cada 15 minutos",
+    nearest20: "Cada 20 minutos",
+    nearest30: "Cada 30 minutos",
+    weekStartsOn: "Inicio de semana",
+    sunday: "Domingo",
+    monday: "Lunes",
+    overtimeHours: "Horas extra (hrs)",
+    running: "Ejecutando...",
+    runReport: "Generar reporte",
+    exportExcel: "Exportar Excel",
+    noPayrollData: "No hay datos de nómina en este rango.",
+    hourlyRate: "Pago por hora",
+    totalHours: "Horas totales",
+    hoursAbbr: "hrs",
+    totalPay: "Pago total",
+    editTimes: "Editar horas",
+    weekStart: "Inicio de semana",
+    total: "Total",
+    regular: "Regular",
+    overtime: "Extra",
+    decimal: "Decimal",
+    regularPay: "Pago regular",
+    overtimePay: "Pago extra",
+  },
+};
+
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 
 export default function PayrollReport() {
+  const lang = useUiLanguage();
+  const t = useUiCopy(copy, lang);
   const today = useMemo(() => new Date(), []);
   const thirtyDaysAgo = useMemo(() => {
     const date = new Date();
@@ -93,7 +185,7 @@ export default function PayrollReport() {
 
   useEffect(() => {
     const loadEmployees = async () => {
-      const response = await fetch("/api/employees", { cache: "no-store" });
+      const response = await fetchEmployeesRequest();
       if (!response.ok) return;
       const data = (await response.json()) as { employees: Employee[] };
       setEmployees(data.employees || []);
@@ -121,12 +213,7 @@ export default function PayrollReport() {
         params.set("employeeId", employeeId);
       }
 
-      const response = await fetch(
-        `/api/reports/payroll?${params.toString()}`,
-        {
-          cache: "no-store",
-        },
-      );
+      const response = await fetchPayrollReportRequest(params);
       if (!response.ok) {
         throw new Error("Unable to load report");
       }
@@ -147,26 +234,26 @@ export default function PayrollReport() {
   return (
     <div className="reports-page">
       <div className="admin-header">
-        <h1>Payroll Summary</h1>
+        <h1>{t.title}</h1>
       </div>
 
       <div className="admin-card report-filters">
         <div className="row g-3 align-items-end">
           <div className="col-12 col-md-3">
-            <label className="form-label">Period</label>
+            <label className="form-label">{t.period}</label>
             <select
               className="form-select"
               value={period}
               onChange={(event) => setPeriod(event.target.value)}
             >
-              <option value="weekly">Weekly</option>
-              <option value="biweekly">Bi-Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="custom">Custom</option>
+              <option value="weekly">{t.weekly}</option>
+              <option value="biweekly">{t.biweekly}</option>
+              <option value="monthly">{t.monthly}</option>
+              <option value="custom">{t.custom}</option>
             </select>
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">From</label>
+            <label className="form-label">{t.from}</label>
             <input
               className="form-control"
               type="date"
@@ -178,7 +265,7 @@ export default function PayrollReport() {
             />
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">To</label>
+            <label className="form-label">{t.to}</label>
             <input
               className="form-control"
               type="date"
@@ -190,13 +277,13 @@ export default function PayrollReport() {
             />
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Employee</label>
+            <label className="form-label">{t.employee}</label>
             <select
               className="form-select"
               value={employeeId}
               onChange={(event) => setEmployeeId(event.target.value)}
             >
-              <option value="">All Employees</option>
+              <option value="">{t.allEmployees}</option>
               {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.name}
@@ -205,33 +292,33 @@ export default function PayrollReport() {
             </select>
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Round Minutes</label>
+            <label className="form-label">{t.roundMinutes}</label>
             <select
               className="form-select"
               value={round}
               onChange={(event) => setRound(event.target.value)}
             >
-              <option value="0">Do not round</option>
-              <option value="5">Nearest 5 minutes</option>
-              <option value="10">Nearest 10 minutes</option>
-              <option value="15">Nearest 15 minutes</option>
-              <option value="20">Nearest 20 minutes</option>
-              <option value="30">Nearest 30 minutes</option>
+              <option value="0">{t.doNotRound}</option>
+              <option value="5">{t.nearest5}</option>
+              <option value="10">{t.nearest10}</option>
+              <option value="15">{t.nearest15}</option>
+              <option value="20">{t.nearest20}</option>
+              <option value="30">{t.nearest30}</option>
             </select>
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Week Starts On</label>
+            <label className="form-label">{t.weekStartsOn}</label>
             <select
               className="form-select"
               value={weekStartsOn}
               onChange={(event) => setWeekStartsOn(event.target.value)}
             >
-              <option value="0">Sunday</option>
-              <option value="1">Monday</option>
+              <option value="0">{t.sunday}</option>
+              <option value="1">{t.monday}</option>
             </select>
           </div>
           <div className="col-12 col-md-3">
-            <label className="form-label">Overtime (hrs)</label>
+            <label className="form-label">{t.overtimeHours}</label>
             <input
               className="form-control"
               type="number"
@@ -243,7 +330,7 @@ export default function PayrollReport() {
           </div>
           <div className="col-12 d-flex gap-2 flex-wrap">
             <button className="btn btn-primary" onClick={runReport}>
-              {loading ? "Running..." : "Run Report"}
+              {loading ? t.running : t.runReport}
             </button>
             <a
               className="btn btn-outline-secondary"
@@ -257,7 +344,7 @@ export default function PayrollReport() {
                 ...(employeeId ? { employeeId } : {}),
               }).toString()}`}
             >
-              Export Excel
+              {t.exportExcel}
             </a>
           </div>
         </div>
@@ -265,7 +352,7 @@ export default function PayrollReport() {
 
       {report && report.employees.length === 0 && (
         <div className="admin-card">
-          <p className="mb-0">No payroll data for this range.</p>
+          <p className="mb-0">{t.noPayrollData}</p>
         </div>
       )}
 
@@ -280,20 +367,20 @@ export default function PayrollReport() {
                     {report.range.from} → {report.range.to}
                   </div>
                   <div className="report-rate">
-                    Hourly Rate: {currency.format(employee.hourlyRate || 0)}
+                    {t.hourlyRate}: {currency.format(employee.hourlyRate || 0)}
                   </div>
                 </div>
                 <div className="report-card-meta">
                   <div className="report-total">
-                    <div className="report-total-label">Total Hours</div>
+                    <div className="report-total-label">{t.totalHours}</div>
                     <div className="report-total-value">
                       {employee.totalHoursFormatted}
                       <span className="report-total-decimal">
-                        {employee.totalHoursDecimal.toFixed(2)} hrs
+                        {employee.totalHoursDecimal.toFixed(2)} {t.hoursAbbr}
                       </span>
                     </div>
                     <div className="report-total-pay">
-                      Total Pay: {currency.format(employee.totalPay || 0)}
+                      {t.totalPay}: {currency.format(employee.totalPay || 0)}
                     </div>
                   </div>
                   <a
@@ -305,7 +392,7 @@ export default function PayrollReport() {
                       returnTo: "/reports/payroll",
                     }).toString()}`}
                   >
-                    Edit Times
+                    {t.editTimes}
                     <i className="fa-solid fa-chevron-right" aria-hidden="true" />
                   </a>
                 </div>
@@ -314,14 +401,14 @@ export default function PayrollReport() {
                 <table className="report-table">
                   <thead>
                     <tr>
-                      <th>Week Start</th>
-                      <th>Total</th>
-                      <th>Regular</th>
-                      <th>Overtime</th>
-                      <th>Decimal</th>
-                      <th>Regular Pay</th>
-                      <th>OT Pay</th>
-                      <th>Total Pay</th>
+                      <th>{t.weekStart}</th>
+                      <th>{t.total}</th>
+                      <th>{t.regular}</th>
+                      <th>{t.overtime}</th>
+                      <th>{t.decimal}</th>
+                      <th>{t.regularPay}</th>
+                      <th>{t.overtimePay}</th>
+                      <th>{t.totalPay}</th>
                     </tr>
                   </thead>
                   <tbody>

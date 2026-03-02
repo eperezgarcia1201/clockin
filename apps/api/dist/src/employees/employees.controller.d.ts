@@ -1,11 +1,11 @@
-import type { RequestWithUser } from "../auth/auth.types";
-import { CreateEmployeeDto } from "./dto/create-employee.dto";
-import { UpdateEmployeeDto } from "./dto/update-employee.dto";
-import { EmployeesService } from "./employees.service";
+import type { RequestWithUser } from '../auth/auth.types';
+import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { EmployeesService } from './employees.service';
 export declare class EmployeesController {
     private readonly employees;
     constructor(employees: EmployeesService);
-    list(req: RequestWithUser): Promise<{
+    list(req: RequestWithUser, scope?: string, officeId?: string): Promise<{
         employees: {
             id: string;
             name: string;
@@ -14,12 +14,23 @@ export declare class EmployeesController {
             hourlyRate: number | null;
             officeId: string | null;
             groupId: string | null;
+            isManager: boolean;
+            managerPermissions: ("locations" | "groups" | "statuses" | "notifications" | "companyOrders" | "settings" | "tips" | "schedules" | "dashboard" | "users" | "manageMultiLocation" | "reports" | "salesCapture" | "timeEdits")[];
             isAdmin: boolean;
             isTimeAdmin: boolean;
             isReports: boolean;
+            isServer: boolean;
+            isKitchenManager: boolean;
+            isOwnerManager: boolean;
+            deletedAt: string | null;
+            deletedBy: string | null;
+            hoursRecordCount: number;
+            tipRecordCount: number;
+            scheduleRecordCount: number;
+            notificationRecordCount: number;
         }[];
     }>;
-    summary(req: RequestWithUser): Promise<{
+    summary(req: RequestWithUser, officeId?: string): Promise<{
         total: number;
         admins: number;
         timeAdmins: number;
@@ -40,7 +51,13 @@ export declare class EmployeesController {
         pinHash: string | null;
         hourlyRate: number | null;
         groupId: string | null;
+        isManager: boolean;
+        managerPermissions: string[];
+        isServer: boolean;
+        isKitchenManager: boolean;
         disabled: boolean;
+        deletedAt: Date | null;
+        deletedBy: string | null;
     }>;
     getOne(req: RequestWithUser, id: string): Promise<{
         id: string;
@@ -50,9 +67,14 @@ export declare class EmployeesController {
         hourlyRate: number | null;
         officeId: string | null;
         groupId: string | null;
+        isManager: boolean;
+        managerPermissions: ("locations" | "groups" | "statuses" | "notifications" | "companyOrders" | "settings" | "tips" | "schedules" | "dashboard" | "users" | "manageMultiLocation" | "reports" | "salesCapture" | "timeEdits")[];
         isAdmin: boolean;
         isTimeAdmin: boolean;
         isReports: boolean;
+        isServer: boolean;
+        isKitchenManager: boolean;
+        isOwnerManager: boolean;
         disabled: boolean;
     }>;
     update(req: RequestWithUser, id: string, dto: UpdateEmployeeDto): Promise<{
@@ -70,23 +92,41 @@ export declare class EmployeesController {
         pinHash: string | null;
         hourlyRate: number | null;
         groupId: string | null;
+        isManager: boolean;
+        managerPermissions: string[];
+        isServer: boolean;
+        isKitchenManager: boolean;
         disabled: boolean;
+        deletedAt: Date | null;
+        deletedBy: string | null;
     }>;
     remove(req: RequestWithUser, id: string): Promise<{
+        ok: boolean;
         id: string;
-        createdAt: Date;
-        updatedAt: Date;
-        email: string | null;
-        tenantId: string;
-        officeId: string | null;
-        isReports: boolean;
-        isTimeAdmin: boolean;
-        isAdmin: boolean;
-        fullName: string;
-        displayName: string | null;
-        pinHash: string | null;
-        hourlyRate: number | null;
-        groupId: string | null;
-        disabled: boolean;
+        deletedAt: string;
+        deletedBy: string;
+        softDeleted: boolean;
+    }>;
+    restore(req: RequestWithUser, id: string): Promise<{
+        ok: boolean;
+        id: string;
+        restored: boolean;
+    }>;
+    removePermanently(req: RequestWithUser, id: string): Promise<{
+        ok: boolean;
+        id: string;
+        permanentlyDeleted: boolean;
+        deletedRecords?: undefined;
+    } | {
+        ok: boolean;
+        id: string;
+        permanentlyDeleted: boolean;
+        deletedRecords: {
+            punches: number;
+            tips: number;
+            notifications: number;
+            schedules: number;
+            scheduleOverrideRequests: number;
+        };
     }>;
 }

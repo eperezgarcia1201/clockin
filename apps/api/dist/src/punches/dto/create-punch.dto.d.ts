@@ -1,4 +1,4 @@
-import { PunchType } from "@prisma/client";
+import { PunchType } from '@prisma/client';
 export declare class CreatePunchDto {
     type: PunchType;
     occurredAt?: string;

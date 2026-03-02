@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getSettings, updateSettings } from "../../../lib/api/settings-admin";
 
 type Settings = {
   timezone: string;
@@ -154,11 +155,7 @@ export default function SystemSettings() {
   useEffect(() => {
     const load = async () => {
       try {
-        const response = await fetch("/api/settings", {
-          cache: "no-store",
-        });
-        if (!response.ok) return;
-        const data = (await response.json()) as Partial<Settings>;
+        const data = await getSettings<Settings>();
         setForm((prev) => ({ ...prev, ...data }));
       } catch {
         // ignore
@@ -174,14 +171,10 @@ export default function SystemSettings() {
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     setStatus(null);
-    const response = await fetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    if (response.ok) {
+    try {
+      await updateSettings(form);
       setStatus(t.saved);
-    } else {
+    } catch {
       setStatus(t.saveError);
     }
   };

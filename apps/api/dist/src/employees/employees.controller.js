@@ -23,18 +23,23 @@ let EmployeesController = class EmployeesController {
     constructor(employees) {
         this.employees = employees;
     }
-    async list(req) {
+    async list(req, scope, officeId) {
         if (!req.user) {
             throw new common_1.UnauthorizedException();
         }
-        const employees = await this.employees.listEmployees(req.user);
+        const employees = await this.employees.listEmployees(req.user, {
+            includeDeleted: scope === 'deleted',
+            officeId: officeId?.trim() || undefined,
+        });
         return { employees };
     }
-    async summary(req) {
+    async summary(req, officeId) {
         if (!req.user) {
             throw new common_1.UnauthorizedException();
         }
-        return this.employees.getSummary(req.user);
+        return this.employees.getSummary(req.user, {
+            officeId: officeId?.trim() || undefined,
+        });
     }
     async create(req, dto) {
         if (!req.user) {
@@ -58,22 +63,37 @@ let EmployeesController = class EmployeesController {
         if (!req.user) {
             throw new common_1.UnauthorizedException();
         }
-        return this.employees.deleteEmployee(req.user, id);
+        return this.employees.softDeleteEmployee(req.user, id);
+    }
+    async restore(req, id) {
+        if (!req.user) {
+            throw new common_1.UnauthorizedException();
+        }
+        return this.employees.restoreEmployee(req.user, id);
+    }
+    async removePermanently(req, id) {
+        if (!req.user) {
+            throw new common_1.UnauthorizedException();
+        }
+        return this.employees.deleteEmployeePermanently(req.user, id);
     }
 };
 exports.EmployeesController = EmployeesController;
 __decorate([
     (0, common_1.Get)(),
     __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Query)('scope')),
+    __param(2, (0, common_1.Query)('officeId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", Promise)
 ], EmployeesController.prototype, "list", null);
 __decorate([
-    (0, common_1.Get)("summary"),
+    (0, common_1.Get)('summary'),
     __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Query)('officeId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], EmployeesController.prototype, "summary", null);
 __decorate([
@@ -85,32 +105,48 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], EmployeesController.prototype, "create", null);
 __decorate([
-    (0, common_1.Get)(":id"),
+    (0, common_1.Get)(':id'),
     __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Param)("id")),
+    __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], EmployeesController.prototype, "getOne", null);
 __decorate([
-    (0, common_1.Patch)(":id"),
+    (0, common_1.Patch)(':id'),
     __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Param)("id")),
+    __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String, update_employee_dto_1.UpdateEmployeeDto]),
     __metadata("design:returntype", Promise)
 ], EmployeesController.prototype, "update", null);
 __decorate([
-    (0, common_1.Delete)(":id"),
+    (0, common_1.Delete)(':id'),
     __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Param)("id")),
+    __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], EmployeesController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Patch)(':id/restore'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], EmployeesController.prototype, "restore", null);
+__decorate([
+    (0, common_1.Delete)(':id/permanent'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], EmployeesController.prototype, "removePermanently", null);
 exports.EmployeesController = EmployeesController = __decorate([
-    (0, common_1.Controller)("employees"),
+    (0, common_1.Controller)('employees'),
     (0, common_1.UseGuards)(auth_guard_1.AuthOrDevGuard),
     __metadata("design:paramtypes", [employees_service_1.EmployeesService])
 ], EmployeesController);

@@ -1,25 +1,51 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  useUiCopy,
+  useUiLanguage,
+  type UiLang,
+} from "../../../../lib/ui-language";
+import {
+  listEmployees,
+  type EmployeeRow,
+} from "../../../../lib/api/users-admin";
 
-type EmployeeRow = {
-  id: string;
-  name: string;
-  email?: string;
+const copy: Record<UiLang, Record<string, string>> = {
+  en: {
+    title: "User Search",
+    searchByName: "Search by name",
+    placeholder: "Start typing a name...",
+    name: "Name",
+    email: "Email",
+    empty: "—",
+  },
+  es: {
+    title: "Búsqueda de Usuarios",
+    searchByName: "Buscar por nombre",
+    placeholder: "Comienza a escribir un nombre...",
+    name: "Nombre",
+    email: "Correo",
+    empty: "—",
+  },
 };
 
 export default function UserSearch() {
+  const lang = useUiLanguage();
+  const t = useUiCopy(copy, lang);
   const [query, setQuery] = useState("");
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
 
   useEffect(() => {
     const load = async () => {
-      const response = await fetch("/api/employees", { cache: "no-store" });
-      if (!response.ok) return;
-      const data = (await response.json()) as { employees: EmployeeRow[] };
-      setEmployees(data.employees || []);
+      try {
+        const data = await listEmployees();
+        setEmployees(data);
+      } catch {
+        // Keep current behavior: silently ignore failed loads.
+      }
     };
-    load();
+    void load();
   }, []);
 
   const results = employees.filter((employee) =>
@@ -29,14 +55,14 @@ export default function UserSearch() {
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>User Search</h1>
+        <h1>{t.title}</h1>
       </div>
 
       <div className="admin-card">
-        <label className="form-label">Search by name</label>
+        <label className="form-label">{t.searchByName}</label>
         <input
           className="form-control"
-          placeholder="Start typing a name..."
+          placeholder={t.placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -47,15 +73,15 @@ export default function UserSearch() {
           <table className="table table-striped mb-0">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Email</th>
+                <th>{t.name}</th>
+                <th>{t.email}</th>
               </tr>
             </thead>
             <tbody>
               {results.map((employee) => (
                 <tr key={employee.id}>
                   <td>{employee.name}</td>
-                  <td>{employee.email || "—"}</td>
+                  <td>{employee.email || t.empty}</td>
                 </tr>
               ))}
             </tbody>

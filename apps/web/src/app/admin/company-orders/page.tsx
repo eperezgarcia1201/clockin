@@ -1,43 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-type CompanyOrderCatalogItem = {
-  nameEs: string;
-  nameEn: string;
-};
-
-type CompanyOrderCatalogSupplier = {
-  supplierName: string;
-  items: CompanyOrderCatalogItem[];
-};
-
-type CompanyOrderItem = {
-  id: string;
-  nameEs: string;
-  nameEn: string;
-  quantity: number;
-};
-
-type CompanyOrderRow = {
-  id: string;
-  supplierName: string;
-  supplierNames?: string[];
-  orderDate: string;
-  weekStartDate?: string;
-  weekEndDate?: string;
-  orderLabel?: string;
-  submittedDates?: string[];
-  contributors?: string[];
-  notes: string;
-  officeName: string | null;
-  createdBy: string | null;
-  totalQuantity: number;
-  itemCount: number;
-  items: CompanyOrderItem[];
-  createdAt: string;
-  updatedAt?: string;
-};
+import { useUiLanguage } from "../../../lib/ui-language";
+import {
+  createCompanyOrder,
+  getCompanyOrderCatalog,
+  listCompanyOrders,
+  type CompanyOrderCatalogItem,
+  type CompanyOrderCatalogSupplier,
+  type CompanyOrderRow,
+} from "../../../lib/api/company-orders-admin";
 
 type CartItem = {
   supplierName: string;
@@ -115,14 +87,6 @@ const buildWeekExportHref = (
   return `/api/company-orders/export?${query.toString()}`;
 };
 
-const readErrorMessage = async (response: Response, fallback: string) => {
-  const payload = (await response.json().catch(() => ({}))) as {
-    error?: string;
-    message?: string;
-  };
-  return payload.error || payload.message || fallback;
-};
-
 const supplierDraftItems = (
   supplier: CompanyOrderCatalogSupplier,
   draftQuantities: Record<string, string> | undefined,
@@ -153,6 +117,11 @@ const supplierDraftItems = (
     );
 
 export default function AdminCompanyOrdersPage() {
+  const lang = useUiLanguage();
+  const tr = useCallback(
+    (en: string, es: string) => (lang === "es" ? es : en),
+    [lang],
+  );
   const [catalog, setCatalog] = useState<CompanyOrderCatalogSupplier[]>([]);
   const [selectedSupplier, setSelectedSupplier] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -167,8 +136,9 @@ export default function AdminCompanyOrdersPage() {
   const [exportingFormat, setExportingFormat] = useState<
     "pdf" | "csv" | "excel" | null
   >(null);
-  const [lastSubmittedWeekStart, setLastSubmittedWeekStart] =
-    useState<string>(getCurrentWeekStartDateKey());
+  const [lastSubmittedWeekStart, setLastSubmittedWeekStart] = useState<string>(
+    getCurrentWeekStartDateKey(),
+  );
 
   const supplier = useMemo(
     () =>
@@ -213,27 +183,15 @@ export default function AdminCompanyOrdersPage() {
   );
 
   const selectedUnitTotal = useMemo(
-    () => Number(cartItems.reduce((sum, item) => sum + item.quantity, 0).toFixed(2)),
+    () =>
+      Number(
+        cartItems.reduce((sum, item) => sum + item.quantity, 0).toFixed(2),
+      ),
     [cartItems],
   );
 
   const loadCatalog = useCallback(async () => {
-    const response = await fetch("/api/company-orders/catalog", {
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      throw new Error(
-        await readErrorMessage(
-          response,
-          "Unable to load company order catalog.",
-        ),
-      );
-    }
-
-    const payload = (await response.json()) as {
-      suppliers?: CompanyOrderCatalogSupplier[];
-    };
-    const suppliers = Array.isArray(payload.suppliers) ? payload.suppliers : [];
+    const suppliers = await getCompanyOrderCatalog();
     setCatalog(suppliers);
     setSelectedSupplier((previous) => {
       if (
@@ -247,17 +205,7 @@ export default function AdminCompanyOrdersPage() {
   }, []);
 
   const loadOrders = useCallback(async () => {
-    const response = await fetch("/api/company-orders?limit=40", {
-      cache: "no-store",
-    });
-    if (!response.ok) {
-      throw new Error(
-        await readErrorMessage(response, "Unable to load company orders."),
-      );
-    }
-
-    const payload = (await response.json()) as { orders?: CompanyOrderRow[] };
-    const nextOrders = Array.isArray(payload.orders) ? payload.orders : [];
+    const nextOrders = await listCompanyOrders(40);
     setOrders(nextOrders);
     if (nextOrders[0]?.weekStartDate) {
       setLastSubmittedWeekStart(nextOrders[0].weekStartDate);
@@ -273,12 +221,15 @@ export default function AdminCompanyOrdersPage() {
       setStatus(
         error instanceof Error
           ? error.message
-          : "Unable to load company orders.",
+          : tr(
+              "Unable to load company orders.",
+              "No se pudieron cargar las órdenes de empresa.",
+            ),
       );
     } finally {
       setLoading(false);
     }
-  }, [loadCatalog, loadOrders]);
+  }, [loadCatalog, loadOrders, tr]);
 
   useEffect(() => {
     void loadAll();
@@ -368,7 +319,12 @@ export default function AdminCompanyOrdersPage() {
     );
 
     if (supplierPayloads.length === 0) {
-      setStatus("Add at least one item to the cart.");
+      setStatus(
+        tr(
+          "Add at least one item to the cart.",
+          "Agrega al menos un artículo al carrito.",
+        ),
+      );
       return;
     }
 
@@ -377,23 +333,11 @@ export default function AdminCompanyOrdersPage() {
     try {
       let weekStart = lastSubmittedWeekStart;
       for (const payload of supplierPayloads) {
-        const response = await fetch("/api/company-orders", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            supplierName: payload.supplierName,
-            notes: notes.trim() || undefined,
-            items: payload.items,
-          }),
+        const createdOrder = await createCompanyOrder({
+          supplierName: payload.supplierName,
+          notes: notes.trim() || undefined,
+          items: payload.items,
         });
-        if (!response.ok) {
-          throw new Error(
-            await readErrorMessage(response, "Unable to save company order."),
-          );
-        }
-        const createdOrder = (await response.json().catch(() => ({}))) as {
-          weekStartDate?: string;
-        };
         if (typeof createdOrder.weekStartDate === "string") {
           weekStart = createdOrder.weekStartDate;
         }
@@ -404,14 +348,20 @@ export default function AdminCompanyOrdersPage() {
       setSearchTerm("");
       setNotes("");
       setStatus(
-        `Company order saved for ${supplierPayloads.length} suppliers. Use Download buttons to export.`,
+        tr(
+          `Company order saved for ${supplierPayloads.length} suppliers. Use Download buttons to export.`,
+          `Orden de empresa guardada para ${supplierPayloads.length} proveedores. Usa los botones de descarga para exportar.`,
+        ),
       );
       await loadOrders();
     } catch (error) {
       setStatus(
         error instanceof Error
           ? error.message
-          : "Unable to save company order.",
+          : tr(
+              "Unable to save company order.",
+              "No se pudo guardar la orden de empresa.",
+            ),
       );
     } finally {
       setSaving(false);
@@ -457,8 +407,10 @@ export default function AdminCompanyOrdersPage() {
         <div>
           <h1>Place Order</h1>
           <p className="text-muted mb-0">
-            Build and submit supplier orders from the shared catalog. Orders merge
-            into one weekly purchase order per location.
+            {tr(
+              "Build and submit supplier orders from the shared catalog. Orders merge into one weekly purchase order per location.",
+              "Crea y envía órdenes a proveedores desde el catálogo compartido. Las órdenes se combinan en una sola orden semanal por ubicación.",
+            )}
           </p>
         </div>
         <div className="admin-actions">
@@ -469,7 +421,9 @@ export default function AdminCompanyOrdersPage() {
             }}
             disabled={loading}
           >
-            {loading ? "Refreshing..." : "Refresh Catalog"}
+            {loading
+              ? tr("Refreshing...", "Actualizando...")
+              : tr("Refresh Catalog", "Actualizar Catálogo")}
           </button>
         </div>
       </div>
@@ -478,9 +432,12 @@ export default function AdminCompanyOrdersPage() {
         <div className="col-12 col-xxl-8">
           <div className="admin-card d-flex flex-column gap-3">
             <div>
-              <h2 className="h4 mb-1">Create Order</h2>
+              <h2 className="h4 mb-1">{tr("Create Order", "Crear Orden")}</h2>
               <p className="text-muted mb-0">
-                Select a supplier, search items, and add to cart.
+                {tr(
+                  "Select a supplier, search items, and add to cart.",
+                  "Selecciona un proveedor, busca artículos y agrégalos al carrito.",
+                )}
               </p>
             </div>
 
@@ -500,27 +457,37 @@ export default function AdminCompanyOrdersPage() {
                     onClick={() => setSelectedSupplier(entry.supplierName)}
                   >
                     {entry.supplierName}
-                    {supplierSelectedCount > 0 ? ` (${supplierSelectedCount})` : ""}
+                    {supplierSelectedCount > 0
+                      ? ` (${supplierSelectedCount})`
+                      : ""}
                   </button>
                 );
               })}
             </div>
 
             <div>
-              <label className="form-label">Search Item</label>
+              <label className="form-label">
+                {tr("Search Item", "Buscar Artículo")}
+              </label>
               <input
                 className="form-control"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search items..."
+                placeholder={tr("Search items...", "Buscar artículos...")}
               />
             </div>
 
             {supplier ? (
-              <div className="row g-2" style={{ maxHeight: 560, overflowY: "auto" }}>
+              <div
+                className="row g-2"
+                style={{ maxHeight: 560, overflowY: "auto" }}
+              >
                 {filteredItems.length === 0 ? (
                   <div className="col-12 text-muted">
-                    No items match this supplier/search.
+                    {tr(
+                      "No items match this supplier/search.",
+                      "No hay artículos que coincidan con este proveedor/búsqueda.",
+                    )}
                   </div>
                 ) : (
                   filteredItems.map((item) => {
@@ -533,19 +500,23 @@ export default function AdminCompanyOrdersPage() {
                         <div className="d-flex align-items-center gap-3 border rounded p-2 h-100">
                           <div className="flex-grow-1">
                             <div className="fw-semibold">{item.nameEs}</div>
-                            <div className="text-muted small">{item.nameEn}</div>
+                            <div className="text-muted small">
+                              {item.nameEn}
+                            </div>
                           </div>
                           {quantityInCart > 0 ? (
                             <span className="badge text-bg-secondary">
-                              In cart: {quantityInCart}
+                              {tr("In cart:", "En carrito:")} {quantityInCart}
                             </span>
                           ) : null}
                           <button
                             type="button"
                             className="btn btn-outline-primary btn-sm"
-                            onClick={() => handleAddItem(supplier.supplierName, item)}
+                            onClick={() =>
+                              handleAddItem(supplier.supplierName, item)
+                            }
                           >
-                            Add
+                            {tr("Add", "Agregar")}
                           </button>
                         </div>
                       </div>
@@ -554,22 +525,36 @@ export default function AdminCompanyOrdersPage() {
                 )}
               </div>
             ) : (
-              <div className="text-muted">No supplier catalog is available.</div>
+              <div className="text-muted">
+                {tr(
+                  "No supplier catalog is available.",
+                  "No hay catálogo de proveedores disponible.",
+                )}
+              </div>
             )}
           </div>
         </div>
 
         <div className="col-12 col-xxl-4 d-flex flex-column gap-3">
           <div className="admin-card d-flex flex-column gap-3">
-            <h2 className="h4 mb-0">Order Summary</h2>
+            <h2 className="h4 mb-0">
+              {tr("Order Summary", "Resumen de Orden")}
+            </h2>
             <div className="text-muted small">
-              {selectedSupplierCount} suppliers | {selectedItemCount} items | total qty {selectedUnitTotal}
+              {selectedSupplierCount} {tr("suppliers", "proveedores")} |{" "}
+              {selectedItemCount} {tr("items", "artículos")} |{" "}
+              {tr("total qty", "cantidad total")} {selectedUnitTotal}
             </div>
 
             {cartItems.length === 0 ? (
-              <div className="empty-state">No items added yet.</div>
+              <div className="empty-state">
+                {tr("No items added yet.", "Aún no hay artículos agregados.")}
+              </div>
             ) : (
-              <div className="d-flex flex-column gap-2" style={{ maxHeight: 380, overflowY: "auto" }}>
+              <div
+                className="d-flex flex-column gap-2"
+                style={{ maxHeight: 380, overflowY: "auto" }}
+              >
                 {cartItems.map((item) => (
                   <div
                     key={`cart-${item.supplierName}-${item.key}`}
@@ -577,13 +562,19 @@ export default function AdminCompanyOrdersPage() {
                   >
                     <div className="fw-semibold">{item.nameEs}</div>
                     <div className="text-muted small">{item.nameEn}</div>
-                    <div className="text-muted small">Supplier: {item.supplierName}</div>
+                    <div className="text-muted small">
+                      {tr("Supplier:", "Proveedor:")} {item.supplierName}
+                    </div>
                     <div className="d-flex align-items-center gap-2">
                       <button
                         type="button"
                         className="btn btn-outline-secondary btn-sm"
                         onClick={() =>
-                          handleStepItemQuantity(item.supplierName, item.key, -1)
+                          handleStepItemQuantity(
+                            item.supplierName,
+                            item.key,
+                            -1,
+                          )
                         }
                       >
                         -
@@ -613,9 +604,11 @@ export default function AdminCompanyOrdersPage() {
                       <button
                         type="button"
                         className="btn btn-outline-danger btn-sm ms-auto"
-                        onClick={() => handleRemoveItem(item.supplierName, item.key)}
+                        onClick={() =>
+                          handleRemoveItem(item.supplierName, item.key)
+                        }
                       >
-                        Remove
+                        {tr("Remove", "Quitar")}
                       </button>
                     </div>
                   </div>
@@ -629,21 +622,31 @@ export default function AdminCompanyOrdersPage() {
               disabled={saving}
             >
               {saving
-                ? "Saving..."
-                : `Submit Order (${selectedItemCount})`}
+                ? tr("Saving...", "Guardando...")
+                : tr(
+                    `Submit Order (${selectedItemCount})`,
+                    `Enviar Orden (${selectedItemCount})`,
+                  )}
             </button>
           </div>
 
           <div className="admin-card d-flex flex-column gap-3">
-            <h2 className="h5 mb-0">Order Notes & Comments</h2>
+            <h2 className="h5 mb-0">
+              {tr("Order Notes & Comments", "Notas y Comentarios de la Orden")}
+            </h2>
             <div>
-              <label className="form-label">Notes (optional)</label>
+              <label className="form-label">
+                {tr("Notes (optional)", "Notas (opcional)")}
+              </label>
               <textarea
                 className="form-control"
                 rows={5}
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
-                placeholder="Add any notes or comments for this order..."
+                placeholder={tr(
+                  "Add any notes or comments for this order...",
+                  "Agrega notas o comentarios para esta orden...",
+                )}
               />
             </div>
           </div>
@@ -654,7 +657,9 @@ export default function AdminCompanyOrdersPage() {
 
       <div className="admin-card d-flex flex-column gap-3">
         <div className="d-flex justify-content-between align-items-center gap-2">
-          <h2 className="h5 m-0">Recent Company Orders</h2>
+          <h2 className="h5 m-0">
+            {tr("Recent Company Orders", "Órdenes Recientes de Empresa")}
+          </h2>
           <button
             className="btn btn-outline-secondary btn-sm"
             onClick={() => {
@@ -662,21 +667,25 @@ export default function AdminCompanyOrdersPage() {
             }}
             disabled={loading}
           >
-            Refresh
+            {tr("Refresh", "Actualizar")}
           </button>
         </div>
 
         {orders.length === 0 ? (
-          <div className="empty-state">No company orders yet.</div>
+          <div className="empty-state">
+            {tr("No company orders yet.", "Aún no hay órdenes de empresa.")}
+          </div>
         ) : (
           <div className="d-flex flex-column gap-2">
             {orders.map((order) => (
               <div className="border rounded p-3" key={order.id}>
                 <div className="d-flex flex-column flex-md-row gap-3 align-items-start">
                   <div className="flex-grow-1">
-                    <div className="fw-semibold">Order of the Week</div>
+                    <div className="fw-semibold">
+                      {tr("Order of the Week", "Orden de la Semana")}
+                    </div>
                     <div className="text-muted small">
-                      Suppliers:{" "}
+                      {tr("Suppliers:", "Proveedores:")}{" "}
                       {Array.isArray(order.supplierNames) &&
                       order.supplierNames.length > 0
                         ? order.supplierNames.join(", ")
@@ -686,24 +695,35 @@ export default function AdminCompanyOrdersPage() {
                       <div className="text-muted small">{order.orderLabel}</div>
                     ) : null}
                     <div className="text-muted small">
-                      Created: {formatDateTime(order.createdAt)}
+                      {tr("Created:", "Creada:")}{" "}
+                      {formatDateTime(order.createdAt)}
                     </div>
                     <div className="text-muted small">
-                      Last modified:{" "}
+                      {tr("Last modified:", "Última modificación:")}{" "}
                       {formatDateTime(order.updatedAt || order.orderDate)} |{" "}
-                      {order.itemCount} items | {order.totalQuantity}
+                      {order.itemCount} {tr("items", "artículos")} |{" "}
+                      {order.totalQuantity}
                     </div>
                     <div className="fw-semibold small text-primary-emphasis">
-                      Restaurant: {order.officeName || "All locations"}
-                      {order.createdBy ? ` | by ${order.createdBy}` : ""}
+                      {tr("Restaurant:", "Ubicación:")}{" "}
+                      {order.officeName ||
+                        tr("All locations", "Todas las ubicaciones")}
+                      {order.createdBy
+                        ? lang === "es"
+                          ? ` | por ${order.createdBy}`
+                          : ` | by ${order.createdBy}`
+                        : ""}
                     </div>
                     {Array.isArray(order.contributors) &&
                     order.contributors.length > 0 ? (
                       <div className="text-muted small">
-                        Contributors: {order.contributors.join(", ")}
+                        {tr("Contributors:", "Contribuyentes:")}{" "}
+                        {order.contributors.join(", ")}
                       </div>
                     ) : null}
-                    {order.notes ? <div className="mt-2">{order.notes}</div> : null}
+                    {order.notes ? (
+                      <div className="mt-2">{order.notes}</div>
+                    ) : null}
                   </div>
 
                   <div
@@ -716,7 +736,7 @@ export default function AdminCompanyOrdersPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      Download Order PDF
+                      {tr("Download Order PDF", "Descargar PDF de la Orden")}
                     </a>
                     <a
                       className="btn btn-outline-secondary btn-sm text-nowrap"
@@ -724,7 +744,7 @@ export default function AdminCompanyOrdersPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      Download Week CSV
+                      {tr("Download Week CSV", "Descargar CSV Semanal")}
                     </a>
                     <a
                       className="btn btn-outline-secondary btn-sm text-nowrap"
@@ -732,7 +752,7 @@ export default function AdminCompanyOrdersPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      Download Week Excel
+                      {tr("Download Week Excel", "Descargar Excel Semanal")}
                     </a>
                   </div>
                 </div>

@@ -117,7 +117,10 @@ export class EmployeePunchesService {
         tenant.id,
         employee.id,
       );
-      if (ownerClockExempt || this.shouldBypassScheduleOverrideForEmployee(employee)) {
+      if (
+        ownerClockExempt ||
+        this.shouldBypassScheduleOverrideForEmployee(employee)
+      ) {
       } else {
         scheduleOverrideRequestId = await this.enforceScheduleWithOverride(
           tenant.id,
@@ -747,7 +750,9 @@ export class EmployeePunchesService {
     const workDate = this.toLocalDateKey(now, timeZone);
     const weekStartDate = this.getWeekStartDateKey(workDate, 1);
     const weekEndDate = this.shiftDateKey(weekStartDate, 6);
-    const lookbackStart = new Date(now.getTime() - AUTO_OUT_LOOKBACK_DAYS * DAY_MS);
+    const lookbackStart = new Date(
+      now.getTime() - AUTO_OUT_LOOKBACK_DAYS * DAY_MS,
+    );
 
     const latestPunches = await this.prisma.employeePunch.findMany({
       where: { tenantId },

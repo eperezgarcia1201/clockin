@@ -1,10 +1,43 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  useUiCopy,
+  useUiLanguage,
+  type UiLang,
+} from "../../../../lib/ui-language";
+import {
+  createGroup,
+  listOffices,
+  type Office,
+} from "../../../../lib/api/groups";
 
-type Office = { id: string; name: string };
+const copy: Record<UiLang, Record<string, string>> = {
+  en: {
+    title: "Create New Group",
+    created: "Group created successfully.",
+    createFailed: "Unable to create group.",
+    groupName: "Group Name",
+    location: "Location",
+    selectLocation: "Select location",
+    createGroup: "Create Group",
+    cancel: "Cancel",
+  },
+  es: {
+    title: "Crear Nuevo Grupo",
+    created: "Grupo creado correctamente.",
+    createFailed: "No se pudo crear el grupo.",
+    groupName: "Nombre del Grupo",
+    location: "Ubicación",
+    selectLocation: "Seleccionar ubicación",
+    createGroup: "Crear Grupo",
+    cancel: "Cancelar",
+  },
+};
 
 export default function CreateGroup() {
+  const lang = useUiLanguage();
+  const t = useUiCopy(copy, lang);
   const [name, setName] = useState("");
   const [officeId, setOfficeId] = useState("");
   const [offices, setOffices] = useState<Office[]>([]);
@@ -12,10 +45,12 @@ export default function CreateGroup() {
 
   useEffect(() => {
     const load = async () => {
-      const response = await fetch("/api/offices", { cache: "no-store" });
-      if (!response.ok) return;
-      const data = (await response.json()) as { offices: Office[] };
-      setOffices(data.offices || []);
+      try {
+        const data = await listOffices();
+        setOffices(data);
+      } catch {
+        // Keep current behavior: silently ignore failed loads.
+      }
     };
     load();
   }, []);
@@ -23,31 +58,27 @@ export default function CreateGroup() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setStatus(null);
-    const response = await fetch("/api/groups", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, officeId: officeId || undefined }),
-    });
-    if (response.ok) {
-      setStatus("Group created successfully.");
+    try {
+      await createGroup({ name, officeId: officeId || undefined });
+      setStatus(t.created);
       setName("");
       setOfficeId("");
-    } else {
-      setStatus("Unable to create group.");
+    } catch {
+      setStatus(t.createFailed);
     }
   };
 
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>Create New Group</h1>
+        <h1>{t.title}</h1>
       </div>
 
       <div className="admin-card">
         {status && <div className="alert alert-info">{status}</div>}
         <form onSubmit={submit} className="row g-3">
           <div className="col-12 col-md-6">
-            <label className="form-label">Group Name</label>
+            <label className="form-label">{t.groupName}</label>
             <input
               className="form-control"
               value={name}
@@ -56,13 +87,13 @@ export default function CreateGroup() {
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">Location</label>
+            <label className="form-label">{t.location}</label>
             <select
               className="form-select"
               value={officeId}
               onChange={(e) => setOfficeId(e.target.value)}
             >
-              <option value="">Select location</option>
+              <option value="">{t.selectLocation}</option>
               {offices.map((office) => (
                 <option key={office.id} value={office.id}>
                   {office.name}
@@ -72,10 +103,10 @@ export default function CreateGroup() {
           </div>
           <div className="col-12 d-flex gap-2">
             <button className="btn btn-primary" type="submit">
-              Create Group
+              {t.createGroup}
             </button>
             <a className="btn btn-outline-secondary" href="/admin/groups">
-              Cancel
+              {t.cancel}
             </a>
           </div>
         </form>

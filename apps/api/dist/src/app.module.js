@@ -23,6 +23,14 @@ const reports_module_1 = require("./reports/reports.module");
 const statuses_module_1 = require("./statuses/statuses.module");
 const tenancy_module_1 = require("./tenancy/tenancy.module");
 const settings_module_1 = require("./settings/settings.module");
+const notifications_module_1 = require("./notifications/notifications.module");
+const admin_devices_module_1 = require("./admin-devices/admin-devices.module");
+const employee_schedules_module_1 = require("./employee-schedules/employee-schedules.module");
+const tenant_accounts_module_1 = require("./tenant-accounts/tenant-accounts.module");
+const tenant_directory_module_1 = require("./tenant-directory/tenant-directory.module");
+const employee_tips_module_1 = require("./employee-tips/employee-tips.module");
+const company_orders_module_1 = require("./company-orders/company-orders.module");
+const liquor_inventory_module_1 = require("./liquor-inventory/liquor-inventory.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -42,6 +50,14 @@ exports.AppModule = AppModule = __decorate([
             statuses_module_1.StatusesModule,
             reports_module_1.ReportsModule,
             settings_module_1.SettingsModule,
+            notifications_module_1.NotificationsModule,
+            admin_devices_module_1.AdminDevicesModule,
+            employee_schedules_module_1.EmployeeSchedulesModule,
+            tenant_accounts_module_1.TenantAccountsModule,
+            tenant_directory_module_1.TenantDirectoryModule,
+            employee_tips_module_1.EmployeeTipsModule,
+            company_orders_module_1.CompanyOrdersModule,
+            liquor_inventory_module_1.LiquorInventoryModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

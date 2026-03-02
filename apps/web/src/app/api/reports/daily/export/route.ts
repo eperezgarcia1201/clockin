@@ -8,6 +8,26 @@ import {
 
 export const runtime = "nodejs";
 
+type DailyReportDay = {
+  date?: string;
+  firstIn?: string;
+  lastOut?: string;
+  hoursFormatted?: string;
+  hoursDecimal?: number;
+};
+
+type DailyReportEmployee = {
+  name?: string;
+  days?: DailyReportDay[];
+  totalHoursFormatted?: string;
+  totalHoursDecimal?: number;
+};
+
+type DailyReportResponse = {
+  range?: { from?: string; to?: string };
+  employees?: DailyReportEmployee[];
+};
+
 export async function GET(request: Request) {
   const query = await scopedQueryFromRequest(request);
   const response = await clockinFetch(withQuery("/reports/daily", query));
@@ -15,7 +35,7 @@ export async function GET(request: Request) {
     const error = await response.json().catch(() => ({}));
     return new Response(JSON.stringify(error), { status: response.status });
   }
-  const data = await response.json();
+  const data = (await response.json()) as DailyReportResponse;
   const company = await getCompanyExportProfile();
 
   return excelResponse("daily-report.xlsx", (workbook) => {
@@ -38,28 +58,28 @@ export async function GET(request: Request) {
       { header: "Decimal", key: "decimal", width: 10 },
     ];
 
-    data.employees?.forEach((employee: any) => {
-      employee.days?.forEach((day: any) => {
+    data.employees?.forEach((employee) => {
+      employee.days?.forEach((day) => {
         sheet.addRow({
-          employee: employee.name,
-          date: day.date,
+          employee: employee.name || "",
+          date: day.date || "",
           firstIn: day.firstIn
             ? new Date(day.firstIn).toLocaleTimeString()
             : "",
           lastOut: day.lastOut
             ? new Date(day.lastOut).toLocaleTimeString()
             : "",
-          hours: day.hoursFormatted,
-          decimal: day.hoursDecimal,
+          hours: day.hoursFormatted || "",
+          decimal: day.hoursDecimal ?? "",
         });
       });
       sheet.addRow({
-        employee: `${employee.name} TOTAL`,
+        employee: `${employee.name || ""} TOTAL`,
         date: "",
         firstIn: "",
         lastOut: "",
-        hours: employee.totalHoursFormatted,
-        decimal: employee.totalHoursDecimal,
+        hours: employee.totalHoursFormatted || "",
+        decimal: employee.totalHoursDecimal ?? "",
       });
       sheet.addRow({});
     });

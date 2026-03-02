@@ -1,6 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  createSalesExpenseRequest,
+  createSalesReportRequest,
+  fetchSalesAccessRequest,
+  fetchSalesReportRequest,
+  fetchSalesSettingsRequest,
+  uploadSalesExpenseReceiptRequest,
+} from "../../../lib/api/reports-sales";
 
 type SettingsResponse = {
   reportsEnabled?: boolean;
@@ -554,7 +562,7 @@ export default function SalesReportPage() {
 
   const loadFeature = async () => {
     try {
-      const response = await fetch("/api/settings", { cache: "no-store" });
+      const response = await fetchSalesSettingsRequest();
       if (!response.ok) {
         setFeatureEnabled(false);
         setFeatureStatus(t.unableLoadTenantSettings);
@@ -585,7 +593,7 @@ export default function SalesReportPage() {
 
   const loadAccess = async () => {
     try {
-      const response = await fetch("/api/access/me", { cache: "no-store" });
+      const response = await fetchSalesAccessRequest();
       if (!response.ok) {
         setCanModifyLockedDates(false);
         return;
@@ -608,9 +616,7 @@ export default function SalesReportPage() {
     setStatus(null);
     try {
       const params = new URLSearchParams({ from, to });
-      const response = await fetch(`/api/reports/sales?${params.toString()}`, {
-        cache: "no-store",
-      });
+      const response = await fetchSalesReportRequest(params);
 
       const data = (await response.json()) as SalesReportResponse & {
         error?: string;
@@ -727,22 +733,18 @@ export default function SalesReportPage() {
 
     setSaving(true);
     try {
-      const response = await fetch("/api/reports/sales", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: canModifyLockedDates
-            ? reportDate
-            : formatDateInTimeZone(new Date(), tenantTimezone),
-          foodSales: parsedFood,
-          liquorSales: parsedLiquor,
-          cashPayments: 0,
-          bankDepositBatch: bankDepositBatch.trim() || undefined,
-          checkPayments: 0,
-          creditCardPayments: 0,
-          otherPayments: 0,
-          notes: notes.trim() || undefined,
-        }),
+      const response = await createSalesReportRequest({
+        date: canModifyLockedDates
+          ? reportDate
+          : formatDateInTimeZone(new Date(), tenantTimezone),
+        foodSales: parsedFood,
+        liquorSales: parsedLiquor,
+        cashPayments: 0,
+        bankDepositBatch: bankDepositBatch.trim() || undefined,
+        checkPayments: 0,
+        creditCardPayments: 0,
+        otherPayments: 0,
+        notes: notes.trim() || undefined,
       });
 
       const data = (await response.json()) as { error?: string };
@@ -806,25 +808,21 @@ export default function SalesReportPage() {
 
     setExpenseSaving(true);
     try {
-      const response = await fetch("/api/reports/sales/expenses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: expenseDate,
-          companyName: expenseCompanyName.trim(),
-          paymentMethod: expensePaymentMethod,
-          amount: parsedAmount,
-          invoiceNumber: expenseInvoiceNumber.trim(),
-          checkNumber:
-            expensePaymentMethod === "CHECK"
-              ? expenseCheckNumber.trim()
-              : undefined,
-          payToCompany:
-            expensePaymentMethod === "CHECK"
-              ? expensePayToCompany.trim()
-              : undefined,
-          notes: expenseNotes.trim() || undefined,
-        }),
+      const response = await createSalesExpenseRequest({
+        date: expenseDate,
+        companyName: expenseCompanyName.trim(),
+        paymentMethod: expensePaymentMethod,
+        amount: parsedAmount,
+        invoiceNumber: expenseInvoiceNumber.trim(),
+        checkNumber:
+          expensePaymentMethod === "CHECK"
+            ? expenseCheckNumber.trim()
+            : undefined,
+        payToCompany:
+          expensePaymentMethod === "CHECK"
+            ? expensePayToCompany.trim()
+            : undefined,
+        notes: expenseNotes.trim() || undefined,
       });
 
       const data = (await response.json()) as {
@@ -843,12 +841,9 @@ export default function SalesReportPage() {
         const formData = new FormData();
         formData.append("file", expenseReceiptFile);
 
-        const uploadResponse = await fetch(
-          `/api/reports/sales/expenses/${encodeURIComponent(data.expense.id)}/receipt`,
-          {
-            method: "POST",
-            body: formData,
-          },
+        const uploadResponse = await uploadSalesExpenseReceiptRequest(
+          data.expense.id,
+          formData,
         );
 
         const uploadData = (await uploadResponse.json()) as { error?: string };

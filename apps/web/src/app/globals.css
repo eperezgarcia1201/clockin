@@ -2248,6 +2248,201 @@ body {
   background: rgba(236, 240, 255, 0.45);
 }
 
+.comparison-page {
+  gap: 16px;
+}
+
+.comparison-period-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.comparison-period-title {
+  font-size: 12px;
+  color: #61729b;
+}
+
+.comparison-period-range {
+  font-size: 15px;
+  font-weight: 700;
+  color: #12203d;
+}
+
+.comparison-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.comparison-metric-card {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid rgba(20, 35, 70, 0.1);
+  padding: 12px 14px;
+  box-shadow: 0 10px 20px rgba(17, 24, 50, 0.1);
+}
+
+.comparison-metric-label {
+  font-size: 12px;
+  color: #61729b;
+}
+
+.comparison-metric-current {
+  font-size: 24px;
+  font-weight: 700;
+  color: #12203d;
+  margin-top: 4px;
+}
+
+.comparison-metric-meta {
+  font-size: 12px;
+  color: #4b5f86;
+  margin-top: 4px;
+}
+
+.comparison-metric-delta {
+  font-size: 12px;
+  font-weight: 600;
+  color: #264d9b;
+  margin-top: 2px;
+}
+
+.comparison-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.comparison-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.comparison-legend-chip--sales {
+  color: #0f5ec7;
+  background: rgba(15, 94, 199, 0.1);
+}
+
+.comparison-legend-chip--expenses {
+  color: #b83c2a;
+  background: rgba(184, 60, 42, 0.12);
+}
+
+.comparison-legend-chip--wages {
+  color: #5d3fb2;
+  background: rgba(93, 63, 178, 0.11);
+}
+
+.comparison-legend-chip--tips {
+  color: #157f59;
+  background: rgba(21, 127, 89, 0.12);
+}
+
+.comparison-legend-chip--hours {
+  color: #2f5a91;
+  background: rgba(47, 90, 145, 0.1);
+}
+
+.comparison-chart-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comparison-chart-row {
+  display: grid;
+  grid-template-columns: 132px 1fr 120px;
+  gap: 10px;
+  align-items: center;
+}
+
+.comparison-chart-label {
+  font-size: 12px;
+  color: #44557e;
+}
+
+.comparison-chart-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.comparison-chart-bar {
+  height: 7px;
+  border-radius: 999px;
+  min-width: 2px;
+}
+
+.comparison-chart-bar--sales {
+  background: #2379ea;
+}
+
+.comparison-chart-bar--expenses {
+  background: #de5f4e;
+}
+
+.comparison-chart-bar--wages {
+  background: #7c5ddd;
+}
+
+.comparison-chart-bar--tips {
+  background: #18a474;
+}
+
+.comparison-chart-bar--hours {
+  background: #3e6fb7;
+}
+
+.comparison-chart-meta {
+  font-size: 12px;
+  text-align: right;
+  color: #203660;
+}
+
+.comparison-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comparison-list-row {
+  border: 1px solid rgba(20, 35, 70, 0.1);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+@media (max-width: 1200px) {
+  .comparison-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .comparison-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-chart-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .comparison-chart-meta {
+    text-align: left;
+  }
+}
+
 .sales-report-page {
   gap: 16px;
 }

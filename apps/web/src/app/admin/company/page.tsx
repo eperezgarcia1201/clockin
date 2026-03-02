@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { getSettings, updateSettings } from "../../../lib/api/settings-admin";
 
 type CompanySettings = {
   companyName: string;
@@ -190,11 +191,7 @@ export default function CompanyInfoPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const response = await fetch("/api/settings", { cache: "no-store" });
-        if (!response.ok) {
-          return;
-        }
-        const data = (await response.json()) as Partial<CompanySettings>;
+        const data = await getSettings<CompanySettings>();
         setForm((prev) => ({ ...prev, ...data }));
       } catch {
         // ignore
@@ -227,15 +224,7 @@ export default function CompanyInfoPage() {
     setSaving(true);
     setStatus(null);
     try {
-      const response = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      if (!response.ok) {
-        setStatus(t.saveError);
-        return;
-      }
+      await updateSettings(form);
       setStatus(t.saved);
     } catch {
       setStatus(t.saveError);

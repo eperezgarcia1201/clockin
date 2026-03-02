@@ -1,39 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-type Employee = { id: string; name: string };
-
-type ScheduleDay = {
-  weekday: number;
-  label: string;
-  enabled: boolean;
-  startTime: string;
-  endTime: string;
-};
-
-type TodayScheduleRow = {
-  employeeId: string;
-  employeeName: string;
-  startTime: string;
-  endTime: string;
-  isServer: boolean;
-  officeId?: string | null;
-  officeName?: string | null;
-  groupId?: string | null;
-  groupName?: string | null;
-  roleLabel: string;
-};
-
-type TodayScheduleResponse = {
-  date: string;
-  weekday: number;
-  weekdayLabel: string;
-  timezone: string;
-  rows: TodayScheduleRow[];
-};
-
-const apiBase = "/api";
+import { useUiLanguage } from "../../../lib/ui-language";
+import {
+  getEmployeeSchedule,
+  getTodaySchedule,
+  listScheduleEmployees,
+  type EmployeeOption as Employee,
+  type ScheduleDay,
+  type TodayScheduleResponse,
+  type TodayScheduleRow,
+  updateEmployeeSchedule,
+} from "../../../lib/api/schedules-admin";
 
 const weekdayLabels = [
   "Sunday",
@@ -115,45 +93,30 @@ const formatDateLabel = (dateKey: string) => {
 };
 
 export default function ManageSchedules() {
+  const lang = useUiLanguage();
+  const tr = useCallback(
+    (en: string, es: string) => (lang === "es" ? es : en),
+    [lang],
+  );
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [days, setDays] = useState<ScheduleDay[]>(buildDefaultDays());
   const [status, setStatus] = useState<string | null>(null);
-  const [todaySchedule, setTodaySchedule] = useState<TodayScheduleResponse | null>(
-    null,
-  );
+  const [todaySchedule, setTodaySchedule] =
+    useState<TodayScheduleResponse | null>(null);
   const [todayStatus, setTodayStatus] = useState<string | null>(null);
   const [selectedRoleTab, setSelectedRoleTab] = useState("All");
 
   const selectedEmployee = useMemo(
-    () => employees.find((employee) => employee.id === selectedEmployeeId) || null,
+    () =>
+      employees.find((employee) => employee.id === selectedEmployeeId) || null,
     [employees, selectedEmployeeId],
   );
 
   const loadTodaySchedule = useCallback(async () => {
     setTodayStatus(null);
     try {
-      const response = await fetch(`${apiBase}/employee-schedules/today`, {
-        cache: "no-store",
-      });
-      const payload = (await response.json().catch(() => null)) as unknown;
-      if (!response.ok) {
-        const message =
-          payload &&
-          typeof payload === "object" &&
-          "error" in payload &&
-          typeof payload.error === "string"
-            ? payload.error
-            : undefined;
-        setTodayStatus(message || "Unable to load today's schedule.");
-        setTodaySchedule(null);
-        return;
-      }
-
-      const parsed =
-        payload && typeof payload === "object"
-          ? (payload as Partial<TodayScheduleResponse>)
-          : {};
+      const parsed = await getTodaySchedule();
       const rows = Array.isArray(parsed.rows)
         ? (parsed.rows as TodayScheduleRow[])
         : [];
@@ -165,30 +128,32 @@ export default function ManageSchedules() {
         rows,
       });
     } catch {
-      setTodayStatus("Failed to fetch today's schedule.");
+      setTodayStatus(
+        tr(
+          "Failed to fetch today's schedule.",
+          "Error al obtener el horario de hoy.",
+        ),
+      );
       setTodaySchedule(null);
     }
-  }, []);
+  }, [tr]);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const response = await fetch(`${apiBase}/employees`, { cache: "no-store" });
-        if (!response.ok) {
-          setStatus("Unable to load employees.");
-          return;
-        }
-        const data = (await response.json()) as { employees: Employee[] };
-        setEmployees(data.employees || []);
-        if (data.employees?.[0]) {
-          setSelectedEmployeeId(data.employees[0].id);
+        const employees = await listScheduleEmployees();
+        setEmployees(employees);
+        if (employees[0]) {
+          setSelectedEmployeeId(employees[0].id);
         }
       } catch {
-        setStatus("Failed to fetch employees.");
+        setStatus(
+          tr("Failed to fetch employees.", "Error al obtener empleados."),
+        );
       }
     };
     load();
-  }, []);
+  }, [tr]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -202,27 +167,21 @@ export default function ManageSchedules() {
     const loadSchedule = async () => {
       setStatus(null);
       try {
-        const response = await fetch(
-          `${apiBase}/employee-schedules?employeeId=${selectedEmployeeId}`,
-          { cache: "no-store" },
-        );
-        if (!response.ok) {
-          setDays(buildDefaultDays());
-          return;
-        }
-        const data = (await response.json()) as { days?: ScheduleDay[] };
-        if (data.days && data.days.length === 7) {
-          setDays(data.days);
+        const days = await getEmployeeSchedule(selectedEmployeeId);
+        if (days.length === 7) {
+          setDays(days);
         } else {
           setDays(buildDefaultDays());
         }
       } catch {
-        setStatus("Failed to fetch schedule.");
+        setStatus(
+          tr("Failed to fetch schedule.", "Error al obtener el horario."),
+        );
         setDays(buildDefaultDays());
       }
     };
     loadSchedule();
-  }, [selectedEmployeeId]);
+  }, [selectedEmployeeId, tr]);
 
   const roleTabs = useMemo(() => {
     const labels = new Set<string>();
@@ -247,19 +206,26 @@ export default function ManageSchedules() {
 
   const todayLabel = useMemo(() => {
     if (!todaySchedule) {
-      return "Who should work today, filtered by role.";
+      return tr(
+        "Who should work today, filtered by role.",
+        "Quién debe trabajar hoy, filtrado por rol.",
+      );
     }
     const dateLabel = todaySchedule.date
       ? formatDateLabel(todaySchedule.date)
-      : "Today";
-    const weekdayLabel = todaySchedule.weekdayLabel || "Today";
+      : tr("Today", "Hoy");
+    const weekdayLabel = todaySchedule.weekdayLabel || tr("Today", "Hoy");
     const timezoneLabel = todaySchedule.timezone
       ? ` (${todaySchedule.timezone})`
       : "";
     return `${weekdayLabel}, ${dateLabel}${timezoneLabel}`;
-  }, [todaySchedule]);
+  }, [todaySchedule, tr]);
 
-  const updateDay = (weekday: number, key: keyof ScheduleDay, value: string | boolean) => {
+  const updateDay = (
+    weekday: number,
+    key: keyof ScheduleDay,
+    value: string | boolean,
+  ) => {
     setDays((prev) =>
       prev.map((day) => {
         if (day.weekday !== weekday) return day;
@@ -282,7 +248,9 @@ export default function ManageSchedules() {
 
   const handleSave = async () => {
     if (!selectedEmployeeId) {
-      setStatus("Select an employee first.");
+      setStatus(
+        tr("Select an employee first.", "Selecciona primero un empleado."),
+      );
       return;
     }
     setStatus(null);
@@ -300,41 +268,35 @@ export default function ManageSchedules() {
           };
         });
 
-      const response = await fetch(
-        `${apiBase}/employee-schedules/${selectedEmployeeId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ days: normalizedDays }),
-        },
+      await updateEmployeeSchedule(selectedEmployeeId, {
+        days: normalizedDays,
+      });
+      setStatus(tr("Schedule saved.", "Horario guardado."));
+      void loadTodaySchedule();
+    } catch (error) {
+      setStatus(
+        (error instanceof Error && error.message) ||
+          tr("Unable to save schedule.", "No se pudo guardar el horario."),
       );
-
-      if (response.ok) {
-        setStatus("Schedule saved.");
-        void loadTodaySchedule();
-      } else {
-        const data = await response.json().catch(() => ({}));
-        setStatus(data?.error || "Unable to save schedule.");
-      }
-    } catch {
-      setStatus("Unable to save schedule.");
     }
   };
 
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>Manage Schedules</h1>
+        <h1>{tr("Manage Schedules", "Gestionar Horarios")}</h1>
         <p className="text-muted">
-          Review who should work today by role, then edit weekly schedules for each
-          employee.
+          {tr(
+            "Review who should work today by role, then edit weekly schedules for each employee.",
+            "Revisa quién debe trabajar hoy por rol y luego edita los horarios semanales de cada empleado.",
+          )}
         </p>
       </div>
 
       <div className="admin-card">
         <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
           <div>
-            <h2 className="h5 mb-1">Today&apos;s Team</h2>
+            <h2 className="h5 mb-1">{tr("Today's Team", "Equipo de Hoy")}</h2>
             <p className="text-muted mb-0">{todayLabel}</p>
           </div>
           <button
@@ -344,11 +306,13 @@ export default function ManageSchedules() {
               void loadTodaySchedule();
             }}
           >
-            Refresh
+            {tr("Refresh", "Actualizar")}
           </button>
         </div>
 
-        {todayStatus && <div className="alert alert-info mt-3 mb-0">{todayStatus}</div>}
+        {todayStatus && (
+          <div className="alert alert-info mt-3 mb-0">{todayStatus}</div>
+        )}
 
         {!todayStatus && (
           <>
@@ -360,8 +324,8 @@ export default function ManageSchedules() {
               {roleTabs.map((role) => (
                 <button
                   key={role}
-                    type="button"
-                    className={`btn btn-sm ${
+                  type="button"
+                  className={`btn btn-sm ${
                     activeRoleTab === role
                       ? "btn-primary"
                       : "btn-outline-primary"
@@ -375,17 +339,20 @@ export default function ManageSchedules() {
 
             {filteredTodayRows.length === 0 ? (
               <p className="text-muted mt-3 mb-0">
-                No employees are scheduled for this role today.
+                {tr(
+                  "No employees are scheduled for this role today.",
+                  "No hay empleados programados para este rol hoy.",
+                )}
               </p>
             ) : (
               <div className="table-responsive mt-3">
                 <table className="table align-middle">
                   <thead>
                     <tr>
-                      <th>Employee</th>
-                      <th>Role</th>
-                      <th>Shift</th>
-                      <th>Location</th>
+                      <th>{tr("Employee", "Empleado")}</th>
+                      <th>{tr("Role", "Rol")}</th>
+                      <th>{tr("Shift", "Turno")}</th>
+                      <th>{tr("Location", "Ubicación")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -394,7 +361,10 @@ export default function ManageSchedules() {
                         <td className="fw-semibold">{row.employeeName}</td>
                         <td>{row.roleLabel}</td>
                         <td>{formatShiftLabel(row.startTime, row.endTime)}</td>
-                        <td>{row.officeName || "All locations"}</td>
+                        <td>
+                          {row.officeName ||
+                            tr("All locations", "Todas las ubicaciones")}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -409,13 +379,17 @@ export default function ManageSchedules() {
         {status && <div className="alert alert-info">{status}</div>}
         <div className="row g-3 align-items-end">
           <div className="col-12 col-lg-6">
-            <label className="form-label">Employee</label>
+            <label className="form-label">{tr("Employee", "Empleado")}</label>
             <select
               className="form-select"
               value={selectedEmployeeId}
               onChange={(e) => setSelectedEmployeeId(e.target.value)}
             >
-              {employees.length === 0 && <option value="">No employees found</option>}
+              {employees.length === 0 && (
+                <option value="">
+                  {tr("No employees found", "No se encontraron empleados")}
+                </option>
+              )}
               {employees.map((employee) => (
                 <option key={employee.id} value={employee.id}>
                   {employee.name}
@@ -429,26 +403,30 @@ export default function ManageSchedules() {
               onClick={handleSave}
               disabled={!selectedEmployee}
             >
-              Save Schedule
+              {tr("Save Schedule", "Guardar Horario")}
             </button>
           </div>
         </div>
 
         {selectedEmployee && (
           <div className="mt-4">
-            <h2 className="h5 mb-3">Weekly Schedule Editor</h2>
+            <h2 className="h5 mb-3">
+              {tr("Weekly Schedule Editor", "Editor de Horario Semanal")}
+            </h2>
             <p className="text-muted">
-              Employees can only clock in on days enabled in their schedule. Disable
-              a day to block punch-ins.
+              {tr(
+                "Employees can only clock in on days enabled in their schedule. Disable a day to block punch-ins.",
+                "Los empleados solo pueden marcar entrada en días habilitados en su horario. Desactiva un día para bloquear marcaciones.",
+              )}
             </p>
             <div className="table-responsive">
               <table className="table align-middle">
                 <thead>
                   <tr>
-                    <th>Day</th>
-                    <th>Enabled</th>
-                    <th>Start</th>
-                    <th>End</th>
+                    <th>{tr("Day", "Día")}</th>
+                    <th>{tr("Enabled", "Habilitado")}</th>
+                    <th>{tr("Start", "Inicio")}</th>
+                    <th>{tr("End", "Fin")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -462,7 +440,11 @@ export default function ManageSchedules() {
                             type="checkbox"
                             checked={day.enabled}
                             onChange={(e) =>
-                              updateDay(day.weekday, "enabled", e.target.checked)
+                              updateDay(
+                                day.weekday,
+                                "enabled",
+                                e.target.checked,
+                              )
                             }
                           />
                         </div>
@@ -499,7 +481,10 @@ export default function ManageSchedules() {
       </div>
       {!selectedEmployee && (
         <p className="text-muted mb-0">
-          Add at least one employee to configure weekly schedules.
+          {tr(
+            "Add at least one employee to configure weekly schedules.",
+            "Agrega al menos un empleado para configurar horarios semanales.",
+          )}
         </p>
       )}
     </div>

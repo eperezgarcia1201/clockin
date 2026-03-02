@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  fetchEmployeesRequest,
+  fetchTipsReportRequest,
+} from "../../../lib/api/reports-core";
 import { useUiLanguage } from "../../../lib/ui-language";
 
 type Lang = "en" | "es";
@@ -118,7 +122,7 @@ export default function TipsReportPage() {
 
   useEffect(() => {
     const loadEmployees = async () => {
-      const response = await fetch("/api/employees", { cache: "no-store" });
+      const response = await fetchEmployeesRequest();
       if (!response.ok) return;
       const data = (await response.json()) as { employees: Employee[] };
       setEmployees(data.employees || []);
@@ -142,9 +146,7 @@ export default function TipsReportPage() {
         params.set("employeeId", employeeId);
       }
 
-      const response = await fetch(`/api/reports/tips?${params.toString()}`, {
-        cache: "no-store",
-      });
+      const response = await fetchTipsReportRequest(params);
       if (!response.ok) {
         throw new Error(t.allGood);
       }

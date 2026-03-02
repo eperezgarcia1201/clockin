@@ -10,6 +10,7 @@ exports.EmployeePunchesModule = void 0;
 const common_1 = require("@nestjs/common");
 const prisma_module_1 = require("../prisma/prisma.module");
 const tenancy_module_1 = require("../tenancy/tenancy.module");
+const notifications_module_1 = require("../notifications/notifications.module");
 const employee_punches_controller_1 = require("./employee-punches.controller");
 const employee_punches_service_1 = require("./employee-punches.service");
 let EmployeePunchesModule = class EmployeePunchesModule {
@@ -17,7 +18,7 @@ let EmployeePunchesModule = class EmployeePunchesModule {
 exports.EmployeePunchesModule = EmployeePunchesModule;
 exports.EmployeePunchesModule = EmployeePunchesModule = __decorate([
     (0, common_1.Module)({
-        imports: [prisma_module_1.PrismaModule, tenancy_module_1.TenancyModule],
+        imports: [prisma_module_1.PrismaModule, tenancy_module_1.TenancyModule, notifications_module_1.NotificationsModule],
         controllers: [employee_punches_controller_1.EmployeePunchesController],
         providers: [employee_punches_service_1.EmployeePunchesService],
     })

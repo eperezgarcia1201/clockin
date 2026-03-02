@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fetchAccessMeRequest } from "../../lib/api/reports-core";
 import { useUiLanguage } from "../../lib/ui-language";
 
 type Lang = "en" | "es";
@@ -21,6 +22,18 @@ const copy: Record<Lang, Record<string, string>> = {
     tipsDesc: "Review cash and credit card tips per server by day.",
     salesTitle: "Daily Sales Report",
     salesDesc: "Managers enter food/liquor sales and payment method totals.",
+    comparisonTitle: "Comparative Analytics",
+    comparisonDesc:
+      "Compare custom date ranges across labor, wages, tips, sales, and expenses.",
+    comparisonEmployeesTitle: "Employee Activity Comparison",
+    comparisonEmployeesDesc:
+      "See who worked more, punch activity levels, and labor changes by custom date range.",
+    comparisonLiquorTitle: "Liquor Consumption Comparison",
+    comparisonLiquorDesc:
+      "Track most consumed liquor items, suppliers, and consumption cost impact by range.",
+    comparisonPayrollTitle: "Payroll Date Comparison",
+    comparisonPayrollDesc:
+      "Find the highest payroll days and compare daily wages and compensation across ranges.",
     liquorControlTitle: "Liquor Control Sheet",
     liquorControlDesc:
       "Track opening/closing liquor inventory, sales, and monthly variance by location.",
@@ -46,6 +59,18 @@ const copy: Record<Lang, Record<string, string>> = {
     tipsDesc: "Revisa propinas en efectivo y tarjeta por mesero y día.",
     salesTitle: "Reporte Diario de Ventas",
     salesDesc: "Gerentes capturan ventas de comida/licor y totales de pago.",
+    comparisonTitle: "Analitica Comparativa",
+    comparisonDesc:
+      "Compara rangos de fecha en horas, nomina, propinas, ventas y gastos.",
+    comparisonEmployeesTitle: "Comparativo Actividad Empleados",
+    comparisonEmployeesDesc:
+      "Mira quien trabajo mas, actividad de punches y cambios de horas por rango de fechas.",
+    comparisonLiquorTitle: "Comparativo Consumo Licor",
+    comparisonLiquorDesc:
+      "Controla que licores se consumen mas, companias y costo por rango de fechas.",
+    comparisonPayrollTitle: "Comparativo Fechas Nomina",
+    comparisonPayrollDesc:
+      "Identifica los dias de mayor nomina y compara salarios diarios entre rangos.",
     liquorControlTitle: "Control Mensual de Licor",
     liquorControlDesc:
       "Controla inventario inicial/final, ventas y variación mensual por ubicación.",
@@ -66,7 +91,7 @@ export default function ReportsHome() {
   useEffect(() => {
     const loadAccess = async () => {
       try {
-        const response = await fetch("/api/access/me", { cache: "no-store" });
+        const response = await fetchAccessMeRequest();
         if (!response.ok) {
           setCanViewLiquorControl(false);
           return;
@@ -166,6 +191,58 @@ export default function ReportsHome() {
           <div className="report-copy">
             <h2>{t.salesTitle}</h2>
             <p>{t.salesDesc}</p>
+          </div>
+          <div className="report-action">
+            <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+          </div>
+        </a>
+
+        <a className="report-tile" href="/reports/comparison">
+          <div className="report-icon report-icon--payroll">
+            <i className="fa-solid fa-chart-line" aria-hidden="true" />
+          </div>
+          <div className="report-copy">
+            <h2>{t.comparisonTitle}</h2>
+            <p>{t.comparisonDesc}</p>
+          </div>
+          <div className="report-action">
+            <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+          </div>
+        </a>
+
+        <a className="report-tile" href="/reports/comparison/employees">
+          <div className="report-icon report-icon--hours">
+            <i className="fa-solid fa-user-clock" aria-hidden="true" />
+          </div>
+          <div className="report-copy">
+            <h2>{t.comparisonEmployeesTitle}</h2>
+            <p>{t.comparisonEmployeesDesc}</p>
+          </div>
+          <div className="report-action">
+            <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+          </div>
+        </a>
+
+        <a className="report-tile" href="/reports/comparison/liquor">
+          <div className="report-icon report-icon--audit">
+            <i className="fa-solid fa-whiskey-glass" aria-hidden="true" />
+          </div>
+          <div className="report-copy">
+            <h2>{t.comparisonLiquorTitle}</h2>
+            <p>{t.comparisonLiquorDesc}</p>
+          </div>
+          <div className="report-action">
+            <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+          </div>
+        </a>
+
+        <a className="report-tile" href="/reports/comparison/payroll">
+          <div className="report-icon report-icon--daily">
+            <i className="fa-solid fa-calendar-day" aria-hidden="true" />
+          </div>
+          <div className="report-copy">
+            <h2>{t.comparisonPayrollTitle}</h2>
+            <p>{t.comparisonPayrollDesc}</p>
           </div>
           <div className="report-action">
             <i className="fa-solid fa-chevron-right" aria-hidden="true" />

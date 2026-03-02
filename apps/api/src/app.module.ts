@@ -21,6 +21,7 @@ import { TenantAccountsModule } from './tenant-accounts/tenant-accounts.module';
 import { TenantDirectoryModule } from './tenant-directory/tenant-directory.module';
 import { EmployeeTipsModule } from './employee-tips/employee-tips.module';
 import { CompanyOrdersModule } from './company-orders/company-orders.module';
+import { LiquorInventoryModule } from './liquor-inventory/liquor-inventory.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { CompanyOrdersModule } from './company-orders/company-orders.module';
     TenantDirectoryModule,
     EmployeeTipsModule,
     CompanyOrdersModule,
+    LiquorInventoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

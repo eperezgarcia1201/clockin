@@ -3,6 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  fetchAdminAccessRequest,
+  fetchAdminOfficesRequest,
+  loginAdminRequest,
+  logoutAdminRequest,
+  sendAdminForgotPasswordRequest,
+} from "../../lib/api/admin-login";
 
 type Theme = "light" | "dark";
 type Lang = "en" | "es";
@@ -175,11 +182,7 @@ export default function AdminLoginPage() {
     setPendingLocationSelection(null);
 
     try {
-      const response = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tenant, username, password }),
-      });
+      const response = await loginAdminRequest({ tenant, username, password });
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -194,8 +197,8 @@ export default function AdminLoginPage() {
 
       try {
         const [accessResponse, officesResponse] = await Promise.all([
-          fetch("/api/access/me", { cache: "no-store" }),
-          fetch("/api/offices", { cache: "no-store" }),
+          fetchAdminAccessRequest(),
+          fetchAdminOfficesRequest(),
         ]);
 
         if (accessResponse.ok && officesResponse.ok) {
@@ -262,10 +265,8 @@ export default function AdminLoginPage() {
     setResetStatus(null);
 
     try {
-      const response = await fetch("/api/admin/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: resetEmail }),
+      const response = await sendAdminForgotPasswordRequest({
+        email: resetEmail,
       });
 
       if (!response.ok) {
@@ -370,7 +371,7 @@ export default function AdminLoginPage() {
                 type="button"
                 className="admin-forgot"
                 onClick={() => {
-                  void fetch("/api/admin/logout", { method: "POST" });
+                  void logoutAdminRequest();
                   setPendingLocationSelection(null);
                   setStatus(null);
                 }}

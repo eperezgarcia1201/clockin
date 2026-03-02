@@ -10,7 +10,7 @@ exports.AppService = void 0;
 const common_1 = require("@nestjs/common");
 let AppService = class AppService {
     getStatus() {
-        return { status: "ok", service: "clockin-api" };
+        return { status: 'ok', service: 'clockin-api' };
     }
 };
 exports.AppService = AppService;

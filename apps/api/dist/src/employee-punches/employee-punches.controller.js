@@ -24,19 +24,15 @@ let EmployeePunchesController = class EmployeePunchesController {
     constructor(punches) {
         this.punches = punches;
     }
-    async create(req, employeeId, dto) {
+    async recent(req, officeId) {
         if (!req.user) {
             throw new common_1.UnauthorizedException();
         }
-        return this.punches.createPunch(req.user, employeeId, dto);
+        return this.punches.getRecent(req.user, {
+            officeId: officeId?.trim() || undefined,
+        });
     }
-    async recent(req) {
-        if (!req.user) {
-            throw new common_1.UnauthorizedException();
-        }
-        return this.punches.getRecent(req.user);
-    }
-    async records(req, employeeId, limit, from, to, tzOffset) {
+    async records(req, employeeId, limit, from, to, tzOffset, officeId) {
         if (!req.user) {
             throw new common_1.UnauthorizedException();
         }
@@ -46,6 +42,7 @@ let EmployeePunchesController = class EmployeePunchesController {
             from,
             to,
             tzOffset: tzOffset ? Number(tzOffset) : undefined,
+            officeId: officeId?.trim() || undefined,
         });
     }
     async createManual(req, dto) {
@@ -53,6 +50,24 @@ let EmployeePunchesController = class EmployeePunchesController {
             throw new common_1.UnauthorizedException();
         }
         return this.punches.createManual(req.user, dto);
+    }
+    async approveScheduleOverride(req, id) {
+        if (!req.user) {
+            throw new common_1.UnauthorizedException();
+        }
+        return this.punches.approveScheduleOverride(req.user, id);
+    }
+    async rejectScheduleOverride(req, id) {
+        if (!req.user) {
+            throw new common_1.UnauthorizedException();
+        }
+        return this.punches.rejectScheduleOverride(req.user, id);
+    }
+    async create(req, employeeId, dto) {
+        if (!req.user) {
+            throw new common_1.UnauthorizedException();
+        }
+        return this.punches.createPunch(req.user, employeeId, dto);
     }
     async updateRecord(req, id, dto) {
         if (!req.user) {
@@ -69,35 +84,28 @@ let EmployeePunchesController = class EmployeePunchesController {
 };
 exports.EmployeePunchesController = EmployeePunchesController;
 __decorate([
-    (0, common_1.Post)(":employeeId"),
+    (0, common_1.Get)('recent'),
     __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Param)("employeeId")),
-    __param(2, (0, common_1.Body)()),
+    __param(1, (0, common_1.Query)('officeId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, create_employee_punch_dto_1.CreateEmployeePunchDto]),
-    __metadata("design:returntype", Promise)
-], EmployeePunchesController.prototype, "create", null);
-__decorate([
-    (0, common_1.Get)("recent"),
-    __param(0, (0, common_1.Req)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], EmployeePunchesController.prototype, "recent", null);
 __decorate([
-    (0, common_1.Get)("records"),
+    (0, common_1.Get)('records'),
     __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Query)("employeeId")),
-    __param(2, (0, common_1.Query)("limit")),
-    __param(3, (0, common_1.Query)("from")),
-    __param(4, (0, common_1.Query)("to")),
-    __param(5, (0, common_1.Query)("tzOffset")),
+    __param(1, (0, common_1.Query)('employeeId')),
+    __param(2, (0, common_1.Query)('limit')),
+    __param(3, (0, common_1.Query)('from')),
+    __param(4, (0, common_1.Query)('to')),
+    __param(5, (0, common_1.Query)('tzOffset')),
+    __param(6, (0, common_1.Query)('officeId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, String, String, String, String]),
+    __metadata("design:paramtypes", [Object, String, String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], EmployeePunchesController.prototype, "records", null);
 __decorate([
-    (0, common_1.Post)("records"),
+    (0, common_1.Post)('records'),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
@@ -105,24 +113,49 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], EmployeePunchesController.prototype, "createManual", null);
 __decorate([
-    (0, common_1.Patch)("records/:id"),
+    (0, common_1.Patch)('schedule-overrides/:id/approve'),
     __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Param)("id")),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], EmployeePunchesController.prototype, "approveScheduleOverride", null);
+__decorate([
+    (0, common_1.Patch)('schedule-overrides/:id/reject'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", Promise)
+], EmployeePunchesController.prototype, "rejectScheduleOverride", null);
+__decorate([
+    (0, common_1.Post)(':employeeId'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('employeeId')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, create_employee_punch_dto_1.CreateEmployeePunchDto]),
+    __metadata("design:returntype", Promise)
+], EmployeePunchesController.prototype, "create", null);
+__decorate([
+    (0, common_1.Patch)('records/:id'),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('id')),
     __param(2, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String, update_employee_punch_dto_1.UpdateEmployeePunchDto]),
     __metadata("design:returntype", Promise)
 ], EmployeePunchesController.prototype, "updateRecord", null);
 __decorate([
-    (0, common_1.Delete)("records/:id"),
+    (0, common_1.Delete)('records/:id'),
     __param(0, (0, common_1.Req)()),
-    __param(1, (0, common_1.Param)("id")),
+    __param(1, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String]),
     __metadata("design:returntype", Promise)
 ], EmployeePunchesController.prototype, "deleteRecord", null);
 exports.EmployeePunchesController = EmployeePunchesController = __decorate([
-    (0, common_1.Controller)("employee-punches"),
+    (0, common_1.Controller)('employee-punches'),
     (0, common_1.UseGuards)(auth_guard_1.AuthOrDevGuard),
     __metadata("design:paramtypes", [employee_punches_service_1.EmployeePunchesService])
 ], EmployeePunchesController);

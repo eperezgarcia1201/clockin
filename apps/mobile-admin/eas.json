@@ -30,7 +30,7 @@
     "production": {
       "android": {
         "serviceAccountKeyPath": "/Users/elmerperez/Downloads/project-a5f23ccc-c47c-4427-a5e-ea1caed2ea12.json",
-        "track": "internal"
+        "track": "production"
       },
       "ios": {
         "appleId": "usai551perez@hotmail.com",

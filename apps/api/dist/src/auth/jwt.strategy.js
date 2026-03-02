@@ -18,19 +18,19 @@ const jwks_rsa_1 = require("jwks-rsa");
 let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(passport_jwt_1.Strategy) {
     config;
     constructor(config) {
-        const domain = config.get("AUTH0_DOMAIN");
-        const audience = config.get("AUTH0_AUDIENCE");
-        const devBypass = config.get("DEV_BYPASS_AUTH") === "true";
+        const domain = config.get('AUTH0_DOMAIN');
+        const audience = config.get('AUTH0_AUDIENCE');
+        const devBypass = config.get('DEV_BYPASS_AUTH') === 'true';
         if ((!domain || !audience) && !devBypass) {
-            throw new Error("AUTH0_DOMAIN and AUTH0_AUDIENCE must be set (or enable DEV_BYPASS_AUTH).");
+            throw new Error('AUTH0_DOMAIN and AUTH0_AUDIENCE must be set (or enable DEV_BYPASS_AUTH).');
         }
-        const issuerDomain = domain || "dev-auth0.local";
-        const issuerAudience = audience || "https://api.clockin.local";
+        const issuerDomain = domain || 'dev-auth0.local';
+        const issuerAudience = audience || 'https://api.clockin.local';
         super({
             jwtFromRequest: passport_jwt_1.ExtractJwt.fromAuthHeaderAsBearerToken(),
             audience: issuerAudience,
             issuer: `https://${issuerDomain}/`,
-            algorithms: ["RS256"],
+            algorithms: ['RS256'],
             secretOrKeyProvider: (0, jwks_rsa_1.passportJwtSecret)({
                 cache: true,
                 rateLimit: true,
@@ -41,8 +41,8 @@ let JwtStrategy = class JwtStrategy extends (0, passport_1.PassportStrategy)(pas
         this.config = config;
     }
     validate(payload) {
-        const tenantIdClaim = this.config.get("TENANT_ID_CLAIM") || "org_id";
-        const tenantNameClaim = this.config.get("TENANT_NAME_CLAIM") || "org_name";
+        const tenantIdClaim = this.config.get('TENANT_ID_CLAIM') || 'org_id';
+        const tenantNameClaim = this.config.get('TENANT_NAME_CLAIM') || 'org_name';
         const tenantExternalId = payload[tenantIdClaim];
         const tenantName = payload[tenantNameClaim];
         return {

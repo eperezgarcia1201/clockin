@@ -1,29 +1,56 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  useUiCopy,
+  useUiLanguage,
+  type UiLang,
+} from "../../../lib/ui-language";
+import { listStatuses, type Status } from "../../../lib/api/statuses";
 
-type Status = { id: string; label: string; color: string; isIn: boolean };
+const copy: Record<UiLang, Record<string, string>> = {
+  en: {
+    title: "Status Summary",
+    createStatus: "Create Status",
+    status: "Status",
+    color: "Color",
+    countsAsIn: "In?",
+    yes: "Yes",
+  },
+  es: {
+    title: "Resumen de Estatus",
+    createStatus: "Crear Estatus",
+    status: "Estatus",
+    color: "Color",
+    countsAsIn: "¿Cuenta como Entrada?",
+    yes: "Sí",
+  },
+};
 
 export default function StatusSummary() {
+  const lang = useUiLanguage();
+  const t = useUiCopy(copy, lang);
   const [statuses, setStatuses] = useState<Status[]>([]);
 
   useEffect(() => {
     const load = async () => {
-      const response = await fetch("/api/statuses", { cache: "no-store" });
-      if (!response.ok) return;
-      const data = (await response.json()) as { statuses: Status[] };
-      setStatuses(data.statuses || []);
+      try {
+        const data = await listStatuses();
+        setStatuses(data);
+      } catch {
+        // Keep current behavior: silently ignore failed loads.
+      }
     };
-    load();
+    void load();
   }, []);
 
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>Status Summary</h1>
+        <h1>{t.title}</h1>
         <div className="admin-actions">
           <a className="btn btn-primary" href="/admin/status/new">
-            Create Status
+            {t.createStatus}
           </a>
         </div>
       </div>
@@ -33,9 +60,9 @@ export default function StatusSummary() {
           <thead>
             <tr>
               <th>#</th>
-              <th>Status</th>
-              <th>Color</th>
-              <th>In?</th>
+              <th>{t.status}</th>
+              <th>{t.color}</th>
+              <th>{t.countsAsIn}</th>
             </tr>
           </thead>
           <tbody>
@@ -56,7 +83,7 @@ export default function StatusSummary() {
                   />
                   {status.color}
                 </td>
-                <td>{status.isIn ? "Yes" : ""}</td>
+                <td>{status.isIn ? t.yes : ""}</td>
               </tr>
             ))}
           </tbody>

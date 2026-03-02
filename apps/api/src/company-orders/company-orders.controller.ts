@@ -63,7 +63,10 @@ export class CompanyOrdersController {
   }
 
   @Post()
-  async create(@Req() req: RequestWithUser, @Body() dto: CreateCompanyOrderDto) {
+  async create(
+    @Req() req: RequestWithUser,
+    @Body() dto: CreateCompanyOrderDto,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
@@ -111,7 +114,7 @@ export class CompanyOrdersController {
     }
 
     const file = await this.orders.exportWeeklyOrders(req.user, {
-      format: normalizedFormat as 'pdf' | 'csv' | 'excel',
+      format: normalizedFormat,
       weekStart: weekStart?.trim() || undefined,
       officeId: officeId?.trim() || undefined,
     });

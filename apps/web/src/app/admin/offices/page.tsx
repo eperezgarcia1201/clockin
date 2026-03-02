@@ -1,41 +1,68 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  useUiCopy,
+  useUiLanguage,
+  type UiLang,
+} from "../../../lib/ui-language";
+import { getAccessMe } from "../../../lib/api/access";
+import { listOffices, type Office } from "../../../lib/api/offices";
 
-type Office = { id: string; name: string };
+const copy: Record<UiLang, Record<string, string>> = {
+  en: {
+    title: "Location Summary",
+    createLocation: "Create New Location",
+    disabledAlert:
+      "Multi-location mode is disabled. This tenant can operate with one location.",
+    locationName: "Location Name",
+  },
+  es: {
+    title: "Resumen de Ubicaciones",
+    createLocation: "Crear Nueva Ubicación",
+    disabledAlert:
+      "El modo multi-ubicación está desactivado. Este tenant puede operar con una sola ubicación.",
+    locationName: "Nombre de Ubicación",
+  },
+};
 
 export default function OfficeSummary() {
+  const lang = useUiLanguage();
+  const t = useUiCopy(copy, lang);
   const [offices, setOffices] = useState<Office[]>([]);
   const [multiLocationEnabled, setMultiLocationEnabled] = useState(false);
 
   useEffect(() => {
     const load = async () => {
-      const [locationsResponse, accessResponse] = await Promise.all([
-        fetch("/api/offices", { cache: "no-store" }),
-        fetch("/api/access/me", { cache: "no-store" }),
-      ]);
-      if (locationsResponse.ok) {
-        const data = (await locationsResponse.json()) as { offices: Office[] };
-        setOffices(data.offices || []);
-      }
-      if (accessResponse.ok) {
-        const access = (await accessResponse.json()) as {
-          multiLocationEnabled?: boolean;
-        };
-        setMultiLocationEnabled(Boolean(access.multiLocationEnabled));
-      }
+      const locationsTask = listOffices()
+        .then((offices) => {
+          setOffices(offices);
+        })
+        .catch(() => {
+          // Keep current behavior: silently ignore failed loads.
+        });
+
+      const accessTask = getAccessMe()
+        .then((access) => {
+          setMultiLocationEnabled(Boolean(access.multiLocationEnabled));
+        })
+        .catch(() => {
+          // Keep current behavior: silently ignore failed loads.
+        });
+
+      await Promise.all([locationsTask, accessTask]);
     };
-    load();
+    void load();
   }, []);
 
   return (
     <div className="d-flex flex-column gap-4">
       <div className="admin-header">
-        <h1>Location Summary</h1>
+        <h1>{t.title}</h1>
         {multiLocationEnabled && (
           <div className="admin-actions">
             <a className="btn btn-primary" href="/admin/offices/new">
-              Create New Location
+              {t.createLocation}
             </a>
           </div>
         )}
@@ -43,16 +70,13 @@ export default function OfficeSummary() {
 
       <div className="admin-card">
         {!multiLocationEnabled && (
-          <div className="alert alert-secondary">
-            Multi-location mode is disabled. This tenant can operate with one
-            location.
-          </div>
+          <div className="alert alert-secondary">{t.disabledAlert}</div>
         )}
         <table className="table table-striped mb-0">
           <thead>
             <tr>
               <th>#</th>
-              <th>Location Name</th>
+              <th>{t.locationName}</th>
             </tr>
           </thead>
           <tbody>

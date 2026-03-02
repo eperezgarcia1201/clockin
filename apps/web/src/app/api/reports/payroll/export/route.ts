@@ -8,6 +8,31 @@ import {
 
 export const runtime = "nodejs";
 
+type PayrollReportWeek = {
+  weekStart?: string;
+  totalHoursFormatted?: string;
+  regularHoursFormatted?: string;
+  overtimeHoursFormatted?: string;
+  totalHoursDecimal?: number;
+  regularPay?: number;
+  overtimePay?: number;
+  totalPay?: number;
+};
+
+type PayrollReportEmployee = {
+  name?: string;
+  hourlyRate?: number | null;
+  weeks?: PayrollReportWeek[];
+  totalHoursFormatted?: string;
+  totalHoursDecimal?: number;
+  totalPay?: number;
+};
+
+type PayrollReportResponse = {
+  range?: { from?: string; to?: string };
+  employees?: PayrollReportEmployee[];
+};
+
 export async function GET(request: Request) {
   const query = await scopedQueryFromRequest(request);
   const response = await clockinFetch(withQuery("/reports/payroll", query));
@@ -15,7 +40,7 @@ export async function GET(request: Request) {
     const error = await response.json().catch(() => ({}));
     return new Response(JSON.stringify(error), { status: response.status });
   }
-  const data = await response.json();
+  const data = (await response.json()) as PayrollReportResponse;
   const company = await getCompanyExportProfile();
 
   return excelResponse("payroll-report.xlsx", (workbook) => {
@@ -42,15 +67,15 @@ export async function GET(request: Request) {
       { header: "Total Pay", key: "totalPay", width: 14 },
     ];
 
-    data.employees?.forEach((employee: any) => {
-      employee.weeks?.forEach((week: any) => {
+    data.employees?.forEach((employee) => {
+      employee.weeks?.forEach((week) => {
         sheet.addRow({
-          employee: employee.name,
-          weekStart: week.weekStart,
-          total: week.totalHoursFormatted,
-          regular: week.regularHoursFormatted,
-          overtime: week.overtimeHoursFormatted,
-          decimal: week.totalHoursDecimal,
+          employee: employee.name || "",
+          weekStart: week.weekStart || "",
+          total: week.totalHoursFormatted || "",
+          regular: week.regularHoursFormatted || "",
+          overtime: week.overtimeHoursFormatted || "",
+          decimal: week.totalHoursDecimal ?? "",
           rate: employee.hourlyRate ?? 0,
           regularPay: week.regularPay ?? 0,
           overtimePay: week.overtimePay ?? 0,
@@ -58,12 +83,12 @@ export async function GET(request: Request) {
         });
       });
       sheet.addRow({
-        employee: `${employee.name} TOTAL`,
+        employee: `${employee.name || ""} TOTAL`,
         weekStart: "",
-        total: employee.totalHoursFormatted,
+        total: employee.totalHoursFormatted || "",
         regular: "",
         overtime: "",
-        decimal: employee.totalHoursDecimal,
+        decimal: employee.totalHoursDecimal ?? "",
         rate: employee.hourlyRate ?? 0,
         regularPay: "",
         overtimePay: "",
