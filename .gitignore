@@ -27,6 +27,9 @@ apps/mobile-admin/android
 apps/mobile-admin/ios
 apps/mobile/android
 apps/mobile/ios
+**/google-services.json
+**/GoogleService-Info.plist
+**/.expo-*.log
 
 # Env
 .env
