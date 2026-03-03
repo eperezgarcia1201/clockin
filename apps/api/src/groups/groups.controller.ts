@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -11,6 +14,7 @@ import {
 import { AuthOrDevGuard } from '../auth/auth.guard';
 import type { RequestWithUser } from '../auth/auth.types';
 import { CreateGroupDto } from './dto/create-group.dto';
+import { UpdateGroupDto } from './dto/update-group.dto';
 import { GroupsService } from './groups.service';
 
 @Controller('groups')
@@ -33,5 +37,21 @@ export class GroupsController {
   async create(@Req() req: RequestWithUser, @Body() dto: CreateGroupDto) {
     if (!req.user) throw new UnauthorizedException();
     return this.groups.create(req.user, dto);
+  }
+
+  @Patch(':id')
+  async update(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateGroupDto,
+  ) {
+    if (!req.user) throw new UnauthorizedException();
+    return this.groups.update(req.user, id, dto);
+  }
+
+  @Delete(':id')
+  async remove(@Req() req: RequestWithUser, @Param('id') id: string) {
+    if (!req.user) throw new UnauthorizedException();
+    return this.groups.remove(req.user, id);
   }
 }

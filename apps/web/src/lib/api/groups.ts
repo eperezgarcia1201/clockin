@@ -21,3 +21,19 @@ export async function createGroup(input: {
     body: input,
   });
 }
+
+export async function updateGroup(
+  groupId: string,
+  input: { name?: string; officeId?: string },
+): Promise<void> {
+  await requestJson<unknown>(`/api/groups/${groupId}`, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+export async function deleteGroup(groupId: string): Promise<void> {
+  await requestJson<unknown>(`/api/groups/${groupId}`, {
+    method: "DELETE",
+  });
+}
