@@ -1,23 +1,27 @@
 import { NextResponse } from "next/server";
 import { clockinFetch } from "../../../lib/clockin-api";
 
-const fallbackOffices = [
-  { id: "1", name: "MayaOfdepere" },
-  { id: "2", name: "Downtown" },
-];
-
 export async function GET() {
   try {
     const response = await clockinFetch("/offices");
-    if (response.ok) {
-      const data = await response.json();
-      return NextResponse.json(data);
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message =
+        data && typeof data === "object" && "error" in data
+          ? String((data as { error?: unknown }).error || "")
+          : "";
+      return NextResponse.json(
+        { error: message || "Unable to load locations for this tenant." },
+        { status: response.status },
+      );
     }
+    return NextResponse.json(data ?? { offices: [] });
   } catch {
-    // ignore and fall back
+    return NextResponse.json(
+      { error: "Unable to load locations for this tenant." },
+      { status: 502 },
+    );
   }
-
-  return NextResponse.json({ offices: fallbackOffices });
 }
 
 export async function POST(request: Request) {
