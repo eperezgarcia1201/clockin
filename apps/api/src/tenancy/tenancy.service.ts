@@ -4,7 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthUser } from '../auth/auth.types';
 import { randomUUID } from 'crypto';
@@ -65,6 +65,13 @@ export class TenancyService {
     private readonly config: ConfigService,
   ) {}
 
+  private isUniqueConstraintError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    );
+  }
+
   async requireTenantAndUser(authUser: AuthUser) {
     if (!authUser.tenantExternalId) {
       throw new UnauthorizedException('Missing tenant claim in token.');
@@ -103,20 +110,43 @@ export class TenancyService {
       },
     });
 
-    const membership = await this.prisma.membership.upsert({
+    let membership = await this.prisma.membership.findUnique({
       where: {
         tenantId_userId: {
           tenantId: tenant.id,
           userId: user.id,
         },
       },
-      update: {},
-      create: {
-        tenantId: tenant.id,
-        userId: user.id,
-        role: defaultRole,
-      },
     });
+    if (!membership) {
+      try {
+        membership = await this.prisma.membership.create({
+          data: {
+            tenantId: tenant.id,
+            userId: user.id,
+            role: defaultRole,
+          },
+        });
+      } catch (error) {
+        if (!this.isUniqueConstraintError(error)) {
+          throw error;
+        }
+        membership = await this.prisma.membership.findUnique({
+          where: {
+            tenantId_userId: {
+              tenantId: tenant.id,
+              userId: user.id,
+            },
+          },
+        });
+      }
+    }
+
+    if (!membership) {
+      throw new UnauthorizedException(
+        'Unable to resolve tenant membership.',
+      );
+    }
 
     return { tenant, user, membership };
   }

@@ -33,6 +33,7 @@ export declare class TenancyService {
     private readonly prisma;
     private readonly config;
     constructor(prisma: PrismaService, config: ConfigService);
+    private isUniqueConstraintError;
     requireTenantAndUser(authUser: AuthUser): Promise<{
         tenant: {
             id: string;

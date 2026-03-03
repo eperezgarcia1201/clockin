@@ -30,6 +30,10 @@ let TenancyService = class TenancyService {
         this.prisma = prisma;
         this.config = config;
     }
+    isUniqueConstraintError(error) {
+        return (error instanceof client_1.Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002');
+    }
     async requireTenantAndUser(authUser) {
         if (!authUser.tenantExternalId) {
             throw new common_1.UnauthorizedException('Missing tenant claim in token.');
@@ -60,20 +64,41 @@ let TenancyService = class TenancyService {
                 name: authUser.name,
             },
         });
-        const membership = await this.prisma.membership.upsert({
+        let membership = await this.prisma.membership.findUnique({
             where: {
                 tenantId_userId: {
                     tenantId: tenant.id,
                     userId: user.id,
                 },
             },
-            update: {},
-            create: {
-                tenantId: tenant.id,
-                userId: user.id,
-                role: defaultRole,
-            },
         });
+        if (!membership) {
+            try {
+                membership = await this.prisma.membership.create({
+                    data: {
+                        tenantId: tenant.id,
+                        userId: user.id,
+                        role: defaultRole,
+                    },
+                });
+            }
+            catch (error) {
+                if (!this.isUniqueConstraintError(error)) {
+                    throw error;
+                }
+                membership = await this.prisma.membership.findUnique({
+                    where: {
+                        tenantId_userId: {
+                            tenantId: tenant.id,
+                            userId: user.id,
+                        },
+                    },
+                });
+            }
+        }
+        if (!membership) {
+            throw new common_1.UnauthorizedException('Unable to resolve tenant membership.');
+        }
         return { tenant, user, membership };
     }
     async resolveAdminAccess(authUser) {
