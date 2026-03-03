@@ -58,6 +58,9 @@ export function useAdminCoreState() {
   const [sessionManagerEmployeeId, setSessionManagerEmployeeId] = useState<
     string | null
   >(null);
+  const [sessionManagerOfficeId, setSessionManagerOfficeId] = useState<
+    string | null
+  >(null);
   const [managerClockExempt, setManagerClockExempt] = useState(false);
   const [activeNow, setActiveNow] = useState<PunchRow[]>([]);
   const [recentPunchRows, setRecentPunchRows] = useState<PunchRow[]>([]);
@@ -78,6 +81,7 @@ export function useAdminCoreState() {
   const [theme, setTheme] = useState<ThemeMode>("dark");
   const [resolvedApiBase, setResolvedApiBase] = useState<string | null>(null);
   const [dataSyncError, setDataSyncError] = useState<string | null>(null);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const [pushRegisteredTenant, setPushRegisteredTenant] = useState("");
 
   return {
@@ -135,6 +139,8 @@ export function useAdminCoreState() {
     setScheduleOverrideLoadingId,
     sessionManagerEmployeeId,
     setSessionManagerEmployeeId,
+    sessionManagerOfficeId,
+    setSessionManagerOfficeId,
     managerClockExempt,
     setManagerClockExempt,
     activeNow,
@@ -165,6 +171,8 @@ export function useAdminCoreState() {
     setResolvedApiBase,
     dataSyncError,
     setDataSyncError,
+    keyboardInset,
+    setKeyboardInset,
     pushRegisteredTenant,
     setPushRegisteredTenant,
   };

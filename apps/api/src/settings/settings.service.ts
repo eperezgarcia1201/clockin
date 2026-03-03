@@ -51,7 +51,12 @@ export class SettingsService {
   }
 
   async updateSettings(authUser: AuthUser, dto: UpdateSettingsDto) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'settings');
+    const access = await this.tenancy.requireFeature(authUser, 'settings');
+    const { tenant } = access;
+    this.tenancy.ensureGlobalAdminAccess(
+      access,
+      'Managers cannot change tenant settings. Ask an owner or tenant admin.',
+    );
     const defaults = defaultSettings();
 
     return this.prisma.tenantSettings.upsert({

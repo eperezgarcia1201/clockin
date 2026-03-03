@@ -8,8 +8,8 @@ import {
 import {
   useUiCopy,
   useUiLanguage,
-  type UiLang,
 } from "../../../lib/ui-language";
+import { auditCopy } from "./audit-copy";
 
 type Employee = { id: string; name: string };
 
@@ -27,66 +27,11 @@ type AuditResponse = {
   records: AuditRecord[];
 };
 
-const copy: Record<UiLang, Record<string, string>> = {
-  en: {
-    title: "Audit Log",
-    period: "Period",
-    weekly: "Weekly",
-    biweekly: "Bi-Weekly",
-    monthly: "Monthly",
-    custom: "Custom",
-    from: "From",
-    to: "To",
-    employee: "Employee",
-    allEmployees: "All Employees",
-    type: "Type",
-    allTypes: "All Types",
-    limit: "Limit",
-    running: "Running...",
-    runReport: "Run Report",
-    exportExcel: "Export Excel",
-    noRecords: "No audit records found.",
-    results: "Audit Log Results",
-    records: "Records",
-    dateTime: "Date & Time",
-    office: "Office",
-    group: "Group",
-    notes: "Notes",
-    empty: "—",
-  },
-  es: {
-    title: "Bitácora de Auditoría",
-    period: "Periodo",
-    weekly: "Semanal",
-    biweekly: "Quincenal",
-    monthly: "Mensual",
-    custom: "Personalizado",
-    from: "Desde",
-    to: "Hasta",
-    employee: "Empleado",
-    allEmployees: "Todos los empleados",
-    type: "Tipo",
-    allTypes: "Todos los tipos",
-    limit: "Límite",
-    running: "Ejecutando...",
-    runReport: "Generar reporte",
-    exportExcel: "Exportar Excel",
-    noRecords: "No se encontraron registros de auditoría.",
-    results: "Resultados de auditoría",
-    records: "Registros",
-    dateTime: "Fecha y hora",
-    office: "Ubicación",
-    group: "Grupo",
-    notes: "Notas",
-    empty: "—",
-  },
-};
-
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 
 export default function AuditReport() {
   const lang = useUiLanguage();
-  const t = useUiCopy(copy, lang);
+  const t = useUiCopy(auditCopy, lang);
   const today = useMemo(() => new Date(), []);
   const sevenDaysAgo = useMemo(() => {
     const date = new Date();

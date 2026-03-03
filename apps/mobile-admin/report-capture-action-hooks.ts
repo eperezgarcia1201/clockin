@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import * as ImagePicker from "expo-image-picker";
 import { runReportRequest } from "./report-runtime";
+import { exportReportRows, type ReportExportFormat } from "./report-export";
 import {
   buildCapturedReceiptAttachment,
   buildSalesExpensePayload,
@@ -23,9 +24,13 @@ export const useReportCaptureActions = (params: {
   fromDate: string;
   toDate: string;
   reportEmployeeId: string;
+  reportRows: Record<string, unknown>[];
+  language: "en" | "es";
+  bytesToBase64: (bytes: Uint8Array) => string;
   setReportStatus: Dispatch<SetStateAction<string | null>>;
   setReportLoading: Dispatch<SetStateAction<boolean>>;
   setReportRows: Dispatch<SetStateAction<any[]>>;
+  setReportExportingFormat: Dispatch<SetStateAction<ReportExportFormat | null>>;
   salesDate: string;
   salesFood: string;
   salesLiquor: string;
@@ -73,6 +78,35 @@ export const useReportCaptureActions = (params: {
       }
     } finally {
       params.setReportLoading(false);
+    }
+  };
+
+  const exportReport = async (format: ReportExportFormat) => {
+    params.setReportStatus(null);
+    params.setReportExportingFormat(format);
+    try {
+      await exportReportRows({
+        reportType: params.reportType,
+        format,
+        fromDate: params.fromDate,
+        toDate: params.toDate,
+        rows: params.reportRows,
+        language: params.language,
+        bytesToBase64: params.bytesToBase64,
+      });
+      params.setReportStatus(
+        format === "pdf"
+          ? "Report exported as PDF."
+          : format === "csv"
+            ? "Report exported as CSV."
+            : "Report exported as Excel.",
+      );
+    } catch (error) {
+      params.setReportStatus(
+        error instanceof Error ? error.message : "Unable to export report.",
+      );
+    } finally {
+      params.setReportExportingFormat(null);
     }
   };
 
@@ -185,6 +219,7 @@ export const useReportCaptureActions = (params: {
 
   return {
     runReport,
+    exportReport,
     saveSalesReport,
     captureSalesExpenseReceipt,
     saveSalesExpense,

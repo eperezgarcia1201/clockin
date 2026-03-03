@@ -64,10 +64,16 @@ export class OfficesService {
   }
 
   async list(authUser: AuthUser) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'locations');
+    const access = await this.tenancy.requireFeature(authUser, 'locations');
+    const { tenant } = access;
 
     return this.prisma.office.findMany({
-      where: { tenantId: tenant.id },
+      where: {
+        tenantId: tenant.id,
+        ...(access.allowedOfficeId
+          ? { id: access.allowedOfficeId }
+          : {}),
+      },
       orderBy: [{ createdAt: 'asc' }, { name: 'asc' }],
     });
   }
@@ -75,6 +81,10 @@ export class OfficesService {
   async create(authUser: AuthUser, dto: CreateOfficeDto) {
     const access = await this.tenancy.requireFeature(authUser, 'locations');
     const { tenant } = access;
+    this.tenancy.ensureGlobalAdminAccess(
+      access,
+      'Managers cannot create locations. Ask an owner or tenant admin.',
+    );
 
     if (!access.settings.multiLocationEnabled) {
       const locationCount = await this.prisma.office.count({
@@ -101,7 +111,12 @@ export class OfficesService {
   }
 
   async update(authUser: AuthUser, officeId: string, dto: UpdateOfficeDto) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'locations');
+    const access = await this.tenancy.requireFeature(authUser, 'locations');
+    const { tenant } = access;
+    this.tenancy.ensureGlobalAdminAccess(
+      access,
+      'Managers cannot edit location settings. Ask an owner or tenant admin.',
+    );
     const existing = await this.prisma.office.findFirst({
       where: { id: officeId, tenantId: tenant.id },
       select: {

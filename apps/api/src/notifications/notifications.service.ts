@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenancyService } from '../tenancy/tenancy.service';
@@ -20,11 +25,18 @@ const LATE_REMINDER_MAX = 3;
 const MANAGER_MESSAGE_KIND = 'MANAGER_MESSAGE';
 const LATE_CLOCK_IN_REMINDER_KIND = 'LATE_CLOCK_IN_REMINDER';
 const AUTO_CLOCK_IN_KIND = 'AUTO_CLOCK_IN_AFTER_REMINDERS';
+const AUTO_CLOCK_IN_GEOFENCE_KIND = 'AUTO_CLOCK_IN_GEOFENCE';
 const OWNER_DAILY_REPORT_KIND = 'OWNER_DAILY_REPORT_EMAIL';
 const COMPANY_ORDER_META_PREFIX = '__company_order_meta__';
 const OWNER_REPORT_SEND_MINUTES = 22 * 60;
+const DAILY_SALES_REMINDER_FIRST_MINUTES = 20 * 60 + 50;
+const DAILY_SALES_REMINDER_FINAL_MINUTES = 22 * 60 + 20;
+const DAILY_SALES_REMINDER_KIND = 'DAILY_SALES_REMINDER_2050';
+const DAILY_SALES_OVERDUE_KIND = 'DAILY_SALES_OVERDUE_2220';
+const OPERATIONAL_ALERT_TICK_MS = 60_000;
 const SUPPLIER_ORDER_WEEKDAY_START = 0;
 const SUPPLIER_ORDER_START_HOUR = 9;
+const DEFAULT_GEOFENCE_RADIUS_METERS = 120;
 const ACTIVE_WORK_STATUSES = new Set<PunchType>([
   PunchType.IN,
   PunchType.BREAK,
@@ -67,12 +79,53 @@ type OwnerReportSummary = {
 };
 
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleInit, OnModuleDestroy {
+  private operationalAlertsTimer: ReturnType<typeof setInterval> | null = null;
+  private operationalAlertsTickRunning = false;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenancy: TenancyService,
     private readonly config: ConfigService,
   ) {}
+
+  onModuleInit() {
+    if (!this.operationalAlertsTimer) {
+      this.operationalAlertsTimer = setInterval(() => {
+        void this.runOperationalAlertsTick();
+      }, OPERATIONAL_ALERT_TICK_MS);
+    }
+    void this.runOperationalAlertsTick();
+  }
+
+  onModuleDestroy() {
+    if (this.operationalAlertsTimer) {
+      clearInterval(this.operationalAlertsTimer);
+      this.operationalAlertsTimer = null;
+    }
+  }
+
+  private scopedNotificationFilter(officeId?: string) {
+    const scopedOfficeId = officeId?.trim() || undefined;
+    if (!scopedOfficeId) {
+      return {};
+    }
+    return {
+      OR: [
+        {
+          employee: {
+            officeId: scopedOfficeId,
+          },
+        },
+        {
+          metadata: {
+            path: ['officeId'],
+            equals: scopedOfficeId,
+          },
+        },
+      ],
+    };
+  }
 
   async ensureOperationalAlerts(tenantId: string, timeZone?: string) {
     const resolvedTimeZone =
@@ -87,13 +140,16 @@ export class NotificationsService {
     await this.ensureBreakAlerts(tenantId);
     await this.ensureLateClockInReminders(tenantId, resolvedTimeZone);
     await this.ensureOwnerDailyReportEmails(tenantId, resolvedTimeZone);
+    await this.ensureDailySalesInputReminders(tenantId, resolvedTimeZone);
   }
 
   async list(
     authUser: AuthUser,
     options: { limit?: number; unreadOnly?: boolean },
   ) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'dashboard');
+    const access = await this.tenancy.requireFeature(authUser, 'dashboard');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
     await this.ensureOperationalAlerts(tenant.id);
 
     const limit = options.limit && options.limit > 0 ? options.limit : 50;
@@ -101,6 +157,9 @@ export class NotificationsService {
       where: {
         tenantId: tenant.id,
         readAt: options.unreadOnly ? null : undefined,
+        ...this.scopedNotificationFilter(
+          officeScope.restrictedToAllowedOffice ? officeScope.officeId : '',
+        ),
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -127,14 +186,58 @@ export class NotificationsService {
     };
   }
 
+  async listMessageTargets(authUser: AuthUser) {
+    const access = await this.tenancy.requireFeature(authUser, 'notifications');
+    const officeScope = this.tenancy.resolveOfficeScope(access);
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        tenantId: access.tenant.id,
+        deletedAt: null,
+        disabled: false,
+        ...(officeScope.restrictedToAllowedOffice
+          ? { officeId: officeScope.officeId }
+          : {}),
+      },
+      orderBy: [{ fullName: 'asc' }],
+      select: {
+        id: true,
+        fullName: true,
+        displayName: true,
+        email: true,
+        officeId: true,
+        groupId: true,
+        disabled: true,
+      },
+    });
+
+    return {
+      employees: employees.map((employee) => ({
+        id: employee.id,
+        name: employee.displayName || employee.fullName,
+        email: employee.email,
+        officeId: employee.officeId,
+        groupId: employee.groupId,
+        active: !employee.disabled,
+      })),
+    };
+  }
+
   async markRead(authUser: AuthUser, id: string) {
-    const { tenant } = await this.tenancy.requireFeature(
+    const access = await this.tenancy.requireFeature(
       authUser,
       'notifications',
     );
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
 
     await this.prisma.notification.updateMany({
-      where: { id, tenantId: tenant.id },
+      where: {
+        id,
+        tenantId: tenant.id,
+        ...this.scopedNotificationFilter(
+          officeScope.restrictedToAllowedOffice ? officeScope.officeId : '',
+        ),
+      },
       data: { readAt: new Date() },
     });
 
@@ -142,13 +245,21 @@ export class NotificationsService {
   }
 
   async markAllRead(authUser: AuthUser) {
-    const { tenant } = await this.tenancy.requireFeature(
+    const access = await this.tenancy.requireFeature(
       authUser,
       'notifications',
     );
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
 
     await this.prisma.notification.updateMany({
-      where: { tenantId: tenant.id, readAt: null },
+      where: {
+        tenantId: tenant.id,
+        readAt: null,
+        ...this.scopedNotificationFilter(
+          officeScope.restrictedToAllowedOffice ? officeScope.officeId : '',
+        ),
+      },
       data: { readAt: new Date() },
     });
 
@@ -160,6 +271,7 @@ export class NotificationsService {
     dto: CreateEmployeeMessageDto,
   ) {
     const access = await this.tenancy.requireFeature(authUser, 'notifications');
+    const officeScope = this.tenancy.resolveOfficeScope(access);
     const employeeId = dto.employeeId.trim();
     const subject = dto.subject.trim();
     const body = dto.message.trim();
@@ -170,6 +282,9 @@ export class NotificationsService {
         tenantId: access.tenant.id,
         deletedAt: null,
         disabled: false,
+        ...(officeScope.restrictedToAllowedOffice
+          ? { officeId: officeScope.officeId }
+          : {}),
       },
       select: {
         id: true,
@@ -473,6 +588,40 @@ export class NotificationsService {
     }
   }
 
+  private async runOperationalAlertsTick() {
+    if (this.operationalAlertsTickRunning) {
+      return;
+    }
+    this.operationalAlertsTickRunning = true;
+    try {
+      const tenants = await this.prisma.tenant.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          settings: {
+            select: {
+              timezone: true,
+            },
+          },
+        },
+      });
+      for (const tenant of tenants) {
+        try {
+          await this.ensureOperationalAlerts(
+            tenant.id,
+            tenant.settings?.timezone || undefined,
+          );
+        } catch {
+          // Keep processing other tenants even if one tenant fails.
+        }
+      }
+    } catch {
+      // Ignore scheduler-level failures; on-demand alert checks still run.
+    } finally {
+      this.operationalAlertsTickRunning = false;
+    }
+  }
+
   private getLocalDayInfo(date: Date, timeZone?: string) {
     const zone = timeZone || 'UTC';
     try {
@@ -534,6 +683,79 @@ export class NotificationsService {
     const [hours, minutes] = value.split(':').map((part) => Number(part));
     if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
     return hours * 60 + minutes;
+  }
+
+  private isLatestPunchInsideAssignedOfficeGeofence(params: {
+    latestPunch:
+      | {
+          occurredAt: Date;
+          latitude: number | null;
+          longitude: number | null;
+        }
+      | null
+      | undefined;
+    office:
+      | {
+          name: string;
+          latitude: number | null;
+          longitude: number | null;
+          geofenceRadiusMeters: number | null;
+        }
+      | null
+      | undefined;
+    workDate: string;
+    timeZone?: string;
+  }) {
+    if (!params.latestPunch || !params.office) {
+      return false;
+    }
+    if (
+      this.toLocalDateKey(params.latestPunch.occurredAt, params.timeZone) !==
+      params.workDate
+    ) {
+      return false;
+    }
+    if (
+      params.latestPunch.latitude === null ||
+      params.latestPunch.longitude === null ||
+      params.office.latitude === null ||
+      params.office.longitude === null
+    ) {
+      return false;
+    }
+    const distance = this.distanceMeters(
+      params.office.latitude,
+      params.office.longitude,
+      params.latestPunch.latitude,
+      params.latestPunch.longitude,
+    );
+    const radius =
+      params.office.geofenceRadiusMeters || DEFAULT_GEOFENCE_RADIUS_METERS;
+    return distance <= radius;
+  }
+
+  private distanceMeters(
+    latitudeA: number,
+    longitudeA: number,
+    latitudeB: number,
+    longitudeB: number,
+  ) {
+    const earthRadius = 6371000;
+    const toRadians = (value: number) => (value * Math.PI) / 180;
+
+    const dLatitude = toRadians(latitudeB - latitudeA);
+    const dLongitude = toRadians(longitudeB - longitudeA);
+    const lat1 = toRadians(latitudeA);
+    const lat2 = toRadians(latitudeB);
+
+    const a =
+      Math.sin(dLatitude / 2) * Math.sin(dLatitude / 2) +
+      Math.cos(lat1) *
+        Math.cos(lat2) *
+        Math.sin(dLongitude / 2) *
+        Math.sin(dLongitude / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadius * c;
   }
 
   private toMetadataRecord(metadata: unknown): Record<string, unknown> | null {
@@ -612,7 +834,8 @@ export class NotificationsService {
       new Set(remindersToSend.map((schedule) => schedule.employeeId)),
     );
 
-    const [clockInPunches, reminders, latestPunches] = await Promise.all([
+    const [clockInPunches, reminders, latestPunches, employees] =
+      await Promise.all([
       this.prisma.employeePunch.findMany({
         where: {
           tenantId,
@@ -656,6 +879,28 @@ export class NotificationsService {
         select: {
           employeeId: true,
           type: true,
+          occurredAt: true,
+          latitude: true,
+          longitude: true,
+        },
+      }),
+      this.prisma.employee.findMany({
+        where: {
+          tenantId,
+          id: { in: employeeIds },
+          disabled: false,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          office: {
+            select: {
+              name: true,
+              latitude: true,
+              longitude: true,
+              geofenceRadiusMeters: true,
+            },
+          },
         },
       }),
     ]);
@@ -670,6 +915,9 @@ export class NotificationsService {
     );
     const latestPunchByEmployee = new Map(
       latestPunches.map((punch) => [punch.employeeId, punch]),
+    );
+    const officeByEmployee = new Map(
+      employees.map((employee) => [employee.id, employee.office || null]),
     );
     const reminderCountByEmployee = new Map<string, number>();
     reminders.forEach((notice) => {
@@ -720,7 +968,11 @@ export class NotificationsService {
         continue;
       }
 
-      const autoClockIn = async () => {
+      const autoClockIn = async (options?: {
+        kind?: string;
+        message?: string;
+        reminderCount?: number;
+      }) => {
         if (clockedInToday.has(reminder.employeeId) || isAlreadyActive) {
           return false;
         }
@@ -748,13 +1000,14 @@ export class NotificationsService {
           occurredAt,
           {
             message:
+              options?.message ||
               `${reminder.employeeName} was auto clocked in after ` +
-              `${LATE_REMINDER_MAX} late reminders.`,
+                `${LATE_REMINDER_MAX} late reminders.`,
             metadata: {
-              kind: AUTO_CLOCK_IN_KIND,
+              kind: options?.kind || AUTO_CLOCK_IN_KIND,
               workDate,
               startTime: reminder.startTime,
-              reminderCount: LATE_REMINDER_MAX,
+              reminderCount: options?.reminderCount ?? LATE_REMINDER_MAX,
             },
           },
         );
@@ -763,6 +1016,9 @@ export class NotificationsService {
         latestPunchByEmployee.set(reminder.employeeId, {
           employeeId: reminder.employeeId,
           type: PunchType.IN,
+          occurredAt,
+          latitude: null,
+          longitude: null,
         });
         return true;
       };
@@ -778,6 +1034,24 @@ export class NotificationsService {
         reminderCount * LATE_REMINDER_INTERVAL_MINUTES;
 
       if (current.minutes < nextReminderMinute) {
+        continue;
+      }
+
+      const latestPunchInsideAssignedOffice =
+        this.isLatestPunchInsideAssignedOfficeGeofence({
+          latestPunch,
+          office: officeByEmployee.get(reminder.employeeId) || null,
+          workDate,
+          timeZone,
+        });
+      if (latestPunchInsideAssignedOffice) {
+        await autoClockIn({
+          kind: AUTO_CLOCK_IN_GEOFENCE_KIND,
+          message:
+            `${reminder.employeeName} was auto clocked in at scheduled start ` +
+            `while inside the assigned location geofence.`,
+          reminderCount,
+        });
         continue;
       }
 
@@ -943,6 +1217,111 @@ export class NotificationsService {
         },
       });
     }
+  }
+
+  private async ensureDailySalesInputReminders(
+    tenantId: string,
+    timeZone?: string,
+  ) {
+    const now = new Date();
+    const current = this.getLocalDayInfo(now, timeZone);
+    if (current.minutes < DAILY_SALES_REMINDER_FIRST_MINUTES) {
+      return;
+    }
+
+    const workDate = this.toLocalDateKey(now, timeZone);
+    const reportDate = new Date(`${workDate}T00:00:00.000Z`);
+    if (Number.isNaN(reportDate.getTime())) {
+      return;
+    }
+
+    const hasSalesReport = await this.prisma.dailySalesReport.findUnique({
+      where: {
+        tenantId_reportDate: {
+          tenantId,
+          reportDate,
+        },
+      },
+      select: { id: true },
+    });
+    if (hasSalesReport) {
+      return;
+    }
+
+    const reminderKind =
+      current.minutes >= DAILY_SALES_REMINDER_FINAL_MINUTES
+        ? DAILY_SALES_OVERDUE_KIND
+        : DAILY_SALES_REMINDER_KIND;
+
+    const alreadyGenerated = await this.prisma.notification.findFirst({
+      where: {
+        tenantId,
+        type: NotificationType.LATE_CLOCK_IN_5M,
+        metadata: {
+          path: ['kind'],
+          equals: reminderKind,
+        },
+        AND: [
+          {
+            metadata: {
+              path: ['workDate'],
+              equals: workDate,
+            },
+          },
+        ],
+      },
+      select: { id: true },
+    });
+    if (alreadyGenerated) {
+      return;
+    }
+
+    const managers = await this.prisma.employee.findMany({
+      where: {
+        tenantId,
+        isManager: true,
+        disabled: false,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+    if (!managers.length) {
+      return;
+    }
+
+    const reportDateLabel = this.formatDateKeyUs(workDate);
+    const dueByLabel = this.formatMinutesAsClockLabel(
+      DAILY_SALES_REMINDER_FINAL_MINUTES,
+    );
+    const sentAtLabel = this.formatMinutesAsClockLabel(
+      reminderKind === DAILY_SALES_REMINDER_KIND
+        ? DAILY_SALES_REMINDER_FIRST_MINUTES
+        : DAILY_SALES_REMINDER_FINAL_MINUTES,
+    );
+    const message =
+      reminderKind === DAILY_SALES_REMINDER_KIND
+        ? `Daily sales input for ${reportDateLabel} is still pending. Please submit it before ${dueByLabel}.`
+        : `Daily sales input for ${reportDateLabel} is still missing as of ${sentAtLabel}. Please submit it now.`;
+
+    await this.prisma.notification.createMany({
+      data: managers.map((manager) => ({
+        tenantId,
+        employeeId: manager.id,
+        type: NotificationType.LATE_CLOCK_IN_5M,
+        message,
+        metadata: {
+          kind: reminderKind,
+          workDate,
+          dueBy: dueByLabel,
+          sentAt: sentAtLabel,
+          scope: 'daily_sales_capture',
+        },
+      })),
+    });
+
+    await this.sendPush(tenantId, message, NotificationType.LATE_CLOCK_IN_5M);
   }
 
   private async buildOwnerReportSummary(input: {
@@ -1395,6 +1774,17 @@ export class NotificationsService {
     const delta = (day - weekStartsOn + 7) % 7;
     value.setUTCDate(value.getUTCDate() - delta);
     return value.toISOString().slice(0, 10);
+  }
+
+  private formatMinutesAsClockLabel(totalMinutes: number) {
+    const safeMinutes = Number.isFinite(totalMinutes)
+      ? Math.max(0, Math.floor(totalMinutes))
+      : 0;
+    const hour24 = Math.floor(safeMinutes / 60) % 24;
+    const minutes = safeMinutes % 60;
+    const meridiem = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = ((hour24 + 11) % 12) + 1;
+    return `${hour12}:${String(minutes).padStart(2, '0')} ${meridiem}`;
   }
 
   private extractContributorsFromOrderNotes(notes?: string | null) {

@@ -2,7 +2,7 @@
   "expo": {
     "name": "ClockIn Admin Plus",
     "slug": "clockin-admin",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "entryPoint": "./index.ts",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.websys.clockinadmin",
-      "buildNumber": "1",
+      "buildNumber": "9",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "ClockIn Admin uses the camera to capture expense receipts.",
@@ -28,7 +28,8 @@
       "icon": "./assets/icon.png",
       "package": "com.websys.clockinadminplus",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 1,
+      "versionCode": 9,
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

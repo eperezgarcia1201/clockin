@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { formatUsDate } from "./app-helpers";
+import type { ReportExportFormat } from "./report-export";
 import type {
   CaptureMode,
   ExpensePaymentMethod,
@@ -20,6 +21,8 @@ export function useAdminReportCaptureState() {
   const [reportRows, setReportRows] = useState<any[]>([]);
   const [reportStatus, setReportStatus] = useState<string | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportExportingFormat, setReportExportingFormat] =
+    useState<ReportExportFormat | null>(null);
 
   const [salesDate, setSalesDate] = useState(() => formatUsDate(new Date()));
   const [salesFood, setSalesFood] = useState("0");
@@ -61,6 +64,8 @@ export function useAdminReportCaptureState() {
     setReportStatus,
     reportLoading,
     setReportLoading,
+    reportExportingFormat,
+    setReportExportingFormat,
     salesDate,
     setSalesDate,
     salesFood,

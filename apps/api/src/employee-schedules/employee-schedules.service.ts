@@ -21,10 +21,13 @@ export class EmployeeSchedulesService {
     private readonly tenancy: TenancyService,
   ) {}
 
-  private scopedOfficeFilter(officeId?: string) {
+  private scopedOfficeFilter(officeId?: string, strictOfficeMatch = false) {
     const scopedOfficeId = officeId?.trim() || undefined;
     if (!scopedOfficeId) {
       return {};
+    }
+    if (strictOfficeMatch) {
+      return { officeId: scopedOfficeId };
     }
     return {
       OR: [{ officeId: scopedOfficeId }, { officeId: null }],
@@ -86,9 +89,19 @@ export class EmployeeSchedulesService {
   }
 
   async getSchedule(authUser: AuthUser, employeeId: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'schedules');
+    const access = await this.tenancy.requireFeature(authUser, 'schedules');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
     const employee = await this.prisma.employee.findFirst({
-      where: { id: employeeId, tenantId: tenant.id, deletedAt: null },
+      where: {
+        id: employeeId,
+        tenantId: tenant.id,
+        deletedAt: null,
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
     if (!employee) {
       throw new NotFoundException('Employee not found');
@@ -116,7 +129,12 @@ export class EmployeeSchedulesService {
   }
 
   async getTodaySchedule(authUser: AuthUser, options?: { officeId?: string }) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'schedules');
+    const access = await this.tenancy.requireFeature(authUser, 'schedules');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(
+      access,
+      options?.officeId,
+    );
     const settings = await this.prisma.tenantSettings.findUnique({
       where: { tenantId: tenant.id },
       select: { timezone: true },
@@ -133,7 +151,10 @@ export class EmployeeSchedulesService {
         employee: {
           deletedAt: null,
           disabled: false,
-          ...this.scopedOfficeFilter(options?.officeId),
+          ...this.scopedOfficeFilter(
+            officeScope.officeId,
+            officeScope.restrictedToAllowedOffice,
+          ),
         },
       },
       include: {
@@ -200,10 +221,20 @@ export class EmployeeSchedulesService {
     employeeId: string,
     dto: UpdateEmployeeScheduleDto,
   ) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'schedules');
+    const access = await this.tenancy.requireFeature(authUser, 'schedules');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
 
     const employee = await this.prisma.employee.findFirst({
-      where: { id: employeeId, tenantId: tenant.id, deletedAt: null },
+      where: {
+        id: employeeId,
+        tenantId: tenant.id,
+        deletedAt: null,
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
     if (!employee) {
       throw new NotFoundException('Employee not found');

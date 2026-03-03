@@ -6,6 +6,7 @@ import {
   authenticateAdminTenantDirectory,
   resolveActiveTenantLabel,
   resolveLoginManagerEmployeeId,
+  resolveLoginManagerOfficeId,
   resolveTenantForNextLogin,
 } from "./admin-auth-runtime";
 import {
@@ -33,6 +34,7 @@ export const useAdminAuthActions = (params: {
   setActiveLocationId: (value: string) => void;
   setActiveTenant: (value: string) => void;
   setSessionManagerEmployeeId: (value: string | null) => void;
+  setSessionManagerOfficeId: (value: string | null) => void;
   setManagerClockExempt: (value: boolean) => void;
   setManagerPin: (value: string) => void;
   setManagerPunchStatus: (value: string | null) => void;
@@ -82,11 +84,15 @@ export const useAdminAuthActions = (params: {
       params.setLiquorInventoryEnabled(false);
       params.setLiquorPremiumEnabled(false);
       params.setMultiLocationEnabled(false);
-      params.setActiveLocationId("");
+      const managerOfficeId = resolveLoginManagerOfficeId(
+        verified.allowedOfficeId,
+      );
+      params.setActiveLocationId(managerOfficeId || "");
       params.setActiveTenant(verified.authOrgId.trim());
       params.setSessionManagerEmployeeId(
         resolveLoginManagerEmployeeId(verified.managerEmployeeId),
       );
+      params.setSessionManagerOfficeId(managerOfficeId);
       params.setManagerClockExempt(false);
       params.setManagerPin("");
       params.setManagerPunchStatus(null);
@@ -142,8 +148,11 @@ export const useAdminAuthActions = (params: {
     params.setSessionManagerEmployeeId(
       result.managerSession.sessionManagerEmployeeId,
     );
+    params.setSessionManagerOfficeId(result.managerSession.sessionManagerOfficeId);
     params.setManagerClockExempt(result.managerSession.managerClockExempt);
-    if (result.clearActiveLocationScope) {
+    if (result.managerSession.sessionManagerOfficeId) {
+      params.setActiveLocationId(result.managerSession.sessionManagerOfficeId);
+    } else if (result.clearActiveLocationScope) {
       params.setActiveLocationId("");
     }
     params.setDataSyncError(null);

@@ -60,27 +60,6 @@ export function CaptureExpenseSection({
       <Text style={[styles.cardTitle, styles.reportSectionTitle, isLight && styles.cardTitleLight]}>
         {text.expenseTitle}
       </Text>
-      <Text style={[styles.label, isLight && styles.labelLight]}>{text.expenseDate}</Text>
-      <TextInput
-        style={[styles.input, isLight && styles.inputLight]}
-        value={todayExpenseDate}
-        editable={false}
-        selectTextOnFocus={false}
-      />
-      <Text style={[styles.label, isLight && styles.labelLight]}>{text.invoiceNumber}</Text>
-      <TextInput
-        style={[styles.input, isLight && styles.inputLight]}
-        value={salesExpenseInvoice}
-        onChangeText={onSalesExpenseInvoiceChange}
-        placeholder="INV-001"
-      />
-      <Text style={[styles.label, isLight && styles.labelLight]}>{text.companyName}</Text>
-      <TextInput
-        style={[styles.input, isLight && styles.inputLight]}
-        value={salesExpenseCompany}
-        onChangeText={onSalesExpenseCompanyChange}
-        placeholder="Vendor name"
-      />
       <Text style={[styles.label, isLight && styles.labelLight]}>{text.paymentMethod}</Text>
       <View style={styles.toggleRow}>
         {(["CHECK", "DEBIT_CARD", "CASH"] as ExpensePaymentMethod[]).map((method) => (
@@ -106,6 +85,31 @@ export function CaptureExpenseSection({
           </TouchableOpacity>
         ))}
       </View>
+      <Text style={[styles.label, isLight && styles.labelLight]}>{text.expenseDate}</Text>
+      <TextInput
+        style={[styles.input, isLight && styles.inputLight]}
+        value={todayExpenseDate}
+        editable={false}
+        selectTextOnFocus={false}
+      />
+      <Text style={[styles.label, isLight && styles.labelLight]}>{text.companyName}</Text>
+      <TextInput
+        style={[styles.input, isLight && styles.inputLight]}
+        value={salesExpenseCompany}
+        onChangeText={onSalesExpenseCompanyChange}
+        placeholder="Vendor name"
+      />
+      <Text style={[styles.label, isLight && styles.labelLight]}>
+        {salesExpenseMethod === "CHECK"
+          ? `${text.invoiceNumber} *`
+          : `${text.invoiceNumber} (${languageOptional(text.invoiceNumber)})`}
+      </Text>
+      <TextInput
+        style={[styles.input, isLight && styles.inputLight]}
+        value={salesExpenseInvoice}
+        onChangeText={onSalesExpenseInvoiceChange}
+        placeholder="INV-001"
+      />
       <Text style={[styles.label, isLight && styles.labelLight]}>
         {salesExpenseMethod === "CHECK"
           ? text.checkTotal
@@ -184,18 +188,22 @@ export function CaptureExpenseSection({
       )}
       <TouchableOpacity
         style={[
-          styles.secondaryButton,
-          isLight && styles.secondaryButtonLight,
-          styles.actionButtonCompact,
+          styles.button,
+          styles.capturePrimaryActionButton,
+          styles.captureExpenseActionButton,
+          isLight && styles.capturePrimaryActionButtonLight,
           salesExpenseSaveLoading && styles.inlineButtonDisabled,
         ]}
         onPress={onSaveSalesExpense}
         disabled={salesExpenseSaveLoading}
       >
-        <Text style={[styles.secondaryButtonText, isLight && styles.secondaryButtonTextLight]}>
-          {salesExpenseSaveLoading ? text.saving : text.saveDailyExpense}
+        <Text style={styles.capturePrimaryActionText}>
+          {salesExpenseSaveLoading ? text.saving : `${text.saveDailyExpense}  →`}
         </Text>
       </TouchableOpacity>
     </>
   );
 }
+
+const languageOptional = (label: string) =>
+  label.toLowerCase().includes("factura") ? "opcional" : "optional";

@@ -50,14 +50,18 @@ export class GroupsService {
   }
 
   async list(authUser: AuthUser, officeId?: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'groups');
-    const scopedOfficeId = officeId?.trim() || undefined;
+    const access = await this.tenancy.requireFeature(authUser, 'groups');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access, officeId);
+    const scopedOfficeId = officeScope.officeId;
 
     return this.prisma.group.findMany({
       where: scopedOfficeId
         ? {
             tenantId: tenant.id,
-            OR: [{ officeId: scopedOfficeId }, { officeId: null }],
+            ...(officeScope.restrictedToAllowedOffice
+              ? { officeId: scopedOfficeId }
+              : { OR: [{ officeId: scopedOfficeId }, { officeId: null }] }),
           }
         : { tenantId: tenant.id },
       orderBy: { name: 'asc' },
@@ -65,9 +69,14 @@ export class GroupsService {
   }
 
   async create(authUser: AuthUser, dto: CreateGroupDto) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'groups');
+    const access = await this.tenancy.requireFeature(authUser, 'groups');
+    const { tenant } = access;
     const name = this.normalizeGroupName(dto.name);
-    const officeId = await this.resolveScopedOfficeId(tenant.id, dto.officeId);
+    const officeScope = this.tenancy.resolveOfficeScope(access, dto.officeId);
+    const officeId = await this.resolveScopedOfficeId(
+      tenant.id,
+      officeScope.officeId,
+    );
 
     try {
       return await this.prisma.group.create({
@@ -86,10 +95,18 @@ export class GroupsService {
   }
 
   async update(authUser: AuthUser, groupId: string, dto: UpdateGroupDto) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'groups');
+    const access = await this.tenancy.requireFeature(authUser, 'groups');
+    const { tenant } = access;
+    const currentOfficeScope = this.tenancy.resolveOfficeScope(access);
 
     const existing = await this.prisma.group.findFirst({
-      where: { id: groupId, tenantId: tenant.id },
+      where: {
+        id: groupId,
+        tenantId: tenant.id,
+        ...(currentOfficeScope.restrictedToAllowedOffice
+          ? { officeId: currentOfficeScope.officeId }
+          : {}),
+      },
       select: { id: true, officeId: true },
     });
     if (!existing) {
@@ -101,7 +118,11 @@ export class GroupsService {
       data.name = this.normalizeGroupName(dto.name);
     }
     if (dto.officeId !== undefined) {
-      data.officeId = await this.resolveScopedOfficeId(tenant.id, dto.officeId);
+      const officeScope = this.tenancy.resolveOfficeScope(access, dto.officeId);
+      data.officeId = await this.resolveScopedOfficeId(
+        tenant.id,
+        officeScope.officeId,
+      );
     }
 
     try {
@@ -118,10 +139,18 @@ export class GroupsService {
   }
 
   async remove(authUser: AuthUser, groupId: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'groups');
+    const access = await this.tenancy.requireFeature(authUser, 'groups');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
 
     const existing = await this.prisma.group.findFirst({
-      where: { id: groupId, tenantId: tenant.id },
+      where: {
+        id: groupId,
+        tenantId: tenant.id,
+        ...(officeScope.restrictedToAllowedOffice
+          ? { officeId: officeScope.officeId }
+          : {}),
+      },
       select: { id: true },
     });
     if (!existing) {

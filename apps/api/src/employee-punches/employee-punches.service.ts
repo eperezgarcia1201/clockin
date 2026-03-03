@@ -47,10 +47,13 @@ export class EmployeePunchesService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  private scopedOfficeFilter(officeId?: string) {
+  private scopedOfficeFilter(officeId?: string, strictOfficeMatch = false) {
     const scopedOfficeId = officeId?.trim() || undefined;
     if (!scopedOfficeId) {
       return {};
+    }
+    if (strictOfficeMatch) {
+      return { officeId: scopedOfficeId };
     }
     return {
       OR: [{ officeId: scopedOfficeId }, { officeId: null }],
@@ -196,7 +199,12 @@ export class EmployeePunchesService {
   }
 
   async getRecent(authUser: AuthUser, options?: { officeId?: string }) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'dashboard');
+    const access = await this.tenancy.requireFeature(authUser, 'dashboard');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(
+      access,
+      options?.officeId,
+    );
     const settings = await this.prisma.tenantSettings.findUnique({
       where: { tenantId: tenant.id },
       select: { timezone: true },
@@ -212,7 +220,10 @@ export class EmployeePunchesService {
         tenantId: tenant.id,
         disabled: false,
         deletedAt: null,
-        ...this.scopedOfficeFilter(options?.officeId),
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
       },
       orderBy: { fullName: 'asc' },
       include: {
@@ -250,8 +261,12 @@ export class EmployeePunchesService {
       officeId?: string;
     },
   ) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'timeEdits');
-    const scopedOfficeId = options.officeId?.trim() || undefined;
+    const access = await this.tenancy.requireFeature(authUser, 'timeEdits');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(
+      access,
+      options.officeId,
+    );
 
     const limit = options.limit && options.limit > 0 ? options.limit : 50;
     const offsetMs = (options.tzOffset || 0) * 60 * 1000;
@@ -273,10 +288,11 @@ export class EmployeePunchesService {
         tenantId: tenant.id,
         employeeId: options.employeeId || undefined,
         occurredAt: Object.keys(occurredAt).length ? occurredAt : undefined,
-        employee: scopedOfficeId
-          ? {
-              OR: [{ officeId: scopedOfficeId }, { officeId: null }],
-            }
+        employee: officeScope.officeId
+          ? this.scopedOfficeFilter(
+              officeScope.officeId,
+              officeScope.restrictedToAllowedOffice,
+            )
           : undefined,
       },
       orderBy: { occurredAt: 'desc' },
@@ -311,7 +327,9 @@ export class EmployeePunchesService {
   }
 
   async createManual(authUser: AuthUser, dto: ManualEmployeePunchDto) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'timeEdits');
+    const access = await this.tenancy.requireFeature(authUser, 'timeEdits');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
     const settings = await this.prisma.tenantSettings.findUnique({
       where: { tenantId: tenant.id },
     });
@@ -320,7 +338,15 @@ export class EmployeePunchesService {
     }
 
     const employee = await this.prisma.employee.findFirst({
-      where: { id: dto.employeeId, tenantId: tenant.id, deletedAt: null },
+      where: {
+        id: dto.employeeId,
+        tenantId: tenant.id,
+        deletedAt: null,
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
 
     if (!employee) {
@@ -354,7 +380,9 @@ export class EmployeePunchesService {
     recordId: string,
     dto: UpdateEmployeePunchDto,
   ) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'timeEdits');
+    const access = await this.tenancy.requireFeature(authUser, 'timeEdits');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
     const settings = await this.prisma.tenantSettings.findUnique({
       where: { tenantId: tenant.id },
     });
@@ -363,7 +391,14 @@ export class EmployeePunchesService {
     }
 
     const existing = await this.prisma.employeePunch.findFirst({
-      where: { id: recordId, tenantId: tenant.id },
+      where: {
+        id: recordId,
+        tenantId: tenant.id,
+        employee: this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
 
     if (!existing) {
@@ -381,7 +416,9 @@ export class EmployeePunchesService {
   }
 
   async deleteRecord(authUser: AuthUser, recordId: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'timeEdits');
+    const access = await this.tenancy.requireFeature(authUser, 'timeEdits');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
     const settings = await this.prisma.tenantSettings.findUnique({
       where: { tenantId: tenant.id },
     });
@@ -390,7 +427,14 @@ export class EmployeePunchesService {
     }
 
     const existing = await this.prisma.employeePunch.findFirst({
-      where: { id: recordId, tenantId: tenant.id },
+      where: {
+        id: recordId,
+        tenantId: tenant.id,
+        employee: this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
 
     if (!existing) {
@@ -414,13 +458,22 @@ export class EmployeePunchesService {
     requestId: string,
     approve: boolean,
   ) {
-    const { tenant, user } = await this.tenancy.requireFeature(
+    const access = await this.tenancy.requireFeature(
       authUser,
       'schedules',
     );
+    const { tenant, user } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
 
     const existing = await this.prisma.scheduleOverrideRequest.findFirst({
-      where: { id: requestId, tenantId: tenant.id },
+      where: {
+        id: requestId,
+        tenantId: tenant.id,
+        employee: this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
       include: {
         employee: {
           select: {
@@ -766,6 +819,7 @@ export class EmployeePunchesService {
             displayName: true,
             disabled: true,
             isServer: true,
+            officeId: true,
           },
         },
       },
@@ -788,6 +842,30 @@ export class EmployeePunchesService {
     if (!filteredCandidates.length) {
       return;
     }
+
+    const officeIds = Array.from(
+      new Set(
+        filteredCandidates
+          .map((punch) => punch.employee?.officeId || null)
+          .filter((officeId): officeId is string => Boolean(officeId)),
+      ),
+    );
+    const offices = officeIds.length
+      ? await this.prisma.office.findMany({
+          where: {
+            tenantId,
+            id: { in: officeIds },
+          },
+          select: {
+            id: true,
+            name: true,
+            latitude: true,
+            longitude: true,
+            geofenceRadiusMeters: true,
+          },
+        })
+      : [];
+    const officeById = new Map(offices.map((office) => [office.id, office]));
 
     const schedules = await this.prisma.employeeSchedule.findMany({
       where: {
@@ -816,6 +894,33 @@ export class EmployeePunchesService {
         current.minutes < endMinutes + AUTO_OUT_GRACE_MINUTES
       ) {
         continue;
+      }
+
+      const assignedOfficeId = punch.employee?.officeId || null;
+      const assignedOffice = assignedOfficeId
+        ? officeById.get(assignedOfficeId) || null
+        : null;
+      let awayFromAssignedOffice = false;
+      if (
+        assignedOffice &&
+        assignedOffice.latitude !== null &&
+        assignedOffice.longitude !== null &&
+        punch.latitude !== null &&
+        punch.longitude !== null
+      ) {
+        const allowedRadius =
+          assignedOffice.geofenceRadiusMeters ||
+          DEFAULT_GEOFENCE_RADIUS_METERS;
+        const distance = this.distanceMeters(
+          assignedOffice.latitude,
+          assignedOffice.longitude,
+          punch.latitude,
+          punch.longitude,
+        );
+        awayFromAssignedOffice = distance > allowedRadius;
+        if (!awayFromAssignedOffice) {
+          continue;
+        }
       }
 
       const latest = await this.prisma.employeePunch.findFirst({
@@ -877,6 +982,7 @@ export class EmployeePunchesService {
         `[WORK_DATE:${workDate}]`,
         `[AUTO_OUT_WEEKLY_COUNT:${weeklyStrikeCount}]`,
         `[PENALTY_MINUTES:${penaltyMinutes}]`,
+        `[AWAY_FROM_LOCATION:${awayFromAssignedOffice ? 'YES' : 'UNKNOWN'}]`,
         `[TIPS_PENDING:${tipsPendingWorkDate || AUTO_OUT_TIPS_PENDING_NONE}]`,
       ].join(' ');
 
@@ -893,7 +999,14 @@ export class EmployeePunchesService {
 
       const employeeName =
         punch.employee.displayName || punch.employee.fullName || 'Employee';
-      const strikeMessage = `${employeeName} was auto clocked out ${AUTO_OUT_GRACE_MINUTES} minutes after schedule end (strike ${weeklyStrikeCount} this week).`;
+      const locationClause =
+        awayFromAssignedOffice && assignedOffice
+          ? ` while outside ${assignedOffice.name} geofence`
+          : '';
+      const strikeMessage =
+        `${employeeName} was auto clocked out ${AUTO_OUT_GRACE_MINUTES} ` +
+        `minutes after schedule end${locationClause} ` +
+        `(strike ${weeklyStrikeCount} this week).`;
       const policyMessage =
         penaltyMinutes > 0
           ? `${strikeMessage} Policy alert: 1h 30m deduction applies.`

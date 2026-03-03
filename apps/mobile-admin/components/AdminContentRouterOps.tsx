@@ -54,7 +54,6 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
       />
     );
   }
-
   if (props.screen === "reports") {
     return (
       <ReportsCard
@@ -73,13 +72,16 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
         inlineOrNull={props.inlineOrNull}
         reportLoading={props.reportLoading}
         onRunReport={props.runReport}
+        reportExportingFormat={props.reportExportingFormat}
+        onExportReport={(format) => {
+          void props.exportReport(format);
+        }}
         inline={props.inline}
         language={props.language}
         reportRows={props.reportRows}
       />
     );
   }
-
   if (props.screen === "alerts") {
     return (
       <AlertsCard
@@ -109,7 +111,6 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
       />
     );
   }
-
   if (props.screen === "schedules") {
     return (
       <SchedulesScreen
@@ -143,7 +144,6 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
       />
     );
   }
-
   if (props.screen === "companyOrders") {
     return (
       <CompanyOrdersCard
@@ -193,7 +193,6 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
       />
     );
   }
-
   if (props.screen === "liquorControl") {
     return (
       <LiquorControlScreen

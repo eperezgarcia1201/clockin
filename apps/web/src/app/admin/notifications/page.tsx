@@ -13,7 +13,6 @@ import {
   listEmployees,
   type EmployeeRow as EmployeeOption,
 } from "../../../lib/api/users-admin";
-
 export default function AdminNotifications() {
   const lang = useUiLanguage();
   const tr = useCallback(
@@ -69,7 +68,6 @@ export default function AdminNotifications() {
         // keep current list when employee options fail to load
       }
     };
-
     void loadEmployees();
   }, []);
 
@@ -95,7 +93,6 @@ export default function AdminNotifications() {
       prev.map((notice) => ({ ...notice, readAt: new Date().toISOString() })),
     );
   };
-
   const handleSendMessage = async () => {
     const trimmedSubject = subject.trim();
     const trimmedMessage = message.trim();

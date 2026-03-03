@@ -13,6 +13,45 @@ import type {
 
 type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
 
+const normalizeEmployee = (payload: Record<string, unknown>): Employee => {
+  const id = typeof payload.id === "string" ? payload.id : "";
+  const fallbackName =
+    (typeof payload.displayName === "string" && payload.displayName.trim()) ||
+    (typeof payload.fullName === "string" && payload.fullName.trim()) ||
+    (typeof payload.email === "string" && payload.email.trim()) ||
+    id ||
+    "Employee";
+  const name =
+    typeof payload.name === "string" && payload.name.trim()
+      ? payload.name.trim()
+      : fallbackName;
+
+  return {
+    id,
+    name,
+    email: typeof payload.email === "string" ? payload.email : undefined,
+    active: payload.active !== false && payload.disabled !== true,
+    officeId:
+      typeof payload.officeId === "string" || payload.officeId === null
+        ? (payload.officeId as string | null)
+        : undefined,
+    groupId:
+      typeof payload.groupId === "string" || payload.groupId === null
+        ? (payload.groupId as string | null)
+        : undefined,
+    isManager: payload.isManager === true,
+    isOwnerManager: payload.isOwnerManager === true,
+    managerPermissions: Array.isArray(payload.managerPermissions)
+      ? (payload.managerPermissions.filter((entry) => typeof entry === "string") as string[])
+      : undefined,
+    isAdmin: payload.isAdmin === true,
+    isTimeAdmin: payload.isTimeAdmin === true,
+    isReports: payload.isReports === true,
+    isServer: payload.isServer === true,
+    isKitchenManager: payload.isKitchenManager === true,
+  };
+};
+
 export const normalizeSummary = (
   payload: Partial<Summary> | null | undefined,
 ): Summary => ({
@@ -62,9 +101,11 @@ export const loadEmployeesData = async (params: {
     const data = (await params.fetchJson(
       params.appendOfficeScope("/employees"),
     )) as {
-      employees: Employee[];
+      employees?: Record<string, unknown>[];
     };
-    const employees = data.employees || [];
+    const employees = Array.isArray(data.employees)
+      ? data.employees.map((entry) => normalizeEmployee(entry || {}))
+      : [];
     return {
       ok: true,
       employees,
@@ -76,10 +117,31 @@ export const loadEmployeesData = async (params: {
       }),
     };
   } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Unable to load users.",
-    };
+    try {
+      const fallback = (await params.fetchJson(
+        params.appendOfficeScope("/notifications/message-targets"),
+      )) as {
+        employees?: Record<string, unknown>[];
+      };
+      const employees = Array.isArray(fallback.employees)
+        ? fallback.employees.map((entry) => normalizeEmployee(entry || {}))
+        : [];
+      return {
+        ok: true,
+        employees,
+        reconciliation: reconcileEmployeeLoadState({
+          employees,
+          scheduleEmployeeId: params.scheduleEmployeeId,
+          reportEmployeeId: params.reportEmployeeId,
+          editingUserId: params.editingUserId,
+        }),
+      };
+    } catch {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : "Unable to load users.",
+      };
+    }
   }
 };
 

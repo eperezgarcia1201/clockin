@@ -88,16 +88,17 @@ export function CaptureSalesSection({
       />
       <TouchableOpacity
         style={[
-          styles.secondaryButton,
-          isLight && styles.secondaryButtonLight,
-          styles.actionButtonCompact,
+          styles.button,
+          styles.capturePrimaryActionButton,
+          styles.captureSalesActionButton,
+          isLight && styles.capturePrimaryActionButtonLight,
           salesSaveLoading && styles.inlineButtonDisabled,
         ]}
         onPress={onSaveSales}
         disabled={salesSaveLoading}
       >
-        <Text style={[styles.secondaryButtonText, isLight && styles.secondaryButtonTextLight]}>
-          {salesSaveLoading ? text.saving : text.saveDailySales}
+        <Text style={styles.capturePrimaryActionText}>
+          {salesSaveLoading ? text.saving : `${text.saveDailySales}  →`}
         </Text>
       </TouchableOpacity>
     </>

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { styles } from "../App.styles";
 import type { Lang } from "../copy";
@@ -59,6 +60,22 @@ export function AlertsCard({
   onScheduleOverrideDecision,
   formatDisplayDate,
 }: AlertsCardProps) {
+  const messageEmployees = useMemo(
+    () =>
+      activeMessageEmployees.map((employee, index) => {
+        const name = employee.name?.trim();
+        const email = employee.email?.trim();
+        return {
+          ...employee,
+          label:
+            name ||
+            email ||
+            (language === "es" ? `Empleado ${index + 1}` : `Employee ${index + 1}`),
+        };
+      }),
+    [activeMessageEmployees, language],
+  );
+
   return (
     <View style={[styles.card, isLight && styles.cardLight]}>
       <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Alerts</Text>
@@ -73,23 +90,28 @@ export function AlertsCard({
       <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
         This message appears as a pop-up the next time the employee clocks in.
       </Text>
-      {activeMessageEmployees.length === 0 ? (
+      {messageEmployees.length === 0 ? (
         <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-          No active employees available.
+          {language === "es"
+            ? "No hay empleados disponibles para alertas."
+            : "No employees available for alerts."}
         </Text>
       ) : (
         <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[styles.toggleRow, styles.employeeMessageTabs]}
+          style={styles.employeeMessageList}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.toggleRow}
         >
-          {activeMessageEmployees.map((employee) => {
+          {messageEmployees.map((employee) => {
             const isActive = employee.id === employeeMessageEmployeeId;
             return (
               <TouchableOpacity
                 key={`message-employee-${employee.id}`}
                 style={[
                   styles.togglePill,
+                  styles.employeeMessagePill,
                   isLight && styles.togglePillLight,
                   isActive && styles.toggleActive,
                   isActive && isLight && styles.toggleActiveLight,
@@ -102,8 +124,10 @@ export function AlertsCard({
                     isLight && styles.toggleTextLight,
                     isActive && isLight && styles.toggleTextLightActive,
                   ]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
                 >
-                  {employee.name}
+                  {employee.label}
                 </Text>
               </TouchableOpacity>
             );

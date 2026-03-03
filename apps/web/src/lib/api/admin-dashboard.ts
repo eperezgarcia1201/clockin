@@ -17,6 +17,25 @@ export type HoursReport = {
   }[];
 };
 
+export type SalesExpenseReport = {
+  range: { from: string; to: string };
+  totals: {
+    totalSales: number;
+    balance: number;
+  };
+  expenseTotals: {
+    totalExpenses: number;
+  };
+  reports: {
+    date: string;
+    totalSales: number;
+  }[];
+  expenses: {
+    date: string;
+    amount: number;
+  }[];
+};
+
 type HoursReportQuery = {
   from: string;
   to: string;
@@ -42,4 +61,14 @@ export async function getHoursReport(
 ): Promise<HoursReport> {
   const queryString = buildHoursReportQuery(query);
   return requestJson<HoursReport>(`/api/reports/hours?${queryString}`);
+}
+
+export async function getSalesExpenseReport(query: {
+  from: string;
+  to: string;
+}): Promise<SalesExpenseReport> {
+  const params = new URLSearchParams();
+  params.set("from", query.from);
+  params.set("to", query.to);
+  return requestJson<SalesExpenseReport>(`/api/reports/sales?${params.toString()}`);
 }

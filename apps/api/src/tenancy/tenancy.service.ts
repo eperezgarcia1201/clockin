@@ -31,6 +31,7 @@ type AdminAccess = {
   displayName: string;
   featurePermissions: ManagerFeatureKey[];
   employeeId: string | null;
+  allowedOfficeId: string | null;
   tenant: Awaited<ReturnType<TenancyService['requireTenantAndUser']>>['tenant'];
   user: Awaited<ReturnType<TenancyService['requireTenantAndUser']>>['user'];
   membership: Awaited<
@@ -189,6 +190,7 @@ export class TenancyService {
           companyOrdersEnabled,
         ),
         employeeId: null,
+        allowedOfficeId: null,
         settings: {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
@@ -207,6 +209,11 @@ export class TenancyService {
     );
 
     if (manager) {
+      if (!manager.officeId) {
+        throw new ForbiddenException(
+          'Manager account must be assigned to a location.',
+        );
+      }
       return {
         ...context,
         actorType: 'manager',
@@ -216,6 +223,7 @@ export class TenancyService {
           companyOrdersEnabled,
         ),
         employeeId: manager.id,
+        allowedOfficeId: manager.officeId || null,
         settings: {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
@@ -240,6 +248,7 @@ export class TenancyService {
           companyOrdersEnabled,
         ),
         employeeId: null,
+        allowedOfficeId: null,
         settings: {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
@@ -257,6 +266,7 @@ export class TenancyService {
       displayName: authUser.name || authUser.email || 'User',
       featurePermissions: [],
       employeeId: null,
+      allowedOfficeId: null,
       settings: {
         adminUsername,
         multiLocationEnabled: settings?.multiLocationEnabled ?? false,
@@ -292,6 +302,42 @@ export class TenancyService {
     );
   }
 
+  resolveOfficeScope(
+    access: Pick<AdminAccess, 'allowedOfficeId'>,
+    officeId?: string | null,
+  ) {
+    const requestedOfficeId = officeId?.trim() || undefined;
+    const allowedOfficeId = access.allowedOfficeId?.trim() || undefined;
+
+    if (!allowedOfficeId) {
+      return {
+        officeId: requestedOfficeId,
+        restrictedToAllowedOffice: false,
+      };
+    }
+
+    if (requestedOfficeId && requestedOfficeId !== allowedOfficeId) {
+      throw new ForbiddenException(
+        'Managers can only access their assigned location.',
+      );
+    }
+
+    return {
+      officeId: allowedOfficeId,
+      restrictedToAllowedOffice: true,
+    };
+  }
+
+  ensureGlobalAdminAccess(
+    access: Pick<AdminAccess, 'allowedOfficeId'>,
+    message = 'Only owners or tenant admins can change global settings.',
+  ) {
+    if (!access.allowedOfficeId) {
+      return;
+    }
+    throw new ForbiddenException(message);
+  }
+
   async requireCompanyOrdersAccess(
     authUser: AuthUser,
   ): Promise<CompanyOrdersAccess> {
@@ -306,7 +352,7 @@ export class TenancyService {
         actorType: access.actorType,
         displayName: access.displayName,
         employeeId: access.employeeId,
-        allowedOfficeId: null,
+        allowedOfficeId: access.allowedOfficeId,
         tenant: access.tenant,
         user: access.user,
         membership: access.membership,
@@ -373,6 +419,7 @@ export class TenancyService {
         fullName: true,
         displayName: true,
         email: true,
+        officeId: true,
         isManager: true,
         isAdmin: true,
         isTimeAdmin: true,

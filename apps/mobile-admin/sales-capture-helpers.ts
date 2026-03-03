@@ -41,7 +41,14 @@ export const buildSalesReportPayload = (params: {
     return {
       ok: false,
       error:
-        "Food sales, liquor sales, and cash payments must be non-negative numbers.",
+        "Food sales, liquor sales, and daily cash must be non-negative numbers (no blank fields).",
+    };
+  }
+  const bankDepositBatch = params.salesBatch.trim();
+  if (!bankDepositBatch) {
+    return {
+      ok: false,
+      error: "Bank deposit batch is required.",
     };
   }
 
@@ -52,7 +59,7 @@ export const buildSalesReportPayload = (params: {
       foodSales,
       liquorSales,
       cashPayments,
-      bankDepositBatch: params.salesBatch.trim() || undefined,
+      bankDepositBatch,
       checkPayments: 0,
       creditCardPayments: 0,
       otherPayments: 0,
@@ -93,9 +100,6 @@ export const buildSalesExpensePayload = (params: {
   if (!params.companyName.trim()) {
     return { ok: false, error: "Company name is required." };
   }
-  if (!params.invoiceNumber.trim()) {
-    return { ok: false, error: "Invoice number is required." };
-  }
   const amount = parseMoneyInput(params.amount);
   if (amount === null) {
     return {
@@ -103,7 +107,14 @@ export const buildSalesExpensePayload = (params: {
       error: "Expense amount must be a non-negative number.",
     };
   }
+  const invoiceNumber = params.invoiceNumber.trim();
   if (params.paymentMethod === "CHECK") {
+    if (!invoiceNumber) {
+      return {
+        ok: false,
+        error: "Invoice number is required for check expenses.",
+      };
+    }
     if (!params.checkNumber.trim()) {
       return {
         ok: false,
@@ -123,7 +134,7 @@ export const buildSalesExpensePayload = (params: {
     payload: {
       date,
       companyName: params.companyName.trim(),
-      invoiceNumber: params.invoiceNumber.trim(),
+      invoiceNumber,
       paymentMethod: params.paymentMethod,
       amount,
       checkNumber:

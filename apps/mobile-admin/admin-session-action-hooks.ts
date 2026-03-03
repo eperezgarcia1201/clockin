@@ -9,6 +9,7 @@ export const useAdminSessionActions = (params: {
   setMultiLocationEnabled: (value: boolean) => void;
   setActiveLocationId: (value: string) => void;
   setSessionManagerEmployeeId: (value: string | null) => void;
+  setSessionManagerOfficeId: (value: string | null) => void;
   setManagerClockExempt: (value: boolean) => void;
   setManagerPin: (value: string) => void;
   setManagerPunchLoading: (value: boolean) => void;
@@ -81,8 +82,8 @@ export const useAdminSessionActions = (params: {
     params.setLoggedIn(false);
     params.setPermissions(defaultAccessPermissions());
     params.setMultiLocationEnabled(false);
-    params.setActiveLocationId("");
     params.setSessionManagerEmployeeId(null);
+    params.setSessionManagerOfficeId(null);
     params.setManagerClockExempt(false);
     params.setManagerPin("");
     params.setManagerPunchLoading(false);
@@ -95,7 +96,6 @@ export const useAdminSessionActions = (params: {
     params.setActiveTenant("");
     params.setActiveTenantLabel("");
     params.setActiveAdminUsername("");
-    params.setUsername("");
     params.setPassword("");
     params.setScreen("dashboard");
     params.setTodaySchedule(null);

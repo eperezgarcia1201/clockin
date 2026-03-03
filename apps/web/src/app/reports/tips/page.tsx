@@ -6,8 +6,7 @@ import {
   fetchTipsReportRequest,
 } from "../../../lib/api/reports-core";
 import { useUiLanguage } from "../../../lib/ui-language";
-
-type Lang = "en" | "es";
+import { tipsCopy, type TipsLang as Lang } from "./tips-copy";
 type Employee = { id: string; name: string };
 
 type DayTip = {
@@ -31,51 +30,6 @@ type TipsReportResponse = {
   employees: EmployeeTipReport[];
 };
 
-const copy: Record<Lang, Record<string, string>> = {
-  en: {
-    title: "Tips Report",
-    period: "Period",
-    weekly: "Weekly",
-    biweekly: "Bi-Weekly",
-    monthly: "Monthly",
-    custom: "Custom",
-    from: "From",
-    to: "To",
-    employee: "Employee",
-    allServers: "All Servers",
-    runReport: "Run Report",
-    running: "Running...",
-    downloadPdf: "Download PDF",
-    noData: "No tip records found for this date range.",
-    totalTips: "Total Tips",
-    cash: "Cash",
-    creditCard: "Credit Card",
-    date: "Date",
-    allGood: "Unable to load tips report",
-  },
-  es: {
-    title: "Reporte de Propinas",
-    period: "Período",
-    weekly: "Semanal",
-    biweekly: "Quincenal",
-    monthly: "Mensual",
-    custom: "Personalizado",
-    from: "Desde",
-    to: "Hasta",
-    employee: "Empleado",
-    allServers: "Todos los Meseros",
-    runReport: "Ejecutar Reporte",
-    running: "Procesando...",
-    downloadPdf: "Descargar PDF",
-    noData: "No se encontraron propinas para este rango.",
-    totalTips: "Total de Propinas",
-    cash: "Efectivo",
-    creditCard: "Tarjeta",
-    date: "Fecha",
-    allGood: "No se pudo cargar el reporte de propinas",
-  },
-};
-
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
 const formatMoney = (value: number, lang: Lang) =>
   new Intl.NumberFormat(lang === "es" ? "es-US" : "en-US", {
@@ -85,7 +39,7 @@ const formatMoney = (value: number, lang: Lang) =>
 
 export default function TipsReportPage() {
   const lang = useUiLanguage();
-  const t = useMemo(() => copy[lang] ?? copy.en, [lang]);
+  const t = useMemo(() => tipsCopy[lang] ?? tipsCopy.en, [lang]);
 
   const today = useMemo(() => new Date(), []);
   const sevenDaysAgo = useMemo(() => {

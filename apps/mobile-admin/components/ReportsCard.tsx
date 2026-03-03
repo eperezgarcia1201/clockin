@@ -1,6 +1,7 @@
 import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { styles } from "../App.styles";
 import type { Lang } from "../copy";
+import type { ReportExportFormat } from "../report-export";
 import type { Employee, ReportType } from "../types";
 
 type ReportsCardProps = {
@@ -19,6 +20,8 @@ type ReportsCardProps = {
   inlineOrNull: (value: string | null | undefined) => string | null;
   reportLoading: boolean;
   onRunReport: () => void;
+  reportExportingFormat: ReportExportFormat | null;
+  onExportReport: (format: ReportExportFormat) => void;
   inline: (value: string) => string;
   language: Lang;
   reportRows: any[];
@@ -40,6 +43,8 @@ export function ReportsCard({
   inlineOrNull,
   reportLoading,
   onRunReport,
+  reportExportingFormat,
+  onExportReport,
   inline,
   language,
   reportRows,
@@ -165,6 +170,32 @@ export function ReportsCard({
               : "Generate Report"}
         </Text>
       </TouchableOpacity>
+      <View style={styles.rowActions}>
+        {(["pdf", "csv", "excel"] as ReportExportFormat[]).map((format) => (
+          <TouchableOpacity
+            key={`report-export-${format}`}
+            style={[
+              styles.secondaryButton,
+              isLight && styles.secondaryButtonLight,
+              styles.actionButtonCompact,
+              reportExportingFormat === format && styles.inlineButtonDisabled,
+            ]}
+            onPress={() => onExportReport(format)}
+            disabled={Boolean(reportExportingFormat)}
+          >
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                isLight && styles.secondaryButtonTextLight,
+              ]}
+            >
+              {reportExportingFormat === format
+                ? inline("Exporting...")
+                : format.toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
       <View style={[styles.divider, isLight && styles.dividerLight]} />
       {reportRows.length === 0 ? (
         <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>

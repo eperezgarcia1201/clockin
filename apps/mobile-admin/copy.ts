@@ -80,7 +80,7 @@ export const copy: Record<
     salesDate: "Report Date (MM/DD/YYYY)",
     foodSales: "Food Sales",
     liquorSales: "Liquor Sales",
-    cashPayments: "Cash Payments",
+    cashPayments: "Daily cash",
     bankBatch: "Bank Deposit Batch",
     notesOptional: "Notes (optional)",
     saveDailySales: "Save Daily Sales",
@@ -130,7 +130,7 @@ export const copy: Record<
     salesDate: "Fecha de reporte (MM/DD/YYYY)",
     foodSales: "Ventas de Comida",
     liquorSales: "Ventas de Licor",
-    cashPayments: "Pagos en Efectivo",
+    cashPayments: "Efectivo diario",
     bankBatch: "Lote de Depósito Bancario",
     notesOptional: "Notas (opcional)",
     saveDailySales: "Guardar Ventas Diarias",
@@ -154,4 +154,3 @@ export const copy: Record<
     noPhoto: "No hay foto de recibo adjunta.",
   },
 };
-

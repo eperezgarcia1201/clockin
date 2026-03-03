@@ -264,6 +264,11 @@ export class ReportsController {
 
     const parseAmount = (field: string) => {
       const raw = body[field];
+      if (typeof raw === 'string' && !raw.trim()) {
+        throw new BadRequestException(
+          `${field} is required and cannot be blank.`,
+        );
+      }
       const value = typeof raw === 'number' ? raw : Number(raw);
       if (!Number.isFinite(value) || value < 0) {
         throw new BadRequestException(
@@ -280,9 +285,14 @@ export class ReportsController {
         : undefined;
     const bankDepositBatchValue = body.bankDepositBatch;
     const bankDepositBatch =
-      typeof bankDepositBatchValue === 'string' && bankDepositBatchValue.trim()
+      typeof bankDepositBatchValue === 'string'
         ? bankDepositBatchValue.trim().slice(0, 80)
-        : undefined;
+        : '';
+    if (!bankDepositBatch) {
+      throw new BadRequestException(
+        'bankDepositBatch is required and cannot be blank.',
+      );
+    }
 
     return this.reports.upsertDailySalesReport(req.user, {
       date,
@@ -319,9 +329,6 @@ export class ReportsController {
 
     const invoiceNumber =
       typeof body.invoiceNumber === 'string' ? body.invoiceNumber.trim() : '';
-    if (!invoiceNumber) {
-      throw new BadRequestException('invoiceNumber is required.');
-    }
 
     const paymentRaw =
       typeof body.paymentMethod === 'string'
@@ -337,6 +344,11 @@ export class ReportsController {
       );
     }
     const paymentMethod = paymentRaw as ExpensePaymentMethod;
+    if (paymentMethod === ExpensePaymentMethod.CHECK && !invoiceNumber) {
+      throw new BadRequestException(
+        'invoiceNumber is required when payment method is CHECK.',
+      );
+    }
 
     const amountRaw = body.amount;
     const amount =

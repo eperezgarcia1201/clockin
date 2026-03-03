@@ -35,7 +35,14 @@ export const buildActiveMessageEmployees = (
   employees: Employee[],
 ): Employee[] =>
   employees
-    .filter((employee) => employee.active)
+    .filter((employee) => employee.active !== false)
+    .map((employee) => ({
+      ...employee,
+      name:
+        (employee.name && employee.name.trim()) ||
+        (employee.email && employee.email.trim()) ||
+        employee.id,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
 export const filterEmployeesBySearch = (

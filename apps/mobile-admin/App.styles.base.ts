@@ -181,6 +181,14 @@ export const adminAppStylesBase = {
   employeeMessageTabs: {
     paddingRight: 8,
   },
+  employeeMessageList: {
+    maxHeight: 136,
+    marginBottom: 8,
+  },
+  employeeMessagePill: {
+    minHeight: 34,
+    justifyContent: "center",
+  },
   employeeMessageInput: {
     minHeight: 96,
     textAlignVertical: "top",
@@ -216,4 +224,35 @@ export const adminAppStylesBase = {
   secondaryButtonText: { fontSize: 12, fontWeight: "600", color: "#e2e8f0" },
   secondaryButtonLight: { backgroundColor: "#e2e8f0" },
   secondaryButtonTextLight: { color: "#0f172a" },
+  capturePrimaryActionButton: {
+    marginTop: 12,
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(191, 219, 254, 0.75)",
+    backgroundColor: "#2f5bff",
+    shadowColor: "#1d4ed8",
+    shadowOpacity: 0.42,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
+  },
+  captureSalesActionButton: {
+    backgroundColor: "#2563eb",
+    shadowColor: "#1d4ed8",
+  },
+  captureExpenseActionButton: {
+    borderColor: "rgba(153, 246, 228, 0.75)",
+    backgroundColor: "#0ea5a4",
+    shadowColor: "#0f766e",
+  },
+  capturePrimaryActionButtonLight: {
+    backgroundColor: "#1d4ed8",
+    borderColor: "rgba(37, 99, 235, 0.45)",
+  },
+  capturePrimaryActionText: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#f8fafc",
+    letterSpacing: 0.35,
+  },
 } as const;

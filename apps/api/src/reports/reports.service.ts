@@ -150,10 +150,13 @@ export class ReportsService {
     private readonly tenancy: TenancyService,
   ) {}
 
-  private scopedOfficeFilter(officeId?: string) {
+  private scopedOfficeFilter(officeId?: string, strictOfficeMatch = false) {
     const scopedOfficeId = officeId?.trim() || undefined;
     if (!scopedOfficeId) {
       return {};
+    }
+    if (strictOfficeMatch) {
+      return { officeId: scopedOfficeId };
     }
     return {
       OR: [{ officeId: scopedOfficeId }, { officeId: null }],
@@ -350,8 +353,9 @@ export class ReportsService {
       limit?: number;
     },
   ) {
-    await this.tenancy.requireFeature(authUser, 'reports');
-    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const access = await this.tenancy.requireFeature(authUser, 'reports');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access, input.officeId);
     const settings = await this.prisma.tenantSettings.findUnique({
       where: { tenantId: tenant.id },
     });
@@ -375,7 +379,10 @@ export class ReportsService {
           lte: new Date(rangeEndUtc),
         },
         employee: {
-          ...this.scopedOfficeFilter(input.officeId),
+          ...this.scopedOfficeFilter(
+            officeScope.officeId,
+            officeScope.restrictedToAllowedOffice,
+          ),
           groupId: input.groupId,
         },
       },
@@ -416,8 +423,9 @@ export class ReportsService {
       groupId?: string;
     },
   ) {
-    await this.tenancy.requireFeature(authUser, 'reports');
-    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const access = await this.tenancy.requireFeature(authUser, 'reports');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access, input.officeId);
     const settings = await this.prisma.tenantSettings.findUnique({
       where: { tenantId: tenant.id },
     });
@@ -432,7 +440,10 @@ export class ReportsService {
       where: {
         tenantId: tenant.id,
         id: input.employeeId,
-        ...this.scopedOfficeFilter(input.officeId),
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
         groupId: input.groupId,
         isServer: true,
       },
@@ -1647,9 +1658,6 @@ export class ReportsService {
     }
 
     const invoiceNumber = input.invoiceNumber.trim();
-    if (!invoiceNumber) {
-      throw new BadRequestException('invoiceNumber is required.');
-    }
 
     if (!Number.isFinite(input.amount) || input.amount < 0) {
       throw new BadRequestException('amount must be a non-negative number.');
@@ -1659,6 +1667,11 @@ export class ReportsService {
     const payToCompany = input.payToCompany?.trim() || '';
 
     if (input.paymentMethod === ExpensePaymentMethod.CHECK) {
+      if (!invoiceNumber) {
+        throw new BadRequestException(
+          'invoiceNumber is required when payment method is CHECK.',
+        );
+      }
       if (!checkNumber) {
         throw new BadRequestException(
           'checkNumber is required when payment method is CHECK.',
@@ -1678,7 +1691,8 @@ export class ReportsService {
         companyName: companyName.slice(0, 160),
         paymentMethod: input.paymentMethod,
         amount: toMoney(input.amount),
-        invoiceNumber: invoiceNumber.slice(0, 80),
+        invoiceNumber:
+          (invoiceNumber || 'N/A').slice(0, 80),
         checkNumber:
           input.paymentMethod === ExpensePaymentMethod.CHECK
             ? checkNumber.slice(0, 40)
@@ -1970,7 +1984,9 @@ export class ReportsService {
       groupId?: string;
     },
   ) {
-    const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
+    const access = await this.tenancy.requireFeature(authUser, 'reports');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access, input.officeId);
     const settings = await this.prisma.tenantSettings.findUnique({
       where: { tenantId: tenant.id },
     });
@@ -1985,7 +2001,10 @@ export class ReportsService {
       where: {
         tenantId: tenant.id,
         id: input.employeeId,
-        ...this.scopedOfficeFilter(input.officeId),
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
         groupId: input.groupId,
       },
       orderBy: { fullName: 'asc' },

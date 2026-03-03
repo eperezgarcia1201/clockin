@@ -15,10 +15,13 @@ export class EmployeesService {
     private readonly tenancy: TenancyService,
   ) {}
 
-  private scopedOfficeFilter(officeId?: string) {
+  private scopedOfficeFilter(officeId?: string, strictOfficeMatch = false) {
     const scopedOfficeId = officeId?.trim() || undefined;
     if (!scopedOfficeId) {
       return {};
+    }
+    if (strictOfficeMatch) {
+      return { officeId: scopedOfficeId };
     }
     return {
       OR: [{ officeId: scopedOfficeId }, { officeId: null }],
@@ -29,14 +32,22 @@ export class EmployeesService {
     authUser: AuthUser,
     options?: { includeDeleted?: boolean; officeId?: string },
   ) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'users');
+    const access = await this.tenancy.requireFeature(authUser, 'users');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(
+      access,
+      options?.officeId,
+    );
     const includeDeleted = options?.includeDeleted === true;
 
     const employees = await this.prisma.employee.findMany({
       where: {
         tenantId: tenant.id,
         deletedAt: includeDeleted ? { not: null } : null,
-        ...this.scopedOfficeFilter(options?.officeId),
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
       },
       orderBy: { fullName: 'asc' },
       include: {
@@ -79,7 +90,9 @@ export class EmployeesService {
   }
 
   async createEmployee(authUser: AuthUser, dto: CreateEmployeeDto) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'users');
+    const access = await this.tenancy.requireFeature(authUser, 'users');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access, dto.officeId);
 
     const pinHash = dto.pin ? await hash(dto.pin, 10) : null;
     const isManager = dto.isManager ?? false;
@@ -99,7 +112,7 @@ export class EmployeesService {
         email: dto.email,
         pinHash,
         hourlyRate: dto.hourlyRate ?? null,
-        officeId: dto.officeId || null,
+        officeId: officeScope.officeId || null,
         groupId: dto.groupId || null,
         isManager,
         managerPermissions,
@@ -116,10 +129,20 @@ export class EmployeesService {
   }
 
   async getEmployee(authUser: AuthUser, employeeId: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'users');
+    const access = await this.tenancy.requireFeature(authUser, 'users');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
 
     const employee = await this.prisma.employee.findFirst({
-      where: { id: employeeId, tenantId: tenant.id, deletedAt: null },
+      where: {
+        id: employeeId,
+        tenantId: tenant.id,
+        deletedAt: null,
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
 
     if (!employee) {
@@ -153,10 +176,20 @@ export class EmployeesService {
     employeeId: string,
     dto: UpdateEmployeeDto,
   ) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'users');
+    const access = await this.tenancy.requireFeature(authUser, 'users');
+    const { tenant } = access;
+    const employeeScope = this.tenancy.resolveOfficeScope(access);
 
     const existing = await this.prisma.employee.findFirst({
-      where: { id: employeeId, tenantId: tenant.id, deletedAt: null },
+      where: {
+        id: employeeId,
+        tenantId: tenant.id,
+        deletedAt: null,
+        ...this.scopedOfficeFilter(
+          employeeScope.officeId,
+          employeeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
 
     if (!existing) {
@@ -178,7 +211,8 @@ export class EmployeesService {
       data.hourlyRate = dto.hourlyRate ?? null;
     }
     if (dto.officeId !== undefined) {
-      data.officeId = dto.officeId || null;
+      const officeScope = this.tenancy.resolveOfficeScope(access, dto.officeId);
+      data.officeId = officeScope.officeId || null;
     }
     if (dto.groupId !== undefined) {
       data.groupId = dto.groupId || null;
@@ -240,10 +274,20 @@ export class EmployeesService {
   }
 
   async softDeleteEmployee(authUser: AuthUser, employeeId: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'users');
+    const access = await this.tenancy.requireFeature(authUser, 'users');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
 
     const existing = await this.prisma.employee.findFirst({
-      where: { id: employeeId, tenantId: tenant.id, deletedAt: null },
+      where: {
+        id: employeeId,
+        tenantId: tenant.id,
+        deletedAt: null,
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
 
     if (!existing) {
@@ -272,10 +316,20 @@ export class EmployeesService {
   }
 
   async restoreEmployee(authUser: AuthUser, employeeId: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'users');
+    const access = await this.tenancy.requireFeature(authUser, 'users');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
 
     const existing = await this.prisma.employee.findFirst({
-      where: { id: employeeId, tenantId: tenant.id, deletedAt: { not: null } },
+      where: {
+        id: employeeId,
+        tenantId: tenant.id,
+        deletedAt: { not: null },
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
 
     if (!existing) {
@@ -299,10 +353,20 @@ export class EmployeesService {
   }
 
   async deleteEmployeePermanently(authUser: AuthUser, employeeId: string) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'users');
+    const access = await this.tenancy.requireFeature(authUser, 'users');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
 
     const existing = await this.prisma.employee.findFirst({
-      where: { id: employeeId, tenantId: tenant.id, deletedAt: { not: null } },
+      where: {
+        id: employeeId,
+        tenantId: tenant.id,
+        deletedAt: { not: null },
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
     });
 
     if (!existing) {
@@ -374,8 +438,16 @@ export class EmployeesService {
   }
 
   async getSummary(authUser: AuthUser, options?: { officeId?: string }) {
-    const { tenant } = await this.tenancy.requireFeature(authUser, 'dashboard');
-    const officeFilter = this.scopedOfficeFilter(options?.officeId);
+    const access = await this.tenancy.requireFeature(authUser, 'dashboard');
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(
+      access,
+      options?.officeId,
+    );
+    const officeFilter = this.scopedOfficeFilter(
+      officeScope.officeId,
+      officeScope.restrictedToAllowedOffice,
+    );
 
     const [total, admins, timeAdmins, reports] = await Promise.all([
       this.prisma.employee.count({

@@ -45,6 +45,15 @@ export class NotificationsController {
     return this.notifications.markRead(req.user, id);
   }
 
+  @Get('message-targets')
+  async listMessageTargets(@Req() req: RequestWithUser) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.notifications.listMessageTargets(req.user);
+  }
+
   @Post('read-all')
   async markAllRead(@Req() req: RequestWithUser) {
     if (!req.user) {

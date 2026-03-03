@@ -189,6 +189,7 @@ export class TenantDirectoryService {
         adminUsername: expectedUsername,
         loginType: 'tenant_admin',
         managerEmployeeId: null,
+        allowedOfficeId: null,
         featurePermissions: this.filterTenantFeaturePermissions(
           allManagerFeatures(),
           companyOrdersEnabled,
@@ -219,6 +220,7 @@ export class TenantDirectoryService {
       adminUsername: manager.username,
       loginType: 'manager',
       managerEmployeeId: manager.id,
+      allowedOfficeId: manager.officeId,
       featurePermissions: this.filterTenantFeaturePermissions(
         manager.featurePermissions,
         companyOrdersEnabled,
@@ -268,6 +270,7 @@ export class TenantDirectoryService {
         id: true,
         fullName: true,
         displayName: true,
+        officeId: true,
         pinHash: true,
         isAdmin: true,
         isManager: true,
@@ -284,6 +287,11 @@ export class TenantDirectoryService {
     const valid = await compare(password, manager.pinHash);
     if (!valid) {
       return null;
+    }
+    if (!manager.officeId) {
+      throw new ForbiddenException(
+        'Manager account must be assigned to a location before admin login.',
+      );
     }
 
     const configured = normalizeManagerFeatures(manager.managerPermissions);
@@ -312,6 +320,7 @@ export class TenantDirectoryService {
     return {
       id: manager.id,
       username: manager.displayName || manager.fullName,
+      officeId: manager.officeId,
       featurePermissions,
     };
   }

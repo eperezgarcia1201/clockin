@@ -11,6 +11,9 @@ export async function listOffices(): Promise<Office[]> {
 
 export async function createOffice(input: {
   name: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  geofenceRadiusMeters?: number | null;
 }): Promise<Office | null> {
   const payload = await requestJson<Office | null>("/api/offices", {
     method: "POST",

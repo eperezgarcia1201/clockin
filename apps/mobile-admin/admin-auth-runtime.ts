@@ -4,6 +4,7 @@ export type AdminDirectoryLoginResponse = {
   authOrgId?: string;
   featurePermissions?: string[];
   managerEmployeeId?: string | null;
+  allowedOfficeId?: string | null;
   error?: string;
   message?: string;
 };
@@ -90,6 +91,16 @@ export const authenticateAdminTenantDirectory = async (params: {
 };
 
 export const resolveLoginManagerEmployeeId = (
+  value: string | null | undefined,
+): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed || null;
+};
+
+export const resolveLoginManagerOfficeId = (
   value: string | null | undefined,
 ): string | null => {
   if (typeof value !== "string") {

@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getSettings, updateSettings } from "../../../lib/api/settings-admin";
+import { getAccessMe, type AccessMe } from "../../../lib/api/access";
+import {
+  settingsTranslations,
+  type SettingsLang as Lang,
+} from "./settings-copy";
 
 type Settings = {
   timezone: string;
@@ -12,86 +17,6 @@ type Settings = {
   allowManualTimeEdits: boolean;
   dailySalesReportingEnabled: boolean;
   multiLocationEnabled: boolean;
-};
-
-type Lang = "en" | "es";
-
-const translations: Record<
-  Lang,
-  {
-    title: string;
-    saved: string;
-    saveError: string;
-    timezone: string;
-    roundingMinutes: string;
-    noRounding: string;
-    minutes: string;
-    ipRestrictions: string;
-    ipRestrictionsPlaceholder: string;
-    requirePin: string;
-    reportsEnabled: string;
-    allowManualTimeEdits: string;
-    dailySalesReporting: string;
-    multiLocation: string;
-    enabled: string;
-    disabled: string;
-    dailySalesReportingHint: string;
-    multiLocationHint: string;
-    yes: string;
-    no: string;
-    saveSettings: string;
-  }
-> = {
-  en: {
-    title: "System Settings",
-    saved: "Settings saved.",
-    saveError: "Unable to save settings.",
-    timezone: "Timezone",
-    roundingMinutes: "Rounding Minutes",
-    noRounding: "No rounding",
-    minutes: "minutes",
-    ipRestrictions: "IP Restrictions",
-    ipRestrictionsPlaceholder: "Comma-separated IPs or CIDR ranges",
-    requirePin: "Require PIN",
-    reportsEnabled: "Reports Enabled",
-    allowManualTimeEdits: "Allow Manual Time Edits",
-    dailySalesReporting: "Daily Sales Reporting",
-    multiLocation: "Multi-Location",
-    enabled: "Enabled",
-    disabled: "Disabled",
-    dailySalesReportingHint:
-      "Controlled by owner in the tenant feature toggles.",
-    multiLocationHint:
-      "Enable this from the owner tenant feature toggles for chain restaurants.",
-    yes: "Yes",
-    no: "No",
-    saveSettings: "Save Settings",
-  },
-  es: {
-    title: "Configuración del Sistema",
-    saved: "Configuración guardada.",
-    saveError: "No se pudo guardar la configuración.",
-    timezone: "Zona Horaria",
-    roundingMinutes: "Minutos de Redondeo",
-    noRounding: "Sin redondeo",
-    minutes: "minutos",
-    ipRestrictions: "Restricciones IP",
-    ipRestrictionsPlaceholder: "IPs o rangos CIDR separados por comas",
-    requirePin: "Requerir PIN",
-    reportsEnabled: "Reportes Habilitados",
-    allowManualTimeEdits: "Permitir Edición Manual de Tiempo",
-    dailySalesReporting: "Reporte Diario de Ventas",
-    multiLocation: "Multi-Ubicación",
-    enabled: "Habilitado",
-    disabled: "Deshabilitado",
-    dailySalesReportingHint:
-      "Controlado por el owner en los toggles de funciones del tenant.",
-    multiLocationHint:
-      "Habilitar desde los toggles del owner para cadenas de restaurantes.",
-    yes: "Sí",
-    no: "No",
-    saveSettings: "Guardar Configuración",
-  },
 };
 
 const TIMEZONES = [
@@ -120,7 +45,11 @@ export default function SystemSettings() {
   const [form, setForm] = useState<Settings>(defaults);
   const [status, setStatus] = useState<string | null>(null);
   const [lang, setLang] = useState<Lang>("en");
-  const t = useMemo(() => translations[lang] ?? translations.en, [lang]);
+  const [accessInfo, setAccessInfo] = useState<AccessMe | null>(null);
+  const t = useMemo(
+    () => settingsTranslations[lang] ?? settingsTranslations.en,
+    [lang],
+  );
 
   useEffect(() => {
     const syncLang = () => {
@@ -164,6 +93,18 @@ export default function SystemSettings() {
     void load();
   }, []);
 
+  useEffect(() => {
+    const loadAccess = async () => {
+      try {
+        const data = await getAccessMe();
+        setAccessInfo(data);
+      } catch {
+        setAccessInfo(null);
+      }
+    };
+    void loadAccess();
+  }, []);
+
   const update = (key: keyof Settings, value: string | number | boolean) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -185,6 +126,38 @@ export default function SystemSettings() {
         <h1>{t.title}</h1>
       </div>
       <div className="admin-card">
+        <div className="row g-3 mb-2">
+          <div className="col-12">
+            <h5 className="mb-1">{t.mainAdminTitle}</h5>
+            <p className="text-muted mb-0">{t.mainAdminDescription}</p>
+          </div>
+          <div className="col-12 col-md-4">
+            <label className="form-label">{t.tenantLabel}</label>
+            <input
+              className="form-control"
+              value={String(accessInfo?.tenantName || "")}
+              readOnly
+            />
+          </div>
+          <div className="col-12 col-md-4">
+            <label className="form-label">{t.mainUsernameLabel}</label>
+            <input
+              className="form-control"
+              value={String(
+                accessInfo?.mainAdminUsername || accessInfo?.adminUsername || "",
+              )}
+              readOnly
+            />
+          </div>
+          <div className="col-12 col-md-4">
+            <label className="form-label">{t.ownerEmailLabel}</label>
+            <input
+              className="form-control"
+              value={String(accessInfo?.tenantOwnerEmail || "")}
+              readOnly
+            />
+          </div>
+        </div>
         {status && <div className="alert alert-info">{status}</div>}
         <form onSubmit={save} className="row g-3">
           <div className="col-12 col-md-6">

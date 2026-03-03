@@ -165,6 +165,7 @@ export const formatScheduleShiftLabel = (startTime: string, endTime: string) => 
 };
 
 export const parseMoneyInput = (value: string) => {
+  if (!value.trim()) return null;
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return Number(parsed.toFixed(2));
