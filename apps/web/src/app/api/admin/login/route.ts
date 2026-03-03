@@ -42,10 +42,11 @@ const readErrorMessage = (value: unknown, fallback: string) => {
   return fallback;
 };
 
-const verifyTenantAdminLogin = async (
-  payload: { tenant: string; username: string; password: string },
-  hostHeader: string | null,
-) => {
+const verifyTenantAdminLogin = async (payload: {
+  tenant: string;
+  username: string;
+  password: string;
+}) => {
   const apiUrl = process.env.CLOCKIN_API_URL;
   if (!apiUrl) {
     return {
@@ -66,7 +67,6 @@ const verifyTenantAdminLogin = async (
       },
       body: JSON.stringify({
         ...payload,
-        host: hostHeader || undefined,
       }),
       cache: "no-store",
     });
@@ -115,14 +115,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const verified = await verifyTenantAdminLogin(
-    {
-      tenant: tenantInput,
-      username: usernameInput,
-      password: passwordInput,
-    },
-    request.headers.get("host"),
-  );
+  const verified = await verifyTenantAdminLogin({
+    tenant: tenantInput,
+    username: usernameInput,
+    password: passwordInput,
+  });
 
   if (!verified.ok) {
     return NextResponse.json(

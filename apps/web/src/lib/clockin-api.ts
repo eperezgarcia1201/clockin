@@ -56,6 +56,15 @@ export async function clockinFetch(
       adminSession?.tenantAuthOrgId?.trim() ||
       employeeSession?.tenantAuthOrgId?.trim() ||
       "";
+    const hasSession = Boolean(adminSession || employeeSession);
+    const allowDevFallback =
+      process.env.NODE_ENV !== "production" ||
+      process.env.ALLOW_DEV_TENANT_FALLBACK === "true";
+
+    if (hasSession && !tenantAuthOrgId && !allowDevFallback) {
+      throw new Error("Missing tenant context in session. Please sign in again.");
+    }
+
     const normalizedActorId = actorName ? normalizeActorId(actorName) : "";
 
     if (!headers.has("x-dev-user-id")) {
@@ -66,6 +75,9 @@ export async function clockinFetch(
     }
 
     if (!headers.has("x-dev-tenant-id")) {
+      if (!tenantAuthOrgId && !allowDevFallback) {
+        throw new Error("Missing tenant context for API request.");
+      }
       headers.set(
         "x-dev-tenant-id",
         tenantAuthOrgId || process.env.DEV_TENANT_ID || "dev-tenant",
