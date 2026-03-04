@@ -87,6 +87,7 @@ export function ClockStationCard({
         <TextInput
           style={styles.input}
           placeholder={t.enterFullName}
+          placeholderTextColor="rgba(31, 26, 22, 0.35)"
           value={employeeName}
           onChangeText={onEmployeeNameChange}
           autoCorrect={false}
@@ -111,6 +112,7 @@ export function ClockStationCard({
         <TextInput
           style={[styles.input, styles.pinInput]}
           placeholder={pinPlaceholder}
+          placeholderTextColor="rgba(31, 26, 22, 0.35)"
           secureTextEntry
           keyboardType="number-pad"
           value={pin}
@@ -159,6 +161,7 @@ export function ClockStationCard({
             keyboardType="decimal-pad"
             inputMode="decimal"
             placeholder="0.00"
+            placeholderTextColor="rgba(31, 26, 22, 0.35)"
           />
           <Text style={styles.label}>{t.creditCardTips}</Text>
           <TextInput
@@ -168,6 +171,7 @@ export function ClockStationCard({
             keyboardType="decimal-pad"
             inputMode="decimal"
             placeholder="0.00"
+            placeholderTextColor="rgba(31, 26, 22, 0.35)"
           />
           {tipsStatus ? (
             <Text

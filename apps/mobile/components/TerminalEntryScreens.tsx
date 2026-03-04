@@ -76,6 +76,7 @@ export function TerminalEntryScreens({
         <TextInput
           style={styles.input}
           placeholder="e.g. clockin-demo"
+          placeholderTextColor="rgba(31, 26, 22, 0.35)"
           value={tenantInput}
           onChangeText={onTenantInputChange}
           autoCapitalize="none"

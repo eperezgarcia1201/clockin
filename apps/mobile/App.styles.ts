@@ -121,6 +121,7 @@ export const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: "#fffaf6",
+    color: "#1f1a16",
     borderRadius: 14,
     paddingHorizontal: 14,
     height: 46,
