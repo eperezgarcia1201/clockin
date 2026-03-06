@@ -19,6 +19,16 @@ type Settings = {
   multiLocationEnabled: boolean;
 };
 
+type EditableSettings = Pick<
+  Settings,
+  | "timezone"
+  | "roundingMinutes"
+  | "requirePin"
+  | "ipRestrictions"
+  | "reportsEnabled"
+  | "allowManualTimeEdits"
+>;
+
 const TIMEZONES = [
   "America/New_York",
   "America/Chicago",
@@ -83,6 +93,17 @@ const pickSystemSettings = (value: unknown): Settings => {
         : defaults.multiLocationEnabled,
   };
 };
+
+const buildEditableSettingsPayload = (
+  settings: Settings,
+): EditableSettings => ({
+  timezone: settings.timezone,
+  roundingMinutes: settings.roundingMinutes,
+  requirePin: settings.requirePin,
+  ipRestrictions: settings.ipRestrictions,
+  reportsEnabled: settings.reportsEnabled,
+  allowManualTimeEdits: settings.allowManualTimeEdits,
+});
 
 export default function SystemSettings() {
   const [form, setForm] = useState<Settings>(defaults);
@@ -156,7 +177,7 @@ export default function SystemSettings() {
     event.preventDefault();
     setStatus(null);
     try {
-      await updateSettings(pickSystemSettings(form));
+      await updateSettings(buildEditableSettingsPayload(form));
       setStatus(t.saved);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t.saveError);
