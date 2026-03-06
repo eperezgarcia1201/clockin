@@ -314,58 +314,65 @@ export default function AdminCompanyOrdersCatalogPage() {
       return;
     }
 
+    const sourceSupplier = catalog[selectedSupplierIndex];
+    const destinationSupplier = catalog[destinationIndex];
+    if (!sourceSupplier || !destinationSupplier) {
+      return;
+    }
+
+    const movingItems = sourceSupplier.items.filter((item) =>
+      selectedItemIds.includes(item.clientId),
+    );
+    if (!movingItems.length) {
+      setStatusKind("danger");
+      setStatus(
+        tr(
+          "No selected items were found to transfer.",
+          "No se encontraron artículos seleccionados para transferir.",
+        ),
+      );
+      return;
+    }
+
+    const remainingItems = sourceSupplier.items.filter(
+      (item) => !selectedItemIds.includes(item.clientId),
+    );
+    const destinationItems = [...destinationSupplier.items];
+    const destinationKeys = new Set(
+      destinationItems.map((item) => editableItemKey(item)),
+    );
+
     let transferredCount = 0;
     let skippedDuplicates = 0;
 
-    setCatalog((previous) => {
-      const sourceSupplier = previous[selectedSupplierIndex];
-      const destinationSupplier = previous[destinationIndex];
-      if (!sourceSupplier || !destinationSupplier) {
-        return previous;
+    movingItems.forEach((item) => {
+      const itemKey = editableItemKey(item);
+      if (destinationKeys.has(itemKey)) {
+        skippedDuplicates += 1;
+        return;
       }
-
-      const movingItems = sourceSupplier.items.filter((item) =>
-        selectedItemIds.includes(item.clientId),
-      );
-      if (!movingItems.length) {
-        return previous;
-      }
-
-      const remainingItems = sourceSupplier.items.filter(
-        (item) => !selectedItemIds.includes(item.clientId),
-      );
-      const destinationItems = [...destinationSupplier.items];
-      const destinationKeys = new Set(
-        destinationItems.map((item) => editableItemKey(item)),
-      );
-
-      movingItems.forEach((item) => {
-        const itemKey = editableItemKey(item);
-        if (destinationKeys.has(itemKey)) {
-          skippedDuplicates += 1;
-          return;
-        }
-        destinationKeys.add(itemKey);
-        destinationItems.push(item);
-        transferredCount += 1;
-      });
-
-      return previous.map((supplier, index) => {
-        if (index === selectedSupplierIndex) {
-          return {
-            ...supplier,
-            items: remainingItems,
-          };
-        }
-        if (index === destinationIndex) {
-          return {
-            ...supplier,
-            items: destinationItems,
-          };
-        }
-        return supplier;
-      });
+      destinationKeys.add(itemKey);
+      destinationItems.push(item);
+      transferredCount += 1;
     });
+
+    const nextCatalog = catalog.map((supplier, index) => {
+      if (index === selectedSupplierIndex) {
+        return {
+          ...supplier,
+          items: remainingItems,
+        };
+      }
+      if (index === destinationIndex) {
+        return {
+          ...supplier,
+          items: destinationItems,
+        };
+      }
+      return supplier;
+    });
+
+    setCatalog(nextCatalog);
 
     setSelectedItemIds([]);
     setTransferTargetSupplierIndex("");
