@@ -9,8 +9,41 @@ import {
   type CompanyOrderCatalogSupplier,
 } from "../../../../lib/api/company-orders-admin";
 
+type EditableCatalogItem = CompanyOrderCatalogItem & {
+  clientId: string;
+};
+
+type EditableCatalogSupplier = {
+  supplierName: string;
+  items: EditableCatalogItem[];
+};
+
+let nextCatalogClientId = 0;
+
+const createCatalogClientId = () => {
+  nextCatalogClientId += 1;
+  return `catalog-item-${nextCatalogClientId}`;
+};
+
+const toEditableCatalog = (
+  suppliers: CompanyOrderCatalogSupplier[],
+): EditableCatalogSupplier[] =>
+  suppliers.map((supplier) => ({
+    supplierName: supplier.supplierName,
+    items: supplier.items.map((item) => ({
+      ...item,
+      clientId: createCatalogClientId(),
+    })),
+  }));
+
+const normalizeCatalogName = (value: string) =>
+  value.trim().replace(/\s+/g, " ").toLowerCase();
+
+const editableItemKey = (item: CompanyOrderCatalogItem) =>
+  `${normalizeCatalogName(item.nameEs)}|${normalizeCatalogName(item.nameEn)}`;
+
 const sanitizeCatalogForSave = (
-  catalog: CompanyOrderCatalogSupplier[],
+  catalog: EditableCatalogSupplier[],
 ): CompanyOrderCatalogSupplier[] => {
   return catalog
     .map((supplier) => {
@@ -43,7 +76,7 @@ export default function AdminCompanyOrdersCatalogPage() {
     (en: string, es: string) => (lang === "es" ? es : en),
     [lang],
   );
-  const [catalog, setCatalog] = useState<CompanyOrderCatalogSupplier[]>([]);
+  const [catalog, setCatalog] = useState<EditableCatalogSupplier[]>([]);
   const [selectedSupplierIndex, setSelectedSupplierIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -51,11 +84,29 @@ export default function AdminCompanyOrdersCatalogPage() {
   const [statusKind, setStatusKind] = useState<"success" | "danger" | "info">(
     "info",
   );
-  const itemListRef = useRef<HTMLDivElement | null>(null);
+  const supplierNameInputRef = useRef<HTMLInputElement | null>(null);
+  const addItemNameEsRef = useRef<HTMLInputElement | null>(null);
+  const [newItemDraft, setNewItemDraft] = useState({ nameEs: "", nameEn: "" });
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [transferTargetSupplierIndex, setTransferTargetSupplierIndex] =
+    useState("");
 
   const selectedSupplier = useMemo(
     () => catalog[selectedSupplierIndex] ?? null,
     [catalog, selectedSupplierIndex],
+  );
+
+  const selectableTransferSuppliers = useMemo(
+    () =>
+      catalog
+        .map((supplier, index) => ({
+          index,
+          supplierName:
+            supplier.supplierName ||
+            tr(`Supplier ${index + 1}`, `Proveedor ${index + 1}`),
+        }))
+        .filter((supplier) => supplier.index !== selectedSupplierIndex),
+    [catalog, selectedSupplierIndex, tr],
   );
 
   const loadCatalog = useCallback(async () => {
@@ -63,7 +114,10 @@ export default function AdminCompanyOrdersCatalogPage() {
     setStatus(null);
     try {
       const suppliers = await getCompanyOrderCatalog();
-      setCatalog(suppliers);
+      setCatalog(toEditableCatalog(suppliers));
+      setSelectedItemIds([]);
+      setTransferTargetSupplierIndex("");
+      setNewItemDraft({ nameEs: "", nameEn: "" });
       setStatusKind("success");
       setStatus(tr("Catalog loaded.", "Catálogo cargado."));
     } catch (error) {
@@ -97,11 +151,17 @@ export default function AdminCompanyOrdersCatalogPage() {
     }
   }, [catalog.length, selectedSupplierIndex]);
 
+  useEffect(() => {
+    setSelectedItemIds([]);
+    setTransferTargetSupplierIndex("");
+    setNewItemDraft({ nameEs: "", nameEn: "" });
+  }, [selectedSupplierIndex]);
+
   const updateSupplier = (
     supplierIndex: number,
     updater: (
-      supplier: CompanyOrderCatalogSupplier,
-    ) => CompanyOrderCatalogSupplier,
+      supplier: EditableCatalogSupplier,
+    ) => EditableCatalogSupplier,
   ) => {
     setCatalog((previous) =>
       previous.map((supplier, index) =>
@@ -117,7 +177,7 @@ export default function AdminCompanyOrdersCatalogPage() {
         ...previous,
         {
           supplierName: "",
-          items: [{ nameEs: "", nameEn: "" }],
+          items: [],
         },
       ];
     });
@@ -128,6 +188,12 @@ export default function AdminCompanyOrdersCatalogPage() {
         "Proveedor nuevo agregado. Define el nombre y artículos, luego guarda.",
       ),
     );
+
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        supplierNameInputRef.current?.focus();
+      });
+    }
   };
 
   const handleRemoveSupplier = (supplierIndex: number) => {
@@ -139,39 +205,181 @@ export default function AdminCompanyOrdersCatalogPage() {
   };
 
   const handleAddItem = (supplierIndex: number) => {
+    const nameEs = newItemDraft.nameEs.trim();
+    const nameEn = newItemDraft.nameEn.trim();
+    if (!nameEs && !nameEn) {
+      setStatusKind("danger");
+      setStatus(
+        tr(
+          "Enter at least one item name before adding it.",
+          "Ingresa al menos un nombre del artículo antes de agregarlo.",
+        ),
+      );
+      addItemNameEsRef.current?.focus();
+      return;
+    }
+
     updateSupplier(supplierIndex, (supplier) => ({
       ...supplier,
-      items: [...supplier.items, { nameEs: "", nameEn: "" }],
+      items: [
+        {
+          clientId: createCatalogClientId(),
+          nameEs: nameEs || nameEn,
+          nameEn: nameEn || nameEs,
+        },
+        ...supplier.items,
+      ],
     }));
+    setNewItemDraft({ nameEs: "", nameEn: "" });
     setStatusKind("info");
     setStatus(
       tr(
-        "New item added. Fill both names and save the catalog.",
-        "Nuevo artículo agregado. Completa ambos nombres y guarda el catálogo.",
+        "New item added at the top of the supplier list. Save the catalog when ready.",
+        "Nuevo artículo agregado al inicio de la lista del proveedor. Guarda el catálogo cuando esté listo.",
       ),
     );
 
     if (typeof window !== "undefined") {
       window.requestAnimationFrame(() => {
-        const lastItem = itemListRef.current?.lastElementChild;
-        if (!(lastItem instanceof HTMLElement)) {
-          return;
-        }
-        lastItem.scrollIntoView({ behavior: "smooth", block: "center" });
-        const firstInput = lastItem.querySelector("input");
-        if (firstInput instanceof HTMLInputElement) {
-          firstInput.focus();
-          firstInput.select();
-        }
+        addItemNameEsRef.current?.focus();
       });
     }
   };
 
   const handleRemoveItem = (supplierIndex: number, itemIndex: number) => {
+    const itemId = catalog[supplierIndex]?.items[itemIndex]?.clientId;
     updateSupplier(supplierIndex, (supplier) => ({
       ...supplier,
       items: supplier.items.filter((_, index) => index !== itemIndex),
     }));
+    if (itemId) {
+      setSelectedItemIds((previous) =>
+        previous.filter((selectedId) => selectedId !== itemId),
+      );
+    }
+  };
+
+  const handleToggleItemSelection = (itemId: string) => {
+    setSelectedItemIds((previous) =>
+      previous.includes(itemId)
+        ? previous.filter((selectedId) => selectedId !== itemId)
+        : [...previous, itemId],
+    );
+  };
+
+  const handleSelectAllItems = () => {
+    if (!selectedSupplier) {
+      return;
+    }
+    const nextItemIds = selectedSupplier.items.map((item) => item.clientId);
+    setSelectedItemIds((previous) =>
+      previous.length === nextItemIds.length ? [] : nextItemIds,
+    );
+  };
+
+  const handleTransferSelectedItems = () => {
+    if (!selectedSupplier) {
+      return;
+    }
+    if (!selectedItemIds.length) {
+      setStatusKind("danger");
+      setStatus(
+        tr(
+          "Select at least one item to transfer.",
+          "Selecciona al menos un artículo para transferir.",
+        ),
+      );
+      return;
+    }
+    if (!transferTargetSupplierIndex) {
+      setStatusKind("danger");
+      setStatus(
+        tr(
+          "Choose a destination supplier first.",
+          "Primero elige un proveedor de destino.",
+        ),
+      );
+      return;
+    }
+
+    const destinationIndex = Number(transferTargetSupplierIndex);
+    if (Number.isNaN(destinationIndex) || destinationIndex === selectedSupplierIndex) {
+      setStatusKind("danger");
+      setStatus(
+        tr(
+          "Choose a different destination supplier.",
+          "Elige un proveedor de destino diferente.",
+        ),
+      );
+      return;
+    }
+
+    let transferredCount = 0;
+    let skippedDuplicates = 0;
+
+    setCatalog((previous) => {
+      const sourceSupplier = previous[selectedSupplierIndex];
+      const destinationSupplier = previous[destinationIndex];
+      if (!sourceSupplier || !destinationSupplier) {
+        return previous;
+      }
+
+      const movingItems = sourceSupplier.items.filter((item) =>
+        selectedItemIds.includes(item.clientId),
+      );
+      if (!movingItems.length) {
+        return previous;
+      }
+
+      const remainingItems = sourceSupplier.items.filter(
+        (item) => !selectedItemIds.includes(item.clientId),
+      );
+      const destinationItems = [...destinationSupplier.items];
+      const destinationKeys = new Set(
+        destinationItems.map((item) => editableItemKey(item)),
+      );
+
+      movingItems.forEach((item) => {
+        const itemKey = editableItemKey(item);
+        if (destinationKeys.has(itemKey)) {
+          skippedDuplicates += 1;
+          return;
+        }
+        destinationKeys.add(itemKey);
+        destinationItems.push(item);
+        transferredCount += 1;
+      });
+
+      return previous.map((supplier, index) => {
+        if (index === selectedSupplierIndex) {
+          return {
+            ...supplier,
+            items: remainingItems,
+          };
+        }
+        if (index === destinationIndex) {
+          return {
+            ...supplier,
+            items: destinationItems,
+          };
+        }
+        return supplier;
+      });
+    });
+
+    setSelectedItemIds([]);
+    setTransferTargetSupplierIndex("");
+    setStatusKind("info");
+    setStatus(
+      tr(
+        skippedDuplicates
+          ? `Transferred ${transferredCount} item(s). Skipped ${skippedDuplicates} duplicate(s). Save the catalog to keep the move.`
+          : `Transferred ${transferredCount} item(s). Save the catalog to keep the move.`,
+        skippedDuplicates
+          ? `Se transfirieron ${transferredCount} artículo(s). Se omitieron ${skippedDuplicates} duplicado(s). Guarda el catálogo para conservar el cambio.`
+          : `Se transfirieron ${transferredCount} artículo(s). Guarda el catálogo para conservar el cambio.`,
+      ),
+    );
   };
 
   const handleSave = async () => {
@@ -191,7 +399,9 @@ export default function AdminCompanyOrdersCatalogPage() {
     setStatus(null);
     try {
       const nextCatalog = await updateCompanyOrderCatalog({ suppliers });
-      setCatalog(nextCatalog);
+      setCatalog(toEditableCatalog(nextCatalog));
+      setSelectedItemIds([]);
+      setTransferTargetSupplierIndex("");
       setStatusKind("success");
       setStatus(
         tr("Catalog saved successfully.", "Catálogo guardado correctamente."),
@@ -323,6 +533,7 @@ export default function AdminCompanyOrdersCatalogPage() {
                         {tr("Supplier Name", "Nombre del Proveedor")}
                       </label>
                       <input
+                        ref={supplierNameInputRef}
                         className="form-control"
                         value={selectedSupplier.supplierName}
                         onChange={(event) =>
@@ -338,13 +549,12 @@ export default function AdminCompanyOrdersCatalogPage() {
                       />
                     </div>
                     <div className="col-6 col-md-2">
-                      <button
-                        type="button"
-                        className="btn btn-outline-primary w-100"
-                        onClick={() => handleAddItem(selectedSupplierIndex)}
-                      >
-                        {tr("Add Item", "Agregar Artículo")}
-                      </button>
+                      <div className="small text-muted">
+                        {tr(
+                          `${selectedSupplier.items.length} items`,
+                          `${selectedSupplier.items.length} artículos`,
+                        )}
+                      </div>
                     </div>
                     <div className="col-6 col-md-2">
                       <button
@@ -359,7 +569,150 @@ export default function AdminCompanyOrdersCatalogPage() {
                     </div>
                   </div>
 
-                  <div ref={itemListRef} className="d-flex flex-column gap-2">
+                  <div className="border rounded p-3 bg-body-tertiary">
+                    <div className="row g-2 align-items-end">
+                      <div className="col-12 col-md-5">
+                        <label className="form-label mb-1">
+                          {tr("Quick Add Spanish Name", "Alta rápida Nombre en Español")}
+                        </label>
+                        <input
+                          ref={addItemNameEsRef}
+                          className="form-control"
+                          value={newItemDraft.nameEs}
+                          onChange={(event) =>
+                            setNewItemDraft((previous) => ({
+                              ...previous,
+                              nameEs: event.target.value,
+                            }))
+                          }
+                          placeholder={tr("Example: Cafe", "Ejemplo: Café")}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              handleAddItem(selectedSupplierIndex);
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="col-12 col-md-5">
+                        <label className="form-label mb-1">
+                          {tr("Quick Add English Name", "Alta rápida Nombre en Inglés")}
+                        </label>
+                        <input
+                          className="form-control"
+                          value={newItemDraft.nameEn}
+                          onChange={(event) =>
+                            setNewItemDraft((previous) => ({
+                              ...previous,
+                              nameEn: event.target.value,
+                            }))
+                          }
+                          placeholder={tr("Example: Coffee", "Ejemplo: Coffee")}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              handleAddItem(selectedSupplierIndex);
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="col-12 col-md-2">
+                        <button
+                          type="button"
+                          className="btn btn-outline-primary w-100"
+                          onClick={() => handleAddItem(selectedSupplierIndex)}
+                        >
+                          {tr("Add Item", "Agregar Artículo")}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="form-text">
+                      {tr(
+                        "New items are inserted at the top so you stay on the same section.",
+                        "Los artículos nuevos se insertan al inicio para que sigas en la misma sección.",
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="border rounded p-3 bg-body-tertiary">
+                    <div className="row g-2 align-items-end">
+                      <div className="col-12 col-md-4">
+                        <div className="form-label mb-1">
+                          {tr(
+                            "Selected Items",
+                            "Artículos Seleccionados",
+                          )}
+                        </div>
+                        <div className="small text-muted">
+                          {tr(
+                            `${selectedItemIds.length} item(s) selected`,
+                            `${selectedItemIds.length} artículo(s) seleccionados`,
+                          )}
+                        </div>
+                      </div>
+                      <div className="col-12 col-md-4">
+                        <label className="form-label mb-1">
+                          {tr("Transfer To", "Transferir a")}
+                        </label>
+                        <select
+                          className="form-select"
+                          value={transferTargetSupplierIndex}
+                          onChange={(event) =>
+                            setTransferTargetSupplierIndex(event.target.value)
+                          }
+                        >
+                          <option value="">
+                            {tr(
+                              "Choose supplier",
+                              "Selecciona proveedor",
+                            )}
+                          </option>
+                          {selectableTransferSuppliers.map((supplier) => (
+                            <option
+                              key={`transfer-${supplier.index}`}
+                              value={supplier.index}
+                            >
+                              {supplier.supplierName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary w-100"
+                          onClick={handleSelectAllItems}
+                          disabled={!selectedSupplier.items.length}
+                        >
+                          {selectedItemIds.length === selectedSupplier.items.length &&
+                          selectedSupplier.items.length
+                            ? tr("Clear", "Limpiar")
+                            : tr("Select All", "Marcar Todos")}
+                        </button>
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <button
+                          type="button"
+                          className="btn btn-outline-primary w-100"
+                          onClick={handleTransferSelectedItems}
+                          disabled={
+                            !selectedItemIds.length ||
+                            !transferTargetSupplierIndex
+                          }
+                        >
+                          {tr("Transfer", "Transferir")}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="form-text">
+                      {tr(
+                        "Use this to move selected catalog items to another supplier before saving.",
+                        "Usa esto para mover artículos seleccionados a otro proveedor antes de guardar.",
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="d-flex flex-column gap-2">
                     {selectedSupplier.items.length === 0 ? (
                       <div className="text-muted small border rounded p-3">
                         {tr(
@@ -370,10 +723,23 @@ export default function AdminCompanyOrdersCatalogPage() {
                     ) : (
                       selectedSupplier.items.map((item, itemIndex) => (
                         <div
-                          key={`supplier-${selectedSupplierIndex}-item-${itemIndex}`}
+                          key={item.clientId}
                           className="border rounded p-2"
                         >
                           <div className="row g-2 align-items-end">
+                            <div className="col-12 col-md-1">
+                              <div className="form-check pt-4">
+                                <input
+                                  id={`catalog-item-${item.clientId}`}
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  checked={selectedItemIds.includes(item.clientId)}
+                                  onChange={() =>
+                                    handleToggleItemSelection(item.clientId)
+                                  }
+                                />
+                              </div>
+                            </div>
                             <div className="col-12 col-md-5">
                               <label className="form-label mb-1">
                                 {tr("Spanish Name", "Nombre en Español")}
@@ -401,7 +767,7 @@ export default function AdminCompanyOrdersCatalogPage() {
                                 placeholder={tr("nameEs", "nombreEs")}
                               />
                             </div>
-                            <div className="col-12 col-md-5">
+                            <div className="col-12 col-md-4">
                               <label className="form-label mb-1">
                                 {tr("English Name", "Nombre en Inglés")}
                               </label>
@@ -446,6 +812,29 @@ export default function AdminCompanyOrdersCatalogPage() {
                         </div>
                       ))
                     )}
+                  </div>
+
+                  <div className="d-flex flex-wrap gap-2 justify-content-end border-top pt-3">
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={() => {
+                        void loadCatalog();
+                      }}
+                      disabled={loading || saving}
+                    >
+                      {tr("Reload Catalog", "Recargar Catálogo")}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      onClick={handleSave}
+                      disabled={loading || saving}
+                    >
+                      {saving
+                        ? tr("Saving...", "Guardando...")
+                        : tr("Save Catalog", "Guardar Catálogo")}
+                    </button>
                   </div>
                 </div>
               )}
