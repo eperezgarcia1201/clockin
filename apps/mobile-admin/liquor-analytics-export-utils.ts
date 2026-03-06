@@ -67,9 +67,21 @@ export const renderTable = (title: string, headers: string[], rows: string[][]) 
   `;
 };
 
+const safeUnicodeNormalize = (value: string) => {
+  const maybeNormalize = (value as { normalize?: (form?: string) => string })
+    .normalize;
+  if (typeof maybeNormalize !== "function") {
+    return value;
+  }
+  try {
+    return maybeNormalize.call(value, "NFKD");
+  } catch {
+    return value;
+  }
+};
+
 const normalizePdfText = (value: string) =>
-  value
-    .normalize("NFKD")
+  safeUnicodeNormalize(value)
     .replace(/[^\x20-\x7E]/g, "")
     .replace(/\s+/g, " ")
     .trim();

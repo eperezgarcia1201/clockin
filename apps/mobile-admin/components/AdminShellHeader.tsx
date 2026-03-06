@@ -2,7 +2,7 @@ import { Image, Text, TouchableOpacity, View } from "react-native";
 import { styles } from "../App.styles";
 import { BRAND_LOGO } from "../app-config";
 import type { Lang } from "../copy";
-import type { Screen, ThemeMode } from "../types";
+import type { Office, Screen, ThemeMode } from "../types";
 
 type AdminShellHeaderProps = {
   isLight: boolean;
@@ -11,6 +11,7 @@ type AdminShellHeaderProps = {
   lightLabel: string;
   darkLabel: string;
   logoutLabel: string;
+  biometricToggleLabel: string | null;
   tenantLabel: string;
   activeLocationLabelText: string;
   switchLocationLabel: string;
@@ -18,6 +19,7 @@ type AdminShellHeaderProps = {
   onLanguageChange: (value: Lang) => void;
   theme: ThemeMode;
   onToggleTheme: () => void;
+  onBiometricToggle: () => void;
   loggedIn: boolean;
   onLogout: () => void;
   activeTenantLabel: string;
@@ -25,6 +27,10 @@ type AdminShellHeaderProps = {
   activeApiLabel: string;
   canManageMultiLocation: boolean;
   activeLocationLabel: string;
+  allLocationsLabel: string;
+  offices: Office[];
+  scopedLocationId: string;
+  onLocationScopeChange: (officeId: string) => void;
   visibleTabs: Screen[];
   screen: Screen;
   onScreenChange: (value: Screen) => void;
@@ -39,6 +45,7 @@ export function AdminShellHeader({
   lightLabel,
   darkLabel,
   logoutLabel,
+  biometricToggleLabel,
   tenantLabel,
   activeLocationLabelText,
   switchLocationLabel,
@@ -46,6 +53,7 @@ export function AdminShellHeader({
   onLanguageChange,
   theme,
   onToggleTheme,
+  onBiometricToggle,
   loggedIn,
   onLogout,
   activeTenantLabel,
@@ -53,6 +61,10 @@ export function AdminShellHeader({
   activeApiLabel,
   canManageMultiLocation,
   activeLocationLabel,
+  allLocationsLabel,
+  offices,
+  scopedLocationId,
+  onLocationScopeChange,
   visibleTabs,
   screen,
   onScreenChange,
@@ -105,6 +117,21 @@ export function AdminShellHeader({
               {theme === "dark" ? lightLabel : darkLabel}
             </Text>
           </TouchableOpacity>
+          {loggedIn && biometricToggleLabel ? (
+            <TouchableOpacity
+              style={[styles.themeToggle, isLight && styles.themeToggleLight]}
+              onPress={onBiometricToggle}
+            >
+              <Text
+                style={[
+                  styles.themeToggleText,
+                  isLight && styles.themeToggleTextLight,
+                ]}
+              >
+                {biometricToggleLabel}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           {loggedIn ? (
             <TouchableOpacity
               style={[
@@ -145,6 +172,53 @@ export function AdminShellHeader({
               <Text style={[styles.tenantPillText, isLight && styles.tenantPillTextLight]}>
                 {activeLocationLabelText}: {activeLocationLabel}
               </Text>
+            </View>
+          ) : null}
+          {canManageMultiLocation ? (
+            <View style={styles.tabRow}>
+              <TouchableOpacity
+                style={[
+                  styles.tab,
+                  isLight && styles.tabLight,
+                  !scopedLocationId &&
+                    (isLight ? styles.tabActiveLight : styles.tabActive),
+                ]}
+                onPress={() => onLocationScopeChange("")}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    isLight && styles.tabTextLight,
+                    !scopedLocationId && isLight && styles.tabTextLightActive,
+                  ]}
+                >
+                  {allLocationsLabel}
+                </Text>
+              </TouchableOpacity>
+              {offices.map((office) => (
+                <TouchableOpacity
+                  key={`header-office-${office.id}`}
+                  style={[
+                    styles.tab,
+                    isLight && styles.tabLight,
+                    scopedLocationId === office.id &&
+                      (isLight ? styles.tabActiveLight : styles.tabActive),
+                  ]}
+                  onPress={() => onLocationScopeChange(office.id)}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      isLight && styles.tabTextLight,
+                      scopedLocationId === office.id &&
+                        isLight &&
+                        styles.tabTextLightActive,
+                    ]}
+                  >
+                    {office.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           ) : null}
 

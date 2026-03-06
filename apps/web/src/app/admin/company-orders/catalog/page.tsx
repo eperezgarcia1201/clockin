@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUiLanguage } from "../../../../lib/ui-language";
 import {
   getCompanyOrderCatalog,
@@ -51,6 +51,7 @@ export default function AdminCompanyOrdersCatalogPage() {
   const [statusKind, setStatusKind] = useState<"success" | "danger" | "info">(
     "info",
   );
+  const itemListRef = useRef<HTMLDivElement | null>(null);
 
   const selectedSupplier = useMemo(
     () => catalog[selectedSupplierIndex] ?? null,
@@ -142,6 +143,28 @@ export default function AdminCompanyOrdersCatalogPage() {
       ...supplier,
       items: [...supplier.items, { nameEs: "", nameEn: "" }],
     }));
+    setStatusKind("info");
+    setStatus(
+      tr(
+        "New item added. Fill both names and save the catalog.",
+        "Nuevo artículo agregado. Completa ambos nombres y guarda el catálogo.",
+      ),
+    );
+
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        const lastItem = itemListRef.current?.lastElementChild;
+        if (!(lastItem instanceof HTMLElement)) {
+          return;
+        }
+        lastItem.scrollIntoView({ behavior: "smooth", block: "center" });
+        const firstInput = lastItem.querySelector("input");
+        if (firstInput instanceof HTMLInputElement) {
+          firstInput.focus();
+          firstInput.select();
+        }
+      });
+    }
   };
 
   const handleRemoveItem = (supplierIndex: number, itemIndex: number) => {
@@ -336,7 +359,7 @@ export default function AdminCompanyOrdersCatalogPage() {
                     </div>
                   </div>
 
-                  <div className="d-flex flex-column gap-2">
+                  <div ref={itemListRef} className="d-flex flex-column gap-2">
                     {selectedSupplier.items.length === 0 ? (
                       <div className="text-muted small border rounded p-3">
                         {tr(

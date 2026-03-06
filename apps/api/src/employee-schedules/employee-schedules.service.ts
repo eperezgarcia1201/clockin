@@ -77,6 +77,61 @@ export class EmployeeSchedulesService {
     }
   }
 
+  private parseScheduleTime(value?: string | null) {
+    const raw = value?.trim();
+    if (!raw) {
+      return null;
+    }
+
+    const militaryMatch = /^(\d{1,2}):(\d{2})$/.exec(raw);
+    if (militaryMatch) {
+      const hours = Number(militaryMatch[1]);
+      const minutes = Number(militaryMatch[2]);
+      if (
+        Number.isNaN(hours) ||
+        Number.isNaN(minutes) ||
+        hours < 0 ||
+        hours > 23 ||
+        minutes < 0 ||
+        minutes > 59
+      ) {
+        return null;
+      }
+      return hours * 60 + minutes;
+    }
+
+    const meridiemMatch = /^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/.exec(raw);
+    if (!meridiemMatch) {
+      return null;
+    }
+    const hour12 = Number(meridiemMatch[1]);
+    const minutes = Number(meridiemMatch[2]);
+    const meridiem = meridiemMatch[3].toUpperCase();
+    if (
+      Number.isNaN(hour12) ||
+      Number.isNaN(minutes) ||
+      hour12 < 1 ||
+      hour12 > 12 ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      return null;
+    }
+    const hourBase = hour12 % 12;
+    const hour24 = meridiem === 'PM' ? hourBase + 12 : hourBase;
+    return hour24 * 60 + minutes;
+  }
+
+  private normalizeScheduleTime(value?: string | null) {
+    const totalMinutes = this.parseScheduleTime(value);
+    if (totalMinutes === null) {
+      return '';
+    }
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+
   private resolveRoleLabel(options: {
     isServer: boolean;
     groupName?: string | null;
@@ -121,8 +176,8 @@ export class EmployeeSchedulesService {
           weekday,
           label,
           enabled: Boolean(entry),
-          startTime: entry?.startTime || '',
-          endTime: entry?.endTime || '',
+          startTime: this.normalizeScheduleTime(entry?.startTime),
+          endTime: this.normalizeScheduleTime(entry?.endTime),
         };
       }),
     };
@@ -180,8 +235,8 @@ export class EmployeeSchedulesService {
         return {
           employeeId: schedule.employee.id,
           employeeName,
-          startTime: schedule.startTime || '',
-          endTime: schedule.endTime || '',
+          startTime: this.normalizeScheduleTime(schedule.startTime),
+          endTime: this.normalizeScheduleTime(schedule.endTime),
           isServer: schedule.employee.isServer,
           officeId: schedule.employee.officeId || null,
           officeName: schedule.employee.office?.name || null,
@@ -251,8 +306,8 @@ export class EmployeeSchedulesService {
         tenantId: tenant.id,
         employeeId: employee.id,
         weekday: day.weekday,
-        startTime: day.startTime || null,
-        endTime: day.endTime || null,
+        startTime: this.normalizeScheduleTime(day.startTime) || null,
+        endTime: this.normalizeScheduleTime(day.endTime) || null,
       }));
 
     await this.prisma.$transaction([

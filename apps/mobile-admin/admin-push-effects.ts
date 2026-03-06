@@ -7,6 +7,7 @@ import {
   registerAdminPushDevice,
   resolveExpoProjectIdFromConstants,
 } from "./push-runtime";
+import type { AdminPushDevice } from "./types";
 
 type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
 
@@ -16,6 +17,7 @@ export const useAdminPushEffects = (params: {
   pushRegisteredTenant: string;
   fetchJson: FetchJson;
   setPushRegisteredTenant: (value: string) => void;
+  setCurrentAdminPushDevice: (value: AdminPushDevice | null) => void;
   setDataSyncError: (value: string | null) => void;
 }) => {
   useEffect(() => {
@@ -50,6 +52,7 @@ export const useAdminPushEffects = (params: {
     });
     if (result.kind === "success") {
       params.setPushRegisteredTenant(result.tenantKey);
+      params.setCurrentAdminPushDevice(result.device);
     } else if (result.kind === "error") {
       params.setDataSyncError(result.message);
     }
@@ -58,6 +61,7 @@ export const useAdminPushEffects = (params: {
     params.fetchJson,
     params.loggedIn,
     params.pushRegisteredTenant,
+    params.setCurrentAdminPushDevice,
   ]);
 
   useEffect(() => {

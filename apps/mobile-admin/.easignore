@@ -1,0 +1,17 @@
+# Dependencies and build outputs
+node_modules
+dist
+dist_stale_*
+android/build
+ios/build
+
+# Expo and local export artifacts
+.expo
+.expo-shared
+.expo-export-android
+.expo-export-ios
+
+# Logs and local temp files
+*.log
+.tmp*
+tmp

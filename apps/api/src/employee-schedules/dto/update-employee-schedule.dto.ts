@@ -22,12 +22,12 @@ export class ScheduleDayDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^\d{2}:\d{2}$/)
+  @Matches(/^(\d{1,2}:\d{2}|\d{1,2}:\d{2}\s*[AaPp][Mm])$/)
   startTime?: string;
 
   @IsOptional()
   @IsString()
-  @Matches(/^\d{2}:\d{2}$/)
+  @Matches(/^(\d{1,2}:\d{2}|\d{1,2}:\d{2}\s*[AaPp][Mm])$/)
   endTime?: string;
 }
 

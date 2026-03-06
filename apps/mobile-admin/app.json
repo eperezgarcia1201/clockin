@@ -2,7 +2,7 @@
   "expo": {
     "name": "ClockIn Admin Plus",
     "slug": "clockin-admin",
-    "version": "1.0.9",
+    "version": "2.1",
     "entryPoint": "./index.ts",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,10 +16,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.websys.clockinadmin",
-      "buildNumber": "9",
+      "buildNumber": "10",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "ClockIn Admin uses the camera to capture expense receipts.",
+        "NSFaceIDUsageDescription": "ClockIn Admin uses Face ID to unlock the saved admin session.",
         "NSPhotoLibraryUsageDescription": "ClockIn Admin uses photos to attach expense receipts.",
         "NSPhotoLibraryAddUsageDescription": "ClockIn Admin may save captured receipt images for sharing."
       }
@@ -28,7 +29,7 @@
       "icon": "./assets/icon.png",
       "package": "com.websys.clockinadminplus",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 9,
+      "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -43,7 +44,13 @@
       "color": "#3a7bd5"
     },
     "plugins": [
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "ClockIn Admin uses Face ID to unlock the saved admin session."
+        }
+      ]
     ],
     "extra": {
       "eas": {

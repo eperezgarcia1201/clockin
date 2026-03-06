@@ -29,10 +29,6 @@ export const useAdminViewEffects = (params: {
   salesExpenseMethod: string;
   setSalesExpenseCheckNumber: (value: string) => void;
   setSalesExpensePayToCompany: (value: string) => void;
-  canManageMultiLocation: boolean;
-  activeLocationId: string;
-  offices: Array<{ id: string }>;
-  setActiveLocationId: (value: string) => void;
   officeGeoTarget: {
     id?: string;
     latitude?: number | null;
@@ -91,20 +87,6 @@ export const useAdminViewEffects = (params: {
       params.setSalesExpensePayToCompany("");
     }
   }, [params.salesExpenseMethod]);
-
-  useEffect(() => {
-    if (!params.loggedIn || !params.canManageMultiLocation) {
-      return;
-    }
-    if (!params.activeLocationId && params.offices[0]?.id) {
-      params.setActiveLocationId(params.offices[0].id);
-    }
-  }, [
-    params.activeLocationId,
-    params.canManageMultiLocation,
-    params.loggedIn,
-    params.offices,
-  ]);
 
   useEffect(() => {
     const draft = resolveOfficeGeofenceDraftValues(params.officeGeoTarget);

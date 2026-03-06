@@ -25,6 +25,7 @@ export class NotificationsController {
     @Req() req: RequestWithUser,
     @Query('limit') limit?: string,
     @Query('unread') unread?: string,
+    @Query('officeId') officeId?: string,
   ) {
     if (!req.user) {
       throw new UnauthorizedException();
@@ -33,6 +34,7 @@ export class NotificationsController {
     return this.notifications.list(req.user, {
       limit: limit ? Number(limit) : undefined,
       unreadOnly: unread === '1' || unread === 'true',
+      officeId: officeId?.trim() || undefined,
     });
   }
 
@@ -46,12 +48,17 @@ export class NotificationsController {
   }
 
   @Get('message-targets')
-  async listMessageTargets(@Req() req: RequestWithUser) {
+  async listMessageTargets(
+    @Req() req: RequestWithUser,
+    @Query('officeId') officeId?: string,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
 
-    return this.notifications.listMessageTargets(req.user);
+    return this.notifications.listMessageTargets(req.user, {
+      officeId: officeId?.trim() || undefined,
+    });
   }
 
   @Post('read-all')

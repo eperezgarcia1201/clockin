@@ -2,7 +2,7 @@
   "expo": {
     "name": "ClockIn Employee",
     "slug": "clockin",
-    "version": "1.0.2",
+    "version": "2.1",
     "entryPoint": "./index.ts",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.websys.clockin",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "ClockIn uses your location to verify you are at the restaurant when clocking in."
@@ -26,7 +26,7 @@
       "icon": "./assets/icon.png",
       "package": "com.websys.clockinemployee",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"

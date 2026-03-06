@@ -7,6 +7,7 @@ import {
   sanitizeFilename,
   writeExportBytes,
 } from "./liquor-analytics-export-utils";
+import { buildReportLayoutPdf } from "./report-export-pdf-layout";
 import type { ReportType } from "./types";
 
 export type ReportExportFormat = "pdf" | "csv" | "excel";
@@ -148,11 +149,27 @@ export async function exportReportRows(params: {
     headers.join(" | "),
     ...matrix.map((row) => row.join(" | ")),
   ];
+  let pdfBytes: Uint8Array;
+  if (rows.length > 1000) {
+    pdfBytes = buildSimplePdf(pdfLines);
+  } else {
+    try {
+      pdfBytes = buildReportLayoutPdf({
+        reportType,
+        fromDate,
+        toDate,
+        rows,
+        language,
+      });
+    } catch {
+      pdfBytes = buildSimplePdf(pdfLines);
+    }
+  }
 
   await writeExportBytes({
     filename: `${baseName}.pdf`,
     mimeType: "application/pdf",
-    bytes: buildSimplePdf(pdfLines),
+    bytes: pdfBytes,
     language,
     bytesToBase64,
   });

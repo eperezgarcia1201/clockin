@@ -1,6 +1,45 @@
 import { normalizeEnabledScheduleDays } from "./schedule-state-helpers";
+import { sanitizeTime } from "./app-helpers";
 import type { ScheduleDay } from "./types";
 type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
+
+const normalizeLoadedScheduleDays = (
+  rawDays: unknown,
+  defaults: ScheduleDay[],
+): ScheduleDay[] => {
+  if (!Array.isArray(rawDays)) {
+    return defaults;
+  }
+  const byWeekday = new Map<number, Partial<ScheduleDay>>();
+  rawDays.forEach((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return;
+    }
+    const weekday = Number((entry as { weekday?: unknown }).weekday);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+      return;
+    }
+    byWeekday.set(weekday, entry as Partial<ScheduleDay>);
+  });
+
+  return defaults.map((fallback) => {
+    const raw = byWeekday.get(fallback.weekday);
+    if (!raw) {
+      return fallback;
+    }
+    const label =
+      typeof raw.label === "string" && raw.label.trim()
+        ? raw.label.trim()
+        : fallback.label;
+    return {
+      ...fallback,
+      label,
+      enabled: Boolean(raw.enabled),
+      startTime: sanitizeTime(raw.startTime) || fallback.startTime,
+      endTime: sanitizeTime(raw.endTime) || fallback.endTime,
+    };
+  });
+};
 
 export const validateScheduleEmployeeId = (
   employeeId: string,
@@ -20,18 +59,16 @@ export const loadEmployeeScheduleDays = async (params: {
   employeeId: string;
   defaultScheduleDays: () => ScheduleDay[];
 }): Promise<ScheduleDay[]> => {
+  const defaults = params.defaultScheduleDays();
   try {
     const data = (await params.fetchJson(
       `/employee-schedules/${params.employeeId}`,
     )) as {
-      days?: ScheduleDay[];
+      days?: unknown;
     };
-    if (data.days && data.days.length === 7) {
-      return data.days;
-    }
-    return params.defaultScheduleDays();
+    return normalizeLoadedScheduleDays(data.days, defaults);
   } catch {
-    return params.defaultScheduleDays();
+    return defaults;
   }
 };
 

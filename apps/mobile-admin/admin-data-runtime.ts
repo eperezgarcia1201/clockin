@@ -64,12 +64,15 @@ export const normalizeSummary = (
 
 export const loadSummaryData = async (params: {
   fetchJson: FetchJson;
+  appendOfficeScope: (path: string) => string;
 }): Promise<
   | { ok: true; summary: Summary }
   | { ok: false; error: string }
 > => {
   try {
-    const data = (await params.fetchJson("/employees/summary")) as Partial<Summary>;
+    const data = (await params.fetchJson(
+      params.appendOfficeScope("/employees/summary"),
+    )) as Partial<Summary>;
     return { ok: true, summary: normalizeSummary(data) };
   } catch (error) {
     return {
@@ -190,14 +193,15 @@ export const loadGroupsData = async (params: {
 
 export const loadNotificationsData = async (params: {
   fetchJson: FetchJson;
+  appendOfficeScope: (path: string) => string;
 }): Promise<
   | { ok: true; notifications: NotificationRow[] }
   | { ok: false; error: string }
 > => {
   try {
-    const data = (await params.fetchJson("/notifications?limit=50")) as {
-      notifications: NotificationRow[];
-    };
+    const data = (await params.fetchJson(
+      params.appendOfficeScope("/notifications?limit=50"),
+    )) as { notifications: NotificationRow[] };
     return {
       ok: true,
       notifications: normalizeNotifications(data),

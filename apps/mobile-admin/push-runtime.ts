@@ -1,8 +1,14 @@
+import {
+  normalizeAdminPushDevice,
+  resolveDeviceTimeZone,
+} from "./admin-notification-settings-runtime";
+import type { AdminPushDevice } from "./types";
+
 type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
 
 export type PushRegistrationResult =
   | { kind: "skipped" }
-  | { kind: "success"; tenantKey: string }
+  | { kind: "success"; tenantKey: string; device: AdminPushDevice | null }
   | { kind: "error"; message: string };
 
 export const resolveExpoProjectIdFromConstants = (
@@ -62,17 +68,19 @@ export const registerAdminPushDevice = async (params: {
     }
 
     const token = await params.getExpoPushToken(projectId);
-    await params.fetchJson("/admin-devices", {
+    const payload = (await params.fetchJson("/admin-devices", {
       method: "POST",
       body: JSON.stringify({
         expoPushToken: token,
         platform: params.platform,
+        timeZone: resolveDeviceTimeZone(),
       }),
-    });
+    })) as { device?: unknown };
 
     return {
       kind: "success",
       tenantKey,
+      device: normalizeAdminPushDevice(payload?.device),
     };
   } catch (error) {
     const errorMessage =

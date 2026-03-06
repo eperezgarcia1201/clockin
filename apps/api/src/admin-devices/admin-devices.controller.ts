@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Patch,
   Param,
   Post,
   Req,
@@ -11,6 +12,8 @@ import {
 } from '@nestjs/common';
 import { AuthOrDevGuard } from '../auth/auth.guard';
 import type { RequestWithUser } from '../auth/auth.types';
+import { RegisterAdminDeviceDto } from './dto/register-admin-device.dto';
+import { UpdateAdminDeviceDto } from './dto/update-admin-device.dto';
 import { AdminDevicesService } from './admin-devices.service';
 
 @Controller('admin-devices')
@@ -27,15 +30,26 @@ export class AdminDevicesController {
   }
 
   @Post()
-  async register(@Req() req: RequestWithUser, @Body() body: any) {
+  async register(
+    @Req() req: RequestWithUser,
+    @Body() body: RegisterAdminDeviceDto,
+  ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
-    return this.devices.register(req.user, {
-      expoPushToken: body.expoPushToken,
-      label: body.label,
-      platform: body.platform,
-    });
+    return this.devices.register(req.user, body);
+  }
+
+  @Patch(':id')
+  async update(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() body: UpdateAdminDeviceDto,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+    return this.devices.update(req.user, id, body);
   }
 
   @Delete(':id')

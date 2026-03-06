@@ -51,11 +51,13 @@ export const resolveActiveLocationAfterOfficesLoad = ({
   if (offices.length === 0) {
     return "";
   }
-  if (
-    canManageMultiLocation &&
-    (!activeLocationId || !offices.some((office) => office.id === activeLocationId))
-  ) {
-    return offices[0].id;
+  if (canManageMultiLocation) {
+    if (!activeLocationId) {
+      return null;
+    }
+    if (!offices.some((office) => office.id === activeLocationId)) {
+      return "";
+    }
   }
   return null;
 };

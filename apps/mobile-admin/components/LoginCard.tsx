@@ -14,6 +14,8 @@ type LoginCopy = {
   password: string;
   signingIn: string;
   signIn: string;
+  forgetSavedAdmin: string;
+  savedAdminDetected: string;
   pushHelp: string;
 };
 
@@ -29,6 +31,7 @@ type LoginCardProps = {
   loginStatus: string | null;
   inlineOrNull: (value: string | null | undefined) => string | null;
   onLogin: () => void;
+  onForgetSavedAdmin: () => void;
   loginLoading: boolean;
   dataSyncError: string | null;
 };
@@ -45,9 +48,11 @@ export function LoginCard({
   loginStatus,
   inlineOrNull,
   onLogin,
+  onForgetSavedAdmin,
   loginLoading,
   dataSyncError,
 }: LoginCardProps) {
+  const hasSavedAdmin = Boolean(tenantInput.trim() || username.trim());
   return (
     <View style={[styles.card, isLight && styles.cardLight]}>
       <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>
@@ -91,6 +96,27 @@ export function LoginCard({
           {loginLoading ? text.signingIn : text.signIn}
         </Text>
       </TouchableOpacity>
+      {hasSavedAdmin ? (
+        <>
+          <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+            {text.savedAdminDetected}
+          </Text>
+          <TouchableOpacity
+            style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
+            onPress={onForgetSavedAdmin}
+            disabled={loginLoading}
+          >
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                isLight && styles.secondaryButtonTextLight,
+              ]}
+            >
+              {text.forgetSavedAdmin}
+            </Text>
+          </TouchableOpacity>
+        </>
+      ) : null}
       <Text style={[styles.helperText, isLight && styles.helperTextLight]}>
         {text.pushHelp}
       </Text>

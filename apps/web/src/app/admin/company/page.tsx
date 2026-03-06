@@ -135,6 +135,33 @@ const defaults: CompanySettings = {
   companyTaxId: "",
 };
 
+const companySettingsKeys = [
+  "companyName",
+  "companyLegalName",
+  "companyAddressLine1",
+  "companyAddressLine2",
+  "companyCity",
+  "companyState",
+  "companyPostalCode",
+  "companyCountry",
+  "companyPhone",
+  "companyEmail",
+  "companyWebsite",
+  "companyTaxId",
+] as const satisfies readonly (keyof CompanySettings)[];
+
+const pickCompanySettings = (value: unknown): CompanySettings => {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+
+  return companySettingsKeys.reduce((acc, key) => {
+    acc[key] = typeof source[key] === "string" ? String(source[key]) : "";
+    return acc;
+  }, { ...defaults });
+};
+
 const getInitials = (value: string) => {
   const parts = value.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "CO";
@@ -191,8 +218,8 @@ export default function CompanyInfoPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await getSettings<CompanySettings>();
-        setForm((prev) => ({ ...prev, ...data }));
+        const data = await getSettings<Record<string, unknown>>();
+        setForm((prev) => ({ ...prev, ...pickCompanySettings(data) }));
       } catch {
         // ignore
       }
@@ -224,10 +251,10 @@ export default function CompanyInfoPage() {
     setSaving(true);
     setStatus(null);
     try {
-      await updateSettings(form);
+      await updateSettings(pickCompanySettings(form));
       setStatus(t.saved);
-    } catch {
-      setStatus(t.saveError);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t.saveError);
     } finally {
       setSaving(false);
     }

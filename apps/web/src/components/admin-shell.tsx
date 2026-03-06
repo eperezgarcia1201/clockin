@@ -359,7 +359,7 @@ export function AdminShell({
       if (prev && offices.some((office) => office.id === prev)) {
         return prev;
       }
-      return offices[0].id;
+      return "";
     });
     setLocationScopeInitialized(true);
   }, [canManageMultiLocation, offices, officesLoaded, officesLoadSucceeded]);

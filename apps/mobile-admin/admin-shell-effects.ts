@@ -1,11 +1,74 @@
-import { useEffect, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from "expo-notifications";
 import {
   ADMIN_LOGIN_CONTEXT_STORAGE_KEY,
+  ADMIN_SESSION_STORAGE_KEY,
   ADMIN_TENANT_STORAGE_KEY,
 } from "./app-config";
 import { resolveNotificationListenerErrorMessage } from "./alerts-runtime";
+import type { AccessPermissions, Screen } from "./types";
+
+const VALID_SCREENS: Screen[] = [
+  "dashboard",
+  "users",
+  "offices",
+  "groups",
+  "capture",
+  "reports",
+  "liquorControl",
+  "alerts",
+  "schedules",
+  "companyOrders",
+];
+
+const coerceBoolean = (value: unknown): boolean => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value === 1;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1" || normalized === "yes") {
+      return true;
+    }
+  }
+  return false;
+};
+
+const normalizeScreen = (value: unknown): Screen => {
+  if (typeof value !== "string") {
+    return "dashboard";
+  }
+  return VALID_SCREENS.includes(value as Screen)
+    ? (value as Screen)
+    : "dashboard";
+};
+
+const sanitizePermissions = (value: unknown): AccessPermissions | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    dashboard: coerceBoolean(raw.dashboard),
+    users: coerceBoolean(raw.users),
+    locations: coerceBoolean(raw.locations),
+    manageMultiLocation: coerceBoolean(raw.manageMultiLocation),
+    groups: coerceBoolean(raw.groups),
+    statuses: coerceBoolean(raw.statuses),
+    schedules: coerceBoolean(raw.schedules),
+    companyOrders: coerceBoolean(raw.companyOrders),
+    reports: coerceBoolean(raw.reports),
+    tips: coerceBoolean(raw.tips),
+    salesCapture: coerceBoolean(raw.salesCapture),
+    notifications: coerceBoolean(raw.notifications),
+    settings: coerceBoolean(raw.settings),
+    timeEdits: coerceBoolean(raw.timeEdits),
+  };
+};
 
 type LiquorFormState = {
   itemId: string;
@@ -82,19 +145,15 @@ export function useAdminLiquorBootstrapEffects({
 type UseAdminTenantEffectsArgs = {
   tenantInput: string;
   username: string;
-  activeLocationId: string;
   setTenantInput: Dispatch<SetStateAction<string>>;
   setUsername: Dispatch<SetStateAction<string>>;
-  setActiveLocationId: Dispatch<SetStateAction<string>>;
 };
 
 export function useAdminTenantEffects({
   tenantInput,
   username,
-  activeLocationId,
   setTenantInput,
   setUsername,
-  setActiveLocationId,
 }: UseAdminTenantEffectsArgs) {
   useEffect(() => {
     let active = true;
@@ -108,19 +167,14 @@ export function useAdminTenantEffects({
             const parsed = JSON.parse(rawContext) as {
               tenantInput?: string;
               username?: string;
-              activeLocationId?: string;
             };
             const storedTenant = parsed.tenantInput?.trim();
             const storedUsername = parsed.username?.trim();
-            const storedLocation = parsed.activeLocationId?.trim();
             if (storedTenant) {
               setTenantInput(storedTenant);
             }
             if (storedUsername) {
               setUsername(storedUsername);
-            }
-            if (storedLocation) {
-              setActiveLocationId(storedLocation);
             }
           } catch {
             // fall back to legacy tenant-only storage
@@ -141,7 +195,7 @@ export function useAdminTenantEffects({
     return () => {
       active = false;
     };
-  }, [setActiveLocationId, setTenantInput, setUsername]);
+  }, [setTenantInput, setUsername]);
 
   useEffect(() => {
     const normalized = tenantInput.trim();
@@ -154,8 +208,7 @@ export function useAdminTenantEffects({
   useEffect(() => {
     const normalizedTenant = tenantInput.trim();
     const normalizedUsername = username.trim();
-    const normalizedLocation = activeLocationId.trim();
-    if (!normalizedTenant && !normalizedUsername && !normalizedLocation) {
+    if (!normalizedTenant && !normalizedUsername) {
       return;
     }
     void AsyncStorage.setItem(
@@ -163,10 +216,243 @@ export function useAdminTenantEffects({
       JSON.stringify({
         tenantInput: normalizedTenant,
         username: normalizedUsername,
-        activeLocationId: normalizedLocation,
       }),
     );
-  }, [activeLocationId, tenantInput, username]);
+  }, [tenantInput, username]);
+}
+
+type PersistedAdminSession = {
+  loggedIn?: unknown;
+  activeTenant?: unknown;
+  activeTenantLabel?: unknown;
+  activeAdminUsername?: unknown;
+  tenantInput?: unknown;
+  username?: unknown;
+  sessionManagerEmployeeId?: unknown;
+  sessionManagerOfficeId?: unknown;
+  managerClockExempt?: unknown;
+  multiLocationEnabled?: unknown;
+  liquorInventoryEnabled?: unknown;
+  liquorPremiumEnabled?: unknown;
+  screen?: unknown;
+  permissions?: unknown;
+};
+
+type UseAdminSessionPersistenceEffectArgs = {
+  loggedIn: boolean;
+  activeTenant: string;
+  activeTenantLabel: string;
+  activeAdminUsername: string;
+  tenantInput: string;
+  username: string;
+  activeLocationId: string;
+  sessionManagerEmployeeId: string | null;
+  sessionManagerOfficeId: string | null;
+  managerClockExempt: boolean;
+  multiLocationEnabled: boolean;
+  liquorInventoryEnabled: boolean;
+  liquorPremiumEnabled: boolean;
+  screen: Screen;
+  permissions: AccessPermissions;
+  setLoggedIn: Dispatch<SetStateAction<boolean>>;
+  setActiveTenant: Dispatch<SetStateAction<string>>;
+  setActiveTenantLabel: Dispatch<SetStateAction<string>>;
+  setActiveAdminUsername: Dispatch<SetStateAction<string>>;
+  setTenantInput: Dispatch<SetStateAction<string>>;
+  setUsername: Dispatch<SetStateAction<string>>;
+  setActiveLocationId: Dispatch<SetStateAction<string>>;
+  setSessionManagerEmployeeId: Dispatch<SetStateAction<string | null>>;
+  setSessionManagerOfficeId: Dispatch<SetStateAction<string | null>>;
+  setManagerClockExempt: Dispatch<SetStateAction<boolean>>;
+  setMultiLocationEnabled: Dispatch<SetStateAction<boolean>>;
+  setLiquorInventoryEnabled: Dispatch<SetStateAction<boolean>>;
+  setLiquorPremiumEnabled: Dispatch<SetStateAction<boolean>>;
+  setScreen: Dispatch<SetStateAction<Screen>>;
+  setPermissions: Dispatch<SetStateAction<AccessPermissions>>;
+};
+
+export function useAdminSessionPersistenceEffect({
+  loggedIn,
+  activeTenant,
+  activeTenantLabel,
+  activeAdminUsername,
+  tenantInput,
+  username,
+  activeLocationId,
+  sessionManagerEmployeeId,
+  sessionManagerOfficeId,
+  managerClockExempt,
+  multiLocationEnabled,
+  liquorInventoryEnabled,
+  liquorPremiumEnabled,
+  screen,
+  permissions,
+  setLoggedIn,
+  setActiveTenant,
+  setActiveTenantLabel,
+  setActiveAdminUsername,
+  setTenantInput,
+  setUsername,
+  setActiveLocationId,
+  setSessionManagerEmployeeId,
+  setSessionManagerOfficeId,
+  setManagerClockExempt,
+  setMultiLocationEnabled,
+  setLiquorInventoryEnabled,
+  setLiquorPremiumEnabled,
+  setScreen,
+  setPermissions,
+}: UseAdminSessionPersistenceEffectArgs) {
+  const hydratedRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    const restoreSession = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(ADMIN_SESSION_STORAGE_KEY);
+        if (!active || !raw) {
+          return;
+        }
+        const parsed = JSON.parse(raw) as PersistedAdminSession;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          return;
+        }
+        const wasLoggedIn = coerceBoolean(parsed.loggedIn);
+        const restoredActiveTenant =
+          typeof parsed.activeTenant === "string"
+            ? parsed.activeTenant.trim()
+            : "";
+        const restoredAdminUsername =
+          typeof parsed.activeAdminUsername === "string"
+            ? parsed.activeAdminUsername.trim()
+            : "";
+        if (!wasLoggedIn || !restoredActiveTenant || !restoredAdminUsername) {
+          return;
+        }
+        const restoredTenantInput =
+          typeof parsed.tenantInput === "string"
+            ? parsed.tenantInput.trim()
+            : restoredActiveTenant;
+        const restoredUsername =
+          typeof parsed.username === "string"
+            ? parsed.username.trim()
+            : restoredAdminUsername;
+        const restoredTenantLabel =
+          typeof parsed.activeTenantLabel === "string"
+            ? parsed.activeTenantLabel.trim()
+            : restoredActiveTenant;
+        const restoredManagerEmployeeId =
+          typeof parsed.sessionManagerEmployeeId === "string" &&
+          parsed.sessionManagerEmployeeId.trim()
+            ? parsed.sessionManagerEmployeeId.trim()
+            : null;
+        const restoredManagerOfficeId =
+          typeof parsed.sessionManagerOfficeId === "string" &&
+          parsed.sessionManagerOfficeId.trim()
+            ? parsed.sessionManagerOfficeId.trim()
+            : null;
+        const restoredPermissions = sanitizePermissions(parsed.permissions);
+
+        setActiveTenant(restoredActiveTenant);
+        setActiveTenantLabel(restoredTenantLabel);
+        setActiveAdminUsername(restoredAdminUsername);
+        setTenantInput(restoredTenantInput);
+        setUsername(restoredUsername);
+        setSessionManagerEmployeeId(restoredManagerEmployeeId);
+        setSessionManagerOfficeId(restoredManagerOfficeId);
+        setManagerClockExempt(coerceBoolean(parsed.managerClockExempt));
+        setMultiLocationEnabled(coerceBoolean(parsed.multiLocationEnabled));
+        setLiquorInventoryEnabled(coerceBoolean(parsed.liquorInventoryEnabled));
+        setLiquorPremiumEnabled(coerceBoolean(parsed.liquorPremiumEnabled));
+        setScreen(normalizeScreen(parsed.screen));
+        if (restoredPermissions) {
+          setPermissions(restoredPermissions);
+        }
+        setLoggedIn(true);
+      } catch {
+        // ignore malformed payloads and continue logged out
+      } finally {
+        hydratedRef.current = true;
+      }
+    };
+
+    void restoreSession();
+    return () => {
+      active = false;
+    };
+  }, [
+    setActiveAdminUsername,
+    setActiveLocationId,
+    setActiveTenant,
+    setActiveTenantLabel,
+    setLiquorInventoryEnabled,
+    setLiquorPremiumEnabled,
+    setLoggedIn,
+    setManagerClockExempt,
+    setMultiLocationEnabled,
+    setPermissions,
+    setScreen,
+    setSessionManagerEmployeeId,
+    setSessionManagerOfficeId,
+    setTenantInput,
+    setUsername,
+  ]);
+
+  useEffect(() => {
+    if (!hydratedRef.current) {
+      return;
+    }
+    const persistSession = async () => {
+      if (!loggedIn) {
+        await AsyncStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+        return;
+      }
+      const normalizedActiveTenant = activeTenant.trim();
+      const normalizedAdminUsername = activeAdminUsername.trim();
+      if (!normalizedActiveTenant || !normalizedAdminUsername) {
+        await AsyncStorage.removeItem(ADMIN_SESSION_STORAGE_KEY);
+        return;
+      }
+      const payload: PersistedAdminSession = {
+        loggedIn: true,
+        activeTenant: normalizedActiveTenant,
+        activeTenantLabel: activeTenantLabel.trim(),
+        activeAdminUsername: normalizedAdminUsername,
+        tenantInput: tenantInput.trim() || normalizedActiveTenant,
+        username: username.trim() || normalizedAdminUsername,
+        sessionManagerEmployeeId: sessionManagerEmployeeId || null,
+        sessionManagerOfficeId: sessionManagerOfficeId || null,
+        managerClockExempt,
+        multiLocationEnabled,
+        liquorInventoryEnabled,
+        liquorPremiumEnabled,
+        screen,
+        permissions,
+      };
+      await AsyncStorage.setItem(
+        ADMIN_SESSION_STORAGE_KEY,
+        JSON.stringify(payload),
+      );
+    };
+
+    void persistSession();
+  }, [
+    activeAdminUsername,
+    activeLocationId,
+    activeTenant,
+    activeTenantLabel,
+    liquorInventoryEnabled,
+    liquorPremiumEnabled,
+    loggedIn,
+    managerClockExempt,
+    multiLocationEnabled,
+    permissions,
+    screen,
+    sessionManagerEmployeeId,
+    sessionManagerOfficeId,
+    tenantInput,
+    username,
+  ]);
 }
 
 type UseAdminNotificationRefreshEffectArgs = {

@@ -23,6 +23,7 @@ const ACTIVE_LOCATION_STORAGE_KEY = "clockin_active_location_id";
 const ACTIVE_LOCATION_ALL_STORAGE_KEY = "clockin_active_location_all";
 const ACTIVE_LOCATION_COOKIE_KEY = "clockin_active_location_id";
 const ADMIN_LOCATION_PREFERENCE_PREFIX = "clockin_admin_home_location_";
+const ALL_LOCATIONS_SELECTION = "__ALL__";
 
 const locationPreferenceKey = (tenantSlug: string) =>
   `${ADMIN_LOCATION_PREFERENCE_PREFIX}${tenantSlug.trim().toLowerCase()}`;
@@ -34,12 +35,22 @@ const readSavedLocation = (tenantSlug: string) => {
 
 const persistAdminLocationSelection = (tenantSlug: string, officeId: string) => {
   if (typeof window !== "undefined") {
-    sessionStorage.setItem(ACTIVE_LOCATION_STORAGE_KEY, officeId);
-    sessionStorage.removeItem(ACTIVE_LOCATION_ALL_STORAGE_KEY);
-    localStorage.setItem(locationPreferenceKey(tenantSlug), officeId);
+    if (officeId) {
+      sessionStorage.setItem(ACTIVE_LOCATION_STORAGE_KEY, officeId);
+      sessionStorage.removeItem(ACTIVE_LOCATION_ALL_STORAGE_KEY);
+      localStorage.setItem(locationPreferenceKey(tenantSlug), officeId);
+    } else {
+      sessionStorage.removeItem(ACTIVE_LOCATION_STORAGE_KEY);
+      sessionStorage.setItem(ACTIVE_LOCATION_ALL_STORAGE_KEY, "1");
+      localStorage.removeItem(locationPreferenceKey(tenantSlug));
+    }
   }
   if (typeof document !== "undefined") {
-    document.cookie = `${ACTIVE_LOCATION_COOKIE_KEY}=${encodeURIComponent(officeId)}; path=/`;
+    if (officeId) {
+      document.cookie = `${ACTIVE_LOCATION_COOKIE_KEY}=${encodeURIComponent(officeId)}; path=/`;
+    } else {
+      document.cookie = `${ACTIVE_LOCATION_COOKIE_KEY}=; path=/; max-age=0`;
+    }
   }
 };
 
@@ -87,6 +98,7 @@ const copy: Record<Lang, Record<string, string>> = {
     chooseLocationHelp:
       "This tenant has multiple locations. Pick the one you are working from.",
     location: "Location",
+    allLocationsParent: "All Locations (Parent)",
     continueToAdmin: "Continue to Admin",
     preparingAdmin: "Preparing...",
     switchAccount: "Switch Account",
@@ -123,6 +135,7 @@ const copy: Record<Lang, Record<string, string>> = {
     chooseLocationHelp:
       "Este inquilino tiene múltiples ubicaciones. Elige desde dónde trabajarás.",
     location: "Ubicación",
+    allLocationsParent: "Todas las ubicaciones (Principal)",
     continueToAdmin: "Continuar a Admin",
     preparingAdmin: "Preparando...",
     switchAccount: "Cambiar Cuenta",
@@ -226,7 +239,7 @@ export default function AdminLoginPage() {
             setPendingLocationSelection({
               tenantSlug,
               offices,
-              selectedOfficeId: offices[0]?.id || "",
+              selectedOfficeId: ALL_LOCATIONS_SELECTION,
             });
             return;
           }
@@ -252,9 +265,13 @@ export default function AdminLoginPage() {
 
     setStatus(null);
     setFinishingLocation(true);
+    const selectedOfficeId =
+      pendingLocationSelection.selectedOfficeId === ALL_LOCATIONS_SELECTION
+        ? ""
+        : pendingLocationSelection.selectedOfficeId;
     persistAdminLocationSelection(
       pendingLocationSelection.tenantSlug,
-      pendingLocationSelection.selectedOfficeId,
+      selectedOfficeId,
     );
     router.push("/admin");
   };
@@ -351,6 +368,9 @@ export default function AdminLoginPage() {
                 }
                 required
               >
+                <option value={ALL_LOCATIONS_SELECTION}>
+                  {t.allLocationsParent}
+                </option>
                 {pendingLocationSelection.offices.map((office) => (
                   <option key={office.id} value={office.id}>
                     {office.name}

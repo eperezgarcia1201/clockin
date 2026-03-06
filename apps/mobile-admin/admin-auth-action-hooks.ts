@@ -5,8 +5,6 @@ import { loadAccessProfileData } from "./access-profile-runtime";
 import {
   authenticateAdminTenantDirectory,
   resolveActiveTenantLabel,
-  resolveLoginManagerEmployeeId,
-  resolveLoginManagerOfficeId,
   resolveTenantForNextLogin,
 } from "./admin-auth-runtime";
 import {
@@ -47,6 +45,7 @@ export const useAdminAuthActions = (params: {
   setLoggedIn: (value: boolean) => void;
   setScreen: (value: Screen) => void;
   setDataSyncError: (value: string | null) => void;
+  onLoginSuccess?: () => void;
 }) => {
   const handleLogin = useCallback(async () => {
     if (!params.tenantInput.trim() || !params.username || !params.password) {
@@ -84,15 +83,10 @@ export const useAdminAuthActions = (params: {
       params.setLiquorInventoryEnabled(false);
       params.setLiquorPremiumEnabled(false);
       params.setMultiLocationEnabled(false);
-      const managerOfficeId = resolveLoginManagerOfficeId(
-        verified.allowedOfficeId,
-      );
-      params.setActiveLocationId(managerOfficeId || "");
+      params.setActiveLocationId("");
       params.setActiveTenant(verified.authOrgId.trim());
-      params.setSessionManagerEmployeeId(
-        resolveLoginManagerEmployeeId(verified.managerEmployeeId),
-      );
-      params.setSessionManagerOfficeId(managerOfficeId);
+      params.setSessionManagerEmployeeId(null);
+      params.setSessionManagerOfficeId(null);
       params.setManagerClockExempt(false);
       params.setManagerPin("");
       params.setManagerPunchStatus(null);
@@ -115,6 +109,7 @@ export const useAdminAuthActions = (params: {
         }),
       );
       params.setActiveAdminUsername(params.username.trim());
+      params.onLoginSuccess?.();
       params.setLoggedIn(true);
       params.setLoginStatus(null);
       params.setScreen("dashboard");
@@ -126,6 +121,7 @@ export const useAdminAuthActions = (params: {
       params.setLoginLoading(false);
     }
   }, [
+    params.onLoginSuccess,
     params.password,
     params.resolvedApiBase,
     params.tenantInput,

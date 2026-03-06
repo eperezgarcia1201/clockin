@@ -6,9 +6,33 @@ export type AccessProfileResponse = {
   actorType?: string;
   employeeId?: string | null;
   allowedOfficeId?: string | null;
-  ownerClockExempt?: boolean;
+  ownerClockExempt?: unknown;
   liquorInventoryEnabled?: boolean;
   premiumFeaturesEnabled?: boolean;
+};
+
+const coerceBoolean = (value: unknown): boolean => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value === 1;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1" || normalized === "yes") {
+      return true;
+    }
+    if (
+      normalized === "false" ||
+      normalized === "0" ||
+      normalized === "no" ||
+      normalized === ""
+    ) {
+      return false;
+    }
+  }
+  return false;
 };
 
 export const resolveManagerSessionFromAccessProfile = (
@@ -26,7 +50,7 @@ export const resolveManagerSessionFromAccessProfile = (
     return {
       sessionManagerEmployeeId: profile.employeeId,
       sessionManagerOfficeId: managerOfficeId || null,
-      managerClockExempt: Boolean(profile.ownerClockExempt),
+      managerClockExempt: coerceBoolean(profile.ownerClockExempt),
     };
   }
 

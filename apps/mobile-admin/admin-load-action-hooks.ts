@@ -70,6 +70,7 @@ export const useAdminLoadActions = (params: {
   const loadSummary = useCallback(async () => {
     const result = await loadSummaryData({
       fetchJson: params.fetchJson,
+      appendOfficeScope: params.appendOfficeScope,
     });
     if (result.ok === false) {
       params.setDataSyncError(result.error);
@@ -77,7 +78,7 @@ export const useAdminLoadActions = (params: {
     }
     params.setSummary(result.summary);
     params.setDataSyncError(null);
-  }, [params.fetchJson]);
+  }, [params.appendOfficeScope, params.fetchJson]);
 
   const loadEmployees = useCallback(async () => {
     const result = await loadEmployeesData({
@@ -142,7 +143,10 @@ export const useAdminLoadActions = (params: {
   }, [params.appendOfficeScope, params.fetchJson]);
 
   const loadNotifications = useCallback(async () => {
-    const result = await loadNotificationsData({ fetchJson: params.fetchJson });
+    const result = await loadNotificationsData({
+      fetchJson: params.fetchJson,
+      appendOfficeScope: params.appendOfficeScope,
+    });
     if (result.ok === false) {
       params.setDataSyncError(result.error);
       params.setAlertsStatus(result.error);
@@ -150,7 +154,7 @@ export const useAdminLoadActions = (params: {
     }
     params.setNotifications(result.notifications);
     params.setDataSyncError(null);
-  }, [params.fetchJson]);
+  }, [params.appendOfficeScope, params.fetchJson]);
 
   const loadActiveNow = useCallback(async () => {
     const result = await loadActiveNowRows({

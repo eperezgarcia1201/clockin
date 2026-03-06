@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Lang } from "./copy";
 import { defaultAccessPermissions } from "./app-state-helpers";
 import type {
+  AdminPushDevice,
   AccessPermissions,
   Employee,
   Group,
@@ -43,6 +44,13 @@ export function useAdminCoreState() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [alertsStatus, setAlertsStatus] = useState<string | null>(null);
+  const [adminNotificationStatus, setAdminNotificationStatus] = useState<
+    string | null
+  >(null);
+  const [adminNotificationSaving, setAdminNotificationSaving] = useState(false);
+  const [currentAdminPushDevice, setCurrentAdminPushDevice] =
+    useState<AdminPushDevice | null>(null);
+  const [tenantTimeZone, setTenantTimeZone] = useState("");
   const [employeeMessageEmployeeId, setEmployeeMessageEmployeeId] =
     useState("");
   const [employeeMessageSubject, setEmployeeMessageSubject] = useState("");
@@ -125,6 +133,14 @@ export function useAdminCoreState() {
     setNotifications,
     alertsStatus,
     setAlertsStatus,
+    adminNotificationStatus,
+    setAdminNotificationStatus,
+    adminNotificationSaving,
+    setAdminNotificationSaving,
+    currentAdminPushDevice,
+    setCurrentAdminPushDevice,
+    tenantTimeZone,
+    setTenantTimeZone,
     employeeMessageEmployeeId,
     setEmployeeMessageEmployeeId,
     employeeMessageSubject,

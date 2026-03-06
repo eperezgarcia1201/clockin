@@ -37,6 +37,13 @@ const OPERATIONAL_ALERT_TICK_MS = 60_000;
 const SUPPLIER_ORDER_WEEKDAY_START = 0;
 const SUPPLIER_ORDER_START_HOUR = 9;
 const DEFAULT_GEOFENCE_RADIUS_METERS = 120;
+type AdminPushPreferenceKey =
+  | 'notifyPunchActivity'
+  | 'notifyNoBreakAlerts'
+  | 'notifyLateClockInReminders'
+  | 'notifyScheduleOverrides'
+  | 'notifyTipSummaries'
+  | 'notifyDailySalesReminders';
 const ACTIVE_WORK_STATUSES = new Set<PunchType>([
   PunchType.IN,
   PunchType.BREAK,
@@ -145,11 +152,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
   async list(
     authUser: AuthUser,
-    options: { limit?: number; unreadOnly?: boolean },
+    options: { limit?: number; unreadOnly?: boolean; officeId?: string },
   ) {
     const access = await this.tenancy.requireFeature(authUser, 'dashboard');
     const { tenant } = access;
-    const officeScope = this.tenancy.resolveOfficeScope(access);
+    const officeScope = this.tenancy.resolveOfficeScope(access, options.officeId);
     await this.ensureOperationalAlerts(tenant.id);
 
     const limit = options.limit && options.limit > 0 ? options.limit : 50;
@@ -157,9 +164,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       where: {
         tenantId: tenant.id,
         readAt: options.unreadOnly ? null : undefined,
-        ...this.scopedNotificationFilter(
-          officeScope.restrictedToAllowedOffice ? officeScope.officeId : '',
-        ),
+        ...this.scopedNotificationFilter(officeScope.officeId || ''),
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -186,16 +191,26 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async listMessageTargets(authUser: AuthUser) {
+  async listMessageTargets(
+    authUser: AuthUser,
+    options?: { officeId?: string },
+  ) {
     const access = await this.tenancy.requireFeature(authUser, 'notifications');
-    const officeScope = this.tenancy.resolveOfficeScope(access);
+    const officeScope = this.tenancy.resolveOfficeScope(access, options?.officeId);
     const employees = await this.prisma.employee.findMany({
       where: {
         tenantId: access.tenant.id,
         deletedAt: null,
         disabled: false,
-        ...(officeScope.restrictedToAllowedOffice
-          ? { officeId: officeScope.officeId }
+        ...(officeScope.officeId
+          ? officeScope.restrictedToAllowedOffice
+            ? { officeId: officeScope.officeId }
+            : {
+                OR: [
+                  { officeId: officeScope.officeId },
+                  { officeId: null },
+                ],
+              }
           : {}),
       },
       orderBy: [{ fullName: 'asc' }],
@@ -417,7 +432,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    await this.sendPush(tenantId, notification.message, notification.type);
+    await this.sendPush(
+      tenantId,
+      notification.message,
+      notification.type,
+      this.toMetadataRecord(notification.metadata),
+    );
   }
 
   async notifyTipSummary(
@@ -458,7 +478,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    await this.sendPush(tenantId, notification.message, notification.type);
+    await this.sendPush(
+      tenantId,
+      notification.message,
+      notification.type,
+      this.toMetadataRecord(notification.metadata),
+    );
   }
 
   async notifyScheduleOverrideRequested(
@@ -497,7 +522,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    await this.sendPush(tenantId, notification.message, notification.type);
+    await this.sendPush(
+      tenantId,
+      notification.message,
+      notification.type,
+      this.toMetadataRecord(notification.metadata),
+    );
   }
 
   private mapPunchType(type: PunchType): NotificationType {
@@ -584,7 +614,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      await this.sendPush(tenantId, notification.message, notification.type);
+      await this.sendPush(
+        tenantId,
+        notification.message,
+        notification.type,
+        this.toMetadataRecord(notification.metadata),
+      );
     }
   }
 
@@ -679,10 +714,46 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private parseTime(value?: string | null) {
-    if (!value) return null;
-    const [hours, minutes] = value.split(':').map((part) => Number(part));
-    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
-    return hours * 60 + minutes;
+    const raw = value?.trim();
+    if (!raw) return null;
+
+    const militaryMatch = /^(\d{1,2}):(\d{2})$/.exec(raw);
+    if (militaryMatch) {
+      const hours = Number(militaryMatch[1]);
+      const minutes = Number(militaryMatch[2]);
+      if (
+        Number.isNaN(hours) ||
+        Number.isNaN(minutes) ||
+        hours < 0 ||
+        hours > 23 ||
+        minutes < 0 ||
+        minutes > 59
+      ) {
+        return null;
+      }
+      return hours * 60 + minutes;
+    }
+
+    const meridiemMatch = /^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/.exec(raw);
+    if (!meridiemMatch) {
+      return null;
+    }
+    const hour12 = Number(meridiemMatch[1]);
+    const minutes = Number(meridiemMatch[2]);
+    const meridiem = meridiemMatch[3].toUpperCase();
+    if (
+      Number.isNaN(hour12) ||
+      Number.isNaN(minutes) ||
+      hour12 < 1 ||
+      hour12 > 12 ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      return null;
+    }
+    const hourBase = hour12 % 12;
+    const hour24 = meridiem === 'PM' ? hourBase + 12 : hourBase;
+    return hour24 * 60 + minutes;
   }
 
   private isLatestPunchInsideAssignedOfficeGeofence(params: {
@@ -1064,7 +1135,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           message:
             `${reminder.employeeName} has not clocked in. ` +
             `Reminder ${reminderNumber}/${LATE_REMINDER_MAX} ` +
-            `(scheduled ${reminder.startTime || 'N/A'}).`,
+            `(scheduled ${reminder.startTime || 'N/A'} ${timeZone || 'UTC'}).`,
           metadata: {
             kind: LATE_CLOCK_IN_REMINDER_KIND,
             employeeName: reminder.employeeName,
@@ -1078,7 +1149,12 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      await this.sendPush(tenantId, notification.message, notification.type);
+      await this.sendPush(
+        tenantId,
+        notification.message,
+        notification.type,
+        this.toMetadataRecord(notification.metadata),
+      );
       reminderCountByEmployee.set(reminder.employeeId, reminderNumber);
 
       if (reminderNumber >= LATE_REMINDER_MAX) {
@@ -1302,8 +1378,16 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     );
     const message =
       reminderKind === DAILY_SALES_REMINDER_KIND
-        ? `Daily sales input for ${reportDateLabel} is still pending. Please submit it before ${dueByLabel}.`
-        : `Daily sales input for ${reportDateLabel} is still missing as of ${sentAtLabel}. Please submit it now.`;
+        ? `Daily sales input for ${reportDateLabel} is still pending. Please submit it before ${dueByLabel} (${timeZone || 'UTC'}).`
+        : `Daily sales input for ${reportDateLabel} is still missing as of ${sentAtLabel} (${timeZone || 'UTC'}). Please submit it now.`;
+    const notificationMetadata = {
+      kind: reminderKind,
+      workDate,
+      dueBy: dueByLabel,
+      sentAt: sentAtLabel,
+      scope: 'daily_sales_capture',
+      timeZone: timeZone || 'UTC',
+    };
 
     await this.prisma.notification.createMany({
       data: managers.map((manager) => ({
@@ -1311,17 +1395,16 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         employeeId: manager.id,
         type: NotificationType.LATE_CLOCK_IN_5M,
         message,
-        metadata: {
-          kind: reminderKind,
-          workDate,
-          dueBy: dueByLabel,
-          sentAt: sentAtLabel,
-          scope: 'daily_sales_capture',
-        },
+        metadata: notificationMetadata,
       })),
     });
 
-    await this.sendPush(tenantId, message, NotificationType.LATE_CLOCK_IN_5M);
+    await this.sendPush(
+      tenantId,
+      message,
+      NotificationType.LATE_CLOCK_IN_5M,
+      notificationMetadata,
+    );
   }
 
   private async buildOwnerReportSummary(input: {
@@ -1879,18 +1962,31 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     tenantId: string,
     message: string,
     type: NotificationType,
+    metadata?: Record<string, unknown> | null,
   ) {
+    const preferenceKey = this.resolvePushPreferenceKey(type, metadata);
+    const where: any = { tenantId };
+    if (preferenceKey) {
+      where[preferenceKey] = true;
+    }
+
     const devices = await this.prisma.adminDevice.findMany({
-      where: { tenantId },
+      where,
+      select: { expoPushToken: true },
     });
     if (!devices.length) return;
 
+    const metadataKind =
+      metadata && typeof metadata.kind === 'string' ? metadata.kind : undefined;
     const body = devices.map((device) => ({
       to: device.expoPushToken,
       sound: 'default',
       title: 'ClockIn Admin',
       body: message,
-      data: { type },
+      data: {
+        type,
+        ...(metadataKind ? { kind: metadataKind } : {}),
+      },
     }));
 
     try {
@@ -1903,6 +1999,45 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       });
     } catch {
       // ignore push failures
+    }
+  }
+
+  private resolvePushPreferenceKey(
+    type: NotificationType,
+    metadata?: Record<string, unknown> | null,
+  ): AdminPushPreferenceKey | null {
+    switch (type) {
+      case NotificationType.PUNCH_IN:
+      case NotificationType.PUNCH_OUT:
+      case NotificationType.PUNCH_BREAK:
+      case NotificationType.PUNCH_LUNCH:
+        return 'notifyPunchActivity';
+      case NotificationType.NO_BREAK_6H:
+        return 'notifyNoBreakAlerts';
+      case NotificationType.TIPS_7D_SUMMARY:
+        return 'notifyTipSummaries';
+      case NotificationType.SCHEDULE_OVERRIDE_REQUEST:
+        return 'notifyScheduleOverrides';
+      case NotificationType.LATE_CLOCK_IN_5M: {
+        const kind =
+          metadata && typeof metadata.kind === 'string' ? metadata.kind : '';
+        if (
+          kind === LATE_CLOCK_IN_REMINDER_KIND ||
+          kind === AUTO_CLOCK_IN_KIND ||
+          kind === AUTO_CLOCK_IN_GEOFENCE_KIND
+        ) {
+          return 'notifyLateClockInReminders';
+        }
+        if (
+          kind === DAILY_SALES_REMINDER_KIND ||
+          kind === DAILY_SALES_OVERDUE_KIND
+        ) {
+          return 'notifyDailySalesReminders';
+        }
+        return null;
+      }
+      default:
+        return null;
     }
   }
 }

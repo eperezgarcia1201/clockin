@@ -293,13 +293,20 @@ model Notification {
 }
 
 model AdminDevice {
-  id            String   @id @default(cuid())
-  tenantId      String
-  expoPushToken String   @unique
-  label         String?
-  platform      String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                         String   @id @default(cuid())
+  tenantId                   String
+  expoPushToken              String   @unique
+  label                      String?
+  platform                   String?
+  timeZone                   String?
+  notifyPunchActivity        Boolean  @default(true)
+  notifyNoBreakAlerts        Boolean  @default(true)
+  notifyLateClockInReminders Boolean  @default(true)
+  notifyScheduleOverrides    Boolean  @default(true)
+  notifyTipSummaries         Boolean  @default(true)
+  notifyDailySalesReminders  Boolean  @default(true)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 

@@ -2,7 +2,12 @@ import { useMemo } from "react";
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { styles } from "../App.styles";
 import type { Lang } from "../copy";
-import type { Employee, NotificationRow } from "../types";
+import type {
+  AdminNotificationPreferenceKey,
+  AdminPushDevice,
+  Employee,
+  NotificationRow,
+} from "../types";
 
 type ScheduleOverrideNotice = {
   requestId: string;
@@ -28,8 +33,16 @@ type AlertsCardProps = {
   language: Lang;
   employeeMessageStatus: string | null;
   inlineOrNull: (value: string | null | undefined) => string | null;
-  onRefreshAlerts: () => void;
+  onRefreshAlerts: () => void | Promise<void>;
   alertsStatus: string | null;
+  adminNotificationStatus: string | null;
+  adminNotificationSaving: boolean;
+  currentAdminPushDevice: AdminPushDevice | null;
+  tenantTimeZone: string;
+  deviceTimeZone: string;
+  canSyncTenantTimeZone: boolean;
+  onToggleNotificationPreference: (key: AdminNotificationPreferenceKey) => void;
+  onSyncTenantTimeZone: () => void;
   notifications: NotificationRow[];
   parseScheduleOverrideNotification: (notice: NotificationRow) => ScheduleOverrideNotice;
   scheduleOverrideLoadingId: string | null;
@@ -54,12 +67,91 @@ export function AlertsCard({
   inlineOrNull,
   onRefreshAlerts,
   alertsStatus,
+  adminNotificationStatus,
+  adminNotificationSaving,
+  currentAdminPushDevice,
+  tenantTimeZone,
+  deviceTimeZone,
+  canSyncTenantTimeZone,
+  onToggleNotificationPreference,
+  onSyncTenantTimeZone,
   notifications,
   parseScheduleOverrideNotification,
   scheduleOverrideLoadingId,
   onScheduleOverrideDecision,
   formatDisplayDate,
 }: AlertsCardProps) {
+  const notificationPreferences = useMemo(
+    () => [
+      {
+        key: "notifyLateClockInReminders" as const,
+        title:
+          language === "es"
+            ? "Recordatorios de empleados sin clock in"
+            : "Late / Missing Clock-In Reminders",
+        description:
+          language === "es"
+            ? "Avisos cuando un empleado no ha hecho clock in a tiempo."
+            : "Alerts when an employee has not clocked in on time.",
+      },
+      {
+        key: "notifyPunchActivity" as const,
+        title:
+          language === "es"
+            ? "Actividad de clock in y clock out"
+            : "Clock In / Clock Out Activity",
+        description:
+          language === "es"
+            ? "Push de entradas, salidas, descansos y lunch."
+            : "Pushes for in, out, break, and lunch punches.",
+      },
+      {
+        key: "notifyNoBreakAlerts" as const,
+        title:
+          language === "es"
+            ? "Alertas de empleados aun activos"
+            : "Still Clocked-In / No-Break Alerts",
+        description:
+          language === "es"
+            ? "Avisos cuando alguien sigue activo mucho tiempo sin descanso."
+            : "Alerts when someone is still active too long without a break.",
+      },
+      {
+        key: "notifyScheduleOverrides" as const,
+        title:
+          language === "es"
+            ? "Solicitudes de horario"
+            : "Schedule Override Requests",
+        description:
+          language === "es"
+            ? "Solicitudes para trabajar fuera del horario asignado."
+            : "Requests to work outside the assigned schedule.",
+      },
+      {
+        key: "notifyTipSummaries" as const,
+        title:
+          language === "es"
+            ? "Resumenes de propinas"
+            : "7-Day Tip Summaries",
+        description:
+          language === "es"
+            ? "Resumenes cuando se registran propinas."
+            : "Summaries after tip entries are submitted.",
+      },
+      {
+        key: "notifyDailySalesReminders" as const,
+        title:
+          language === "es"
+            ? "Recordatorios de ventas diarias"
+            : "Daily Sales Reminders",
+        description:
+          language === "es"
+            ? "Avisos para capturar ventas diarias pendientes."
+            : "Reminders to submit missing daily sales.",
+      },
+    ],
+    [language],
+  );
   const messageEmployees = useMemo(
     () =>
       activeMessageEmployees.map((employee, index) => {
@@ -80,9 +172,117 @@ export function AlertsCard({
     <View style={[styles.card, isLight && styles.cardLight]}>
       <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Alerts</Text>
       <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-        Push notifications include punches, schedule override requests, 6-hour
-        no-break alerts, and 7-day tip summaries.
+        {language === "es"
+          ? "Los recordatorios push usan la zona horaria del tenant. Las opciones de abajo solo afectan este dispositivo."
+          : "Reminder pushes use the tenant timezone on the server. The controls below only affect this device."}
       </Text>
+      <View style={styles.tipCard}>
+        <Text style={[styles.listName, isLight && styles.listNameLight]}>
+          {language === "es" ? "Zona horaria del tenant" : "Tenant Timezone"}
+        </Text>
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          {tenantTimeZone || (language === "es" ? "Cargando..." : "Loading...")}
+        </Text>
+        <Text style={[styles.listName, isLight && styles.listNameLight]}>
+          {language === "es" ? "Zona horaria del dispositivo" : "This Device Timezone"}
+        </Text>
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          {deviceTimeZone}
+        </Text>
+        {tenantTimeZone && tenantTimeZone !== deviceTimeZone ? (
+          <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+            {language === "es"
+              ? "Los horarios de recordatorio seguiran la zona del tenant hasta que la actualices."
+              : "Reminder schedules will follow the tenant timezone until you update it."}
+          </Text>
+        ) : null}
+        {canSyncTenantTimeZone &&
+        tenantTimeZone &&
+        tenantTimeZone !== deviceTimeZone ? (
+          <TouchableOpacity
+            style={[
+              styles.secondaryButton,
+              isLight && styles.secondaryButtonLight,
+              adminNotificationSaving && styles.inlineButtonDisabled,
+            ]}
+            onPress={onSyncTenantTimeZone}
+            disabled={adminNotificationSaving}
+          >
+            <Text
+              style={[
+                styles.secondaryButtonText,
+                isLight && styles.secondaryButtonTextLight,
+              ]}
+            >
+              {language === "es"
+                ? "Usar zona de este dispositivo"
+                : "Use This Device Timezone"}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+      <View style={[styles.divider, isLight && styles.dividerLight]} />
+      <Text style={[styles.listName, isLight && styles.listNameLight]}>
+        {language === "es" ? "Push de este dispositivo" : "This Device Push Delivery"}
+      </Text>
+      {!currentAdminPushDevice ? (
+        <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+          {language === "es"
+            ? "Inicia sesión en un dispositivo real y permite notificaciones para configurar estas alertas."
+            : "Sign in on a physical device and allow notifications to configure these push alerts."}
+        </Text>
+      ) : (
+        notificationPreferences.map((preference) => {
+          const enabled = currentAdminPushDevice.notifications[preference.key];
+          return (
+            <View
+              key={preference.key}
+              style={styles.listRow}
+            >
+              <View style={styles.reportRowMain}>
+                <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                  {preference.title}
+                </Text>
+                <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                  {preference.description}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.togglePill,
+                  isLight && styles.togglePillLight,
+                  enabled && styles.toggleActive,
+                  enabled && isLight && styles.toggleActiveLight,
+                  adminNotificationSaving && styles.inlineButtonDisabled,
+                ]}
+                disabled={adminNotificationSaving}
+                onPress={() => onToggleNotificationPreference(preference.key)}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    isLight && styles.toggleTextLight,
+                    enabled && isLight && styles.toggleTextLightActive,
+                  ]}
+                >
+                  {enabled
+                    ? language === "es"
+                      ? "Activo"
+                      : "On"
+                    : language === "es"
+                      ? "Apagado"
+                      : "Off"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          );
+        })
+      )}
+      {adminNotificationStatus && (
+        <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+          {inlineOrNull(adminNotificationStatus)}
+        </Text>
+      )}
       <View style={[styles.divider, isLight && styles.dividerLight]} />
       <Text style={[styles.listName, isLight && styles.listNameLight]}>
         Send Employee Message

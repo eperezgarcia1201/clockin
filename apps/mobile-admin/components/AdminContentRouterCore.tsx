@@ -23,6 +23,7 @@ export function renderAdminCoreContent(props: AdminContentRouterProps) {
         loginStatus={props.loginStatus}
         inlineOrNull={props.inlineOrNull}
         onLogin={props.handleLogin}
+        onForgetSavedAdmin={props.forgetSavedAdmin}
         loginLoading={props.loginLoading}
         dataSyncError={props.dataSyncError}
       />

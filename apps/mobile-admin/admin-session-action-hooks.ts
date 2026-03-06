@@ -1,6 +1,13 @@
 import { useCallback } from "react";
 import { getCurrentWeekStartDateKey, todayDateKey } from "./app-helpers";
 import { defaultAccessPermissions } from "./app-state-helpers";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  ADMIN_BIOMETRIC_ENABLED_STORAGE_KEY,
+  ADMIN_LOGIN_CONTEXT_STORAGE_KEY,
+  ADMIN_SESSION_STORAGE_KEY,
+  ADMIN_TENANT_STORAGE_KEY,
+} from "./app-config";
 
 export const useAdminSessionActions = (params: {
   scopedLocationId: string;
@@ -22,6 +29,7 @@ export const useAdminSessionActions = (params: {
   setActiveTenant: (value: string) => void;
   setActiveTenantLabel: (value: string) => void;
   setActiveAdminUsername: (value: string) => void;
+  setTenantInput: (value: string) => void;
   setUsername: (value: string) => void;
   setPassword: (value: string) => void;
   setScreen: (value: any) => void;
@@ -61,6 +69,10 @@ export const useAdminSessionActions = (params: {
   setLiquorSavingCountItemId: (value: string | null) => void;
   setLiquorAnalyzingItemId: (value: string | null) => void;
   setRecentPunchRows: (value: any) => void;
+  setAdminNotificationStatus: (value: string | null) => void;
+  setAdminNotificationSaving: (value: boolean) => void;
+  setCurrentAdminPushDevice: (value: any) => void;
+  setTenantTimeZone: (value: string) => void;
   setEmployeeMessageEmployeeId: (value: string) => void;
   setEmployeeMessageSubject: (value: string) => void;
   setEmployeeMessageBody: (value: string) => void;
@@ -134,6 +146,10 @@ export const useAdminSessionActions = (params: {
     params.setLiquorSavingCountItemId(null);
     params.setLiquorAnalyzingItemId(null);
     params.setRecentPunchRows([]);
+    params.setAdminNotificationStatus(null);
+    params.setAdminNotificationSaving(false);
+    params.setCurrentAdminPushDevice(null);
+    params.setTenantTimeZone("");
     params.setEmployeeMessageEmployeeId("");
     params.setEmployeeMessageSubject("");
     params.setEmployeeMessageBody("");
@@ -141,5 +157,21 @@ export const useAdminSessionActions = (params: {
     params.setResolvedApiBase(null);
   }, []);
 
-  return { appendOfficeScope, clearAdminSession };
+  const forgetSavedAdmin = useCallback(() => {
+    params.setTenantInput("");
+    params.setUsername("");
+    params.setPassword("");
+    params.setActiveLocationId("");
+    params.setActiveTenant("");
+    params.setActiveTenantLabel("");
+    params.setActiveAdminUsername("");
+    void AsyncStorage.multiRemove([
+      ADMIN_BIOMETRIC_ENABLED_STORAGE_KEY,
+      ADMIN_TENANT_STORAGE_KEY,
+      ADMIN_LOGIN_CONTEXT_STORAGE_KEY,
+      ADMIN_SESSION_STORAGE_KEY,
+    ]);
+  }, []);
+
+  return { appendOfficeScope, clearAdminSession, forgetSavedAdmin };
 };

@@ -1,6 +1,6 @@
 {
   "name": "mobile-admin",
-  "version": "1.0.8",
+  "version": "2.1.0",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
@@ -21,6 +21,7 @@
     "expo-file-system": "~19.0.17",
     "expo-image-picker": "~17.0.8",
     "expo-linear-gradient": "~15.0.8",
+    "expo-local-authentication": "~17.0.8",
     "expo-notifications": "~0.31.4",
     "expo-sharing": "~14.0.7",
     "expo-status-bar": "~3.0.9",

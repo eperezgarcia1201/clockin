@@ -5,27 +5,66 @@ import type {
   NotificationRow,
 } from "./types";
 
-export const normalizeTime = (value: string) => {
+const parseTwentyFourHourTime = (value: string) => {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (
+    !Number.isInteger(hours) ||
+    !Number.isInteger(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+  return { hours, minutes };
+};
+
+export const normalizeTime = (value: unknown) => {
+  if (typeof value !== "string") {
+    return "";
+  }
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (/^\d{2}:\d{2}$/.test(trimmed)) return trimmed;
+  const twentyFourHour = parseTwentyFourHourTime(trimmed);
+  if (twentyFourHour) {
+    return `${String(twentyFourHour.hours).padStart(2, "0")}:${String(
+      twentyFourHour.minutes,
+    ).padStart(2, "0")}`;
+  }
   const match = trimmed.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
   if (!match) return trimmed;
   let hours = Number(match[1]);
-  const minutes = match[2];
+  const minutes = Number(match[2]);
   const meridiem = match[3].toLowerCase();
-  if (Number.isNaN(hours)) return trimmed;
+  if (
+    !Number.isInteger(hours) ||
+    hours < 1 ||
+    hours > 12 ||
+    !Number.isInteger(minutes) ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return trimmed;
+  }
   if (meridiem === "pm" && hours < 12) hours += 12;
   if (meridiem === "am" && hours === 12) hours = 0;
-  return `${String(hours).padStart(2, "0")}:${minutes}`;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 };
 
-export const sanitizeTime = (value: string) => {
+export const sanitizeTime = (value: unknown) => {
   const normalized = normalizeTime(value);
-  return /^\d{2}:\d{2}$/.test(normalized) ? normalized : "";
+  const parsed = parseTwentyFourHourTime(normalized);
+  if (!parsed) {
+    return "";
+  }
+  return `${String(parsed.hours).padStart(2, "0")}:${String(parsed.minutes).padStart(2, "0")}`;
 };
 
-export const parseScheduleTimeParts = (value: string) => {
+export const parseScheduleTimeParts = (value: unknown) => {
   const fallback = "09:00";
   const normalized = sanitizeTime(value || "") || fallback;
   const [rawHours, rawMinutes] = normalized.split(":");
@@ -54,7 +93,7 @@ export const toTwentyFourHourTime = (parts: {
   return `${String(hours24).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
 };
 
-export const formatScheduleTimeLabel = (value: string) => {
+export const formatScheduleTimeLabel = (value: unknown) => {
   const parts = parseScheduleTimeParts(value);
   return `${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} ${parts.meridiem}`;
 };

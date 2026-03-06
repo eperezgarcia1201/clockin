@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
@@ -16,6 +18,13 @@ export class OfficesService {
     private readonly prisma: PrismaService,
     private readonly tenancy: TenancyService,
   ) {}
+
+  private isUniqueConstraintError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    );
+  }
 
   private normalizeOfficeName(value: string) {
     const normalized = value.trim();
@@ -99,15 +108,22 @@ export class OfficesService {
 
     const geofence = this.normalizeGeofence(dto);
 
-    return this.prisma.office.create({
-      data: {
-        tenantId: tenant.id,
-        name: this.normalizeOfficeName(dto.name),
-        latitude: geofence.latitude,
-        longitude: geofence.longitude,
-        geofenceRadiusMeters: geofence.geofenceRadiusMeters,
-      },
-    });
+    try {
+      return await this.prisma.office.create({
+        data: {
+          tenantId: tenant.id,
+          name: this.normalizeOfficeName(dto.name),
+          latitude: geofence.latitude,
+          longitude: geofence.longitude,
+          geofenceRadiusMeters: geofence.geofenceRadiusMeters,
+        },
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('A location with that name already exists.');
+      }
+      throw error;
+    }
   }
 
   async update(authUser: AuthUser, officeId: string, dto: UpdateOfficeDto) {
@@ -137,17 +153,103 @@ export class OfficesService {
       geofenceRadiusMeters: existing.geofenceRadiusMeters,
     });
 
-    return this.prisma.office.update({
-      where: { id: existing.id },
-      data: {
-        name:
-          dto.name !== undefined
-            ? this.normalizeOfficeName(dto.name)
-            : undefined,
-        latitude: geofence.latitude,
-        longitude: geofence.longitude,
-        geofenceRadiusMeters: geofence.geofenceRadiusMeters,
-      },
+    try {
+      return await this.prisma.office.update({
+        where: { id: existing.id },
+        data: {
+          name:
+            dto.name !== undefined
+              ? this.normalizeOfficeName(dto.name)
+              : undefined,
+          latitude: geofence.latitude,
+          longitude: geofence.longitude,
+          geofenceRadiusMeters: geofence.geofenceRadiusMeters,
+        },
+      });
+    } catch (error) {
+      if (this.isUniqueConstraintError(error)) {
+        throw new ConflictException('A location with that name already exists.');
+      }
+      throw error;
+    }
+  }
+
+  async remove(authUser: AuthUser, officeId: string) {
+    const access = await this.tenancy.requireFeature(authUser, 'locations');
+    const { tenant } = access;
+    this.tenancy.ensureGlobalAdminAccess(
+      access,
+      'Managers cannot delete locations. Ask an owner or tenant admin.',
+    );
+
+    const existing = await this.prisma.office.findFirst({
+      where: { id: officeId, tenantId: tenant.id },
+      select: { id: true },
     });
+
+    if (!existing) {
+      throw new NotFoundException('Location not found.');
+    }
+
+    const locationCount = await this.prisma.office.count({
+      where: { tenantId: tenant.id },
+    });
+    if (locationCount <= 1) {
+      throw new BadRequestException(
+        'You must keep at least one location for this tenant.',
+      );
+    }
+
+    const [movementCount, inventoryCount, bottleScanCount] = await Promise.all([
+      this.prisma.liquorInventoryMovement.count({
+        where: { tenantId: tenant.id, officeId: existing.id },
+      }),
+      this.prisma.liquorInventoryCount.count({
+        where: { tenantId: tenant.id, officeId: existing.id },
+      }),
+      this.prisma.liquorBottleScan.count({
+        where: { tenantId: tenant.id, officeId: existing.id },
+      }),
+    ]);
+
+    if (movementCount > 0 || inventoryCount > 0 || bottleScanCount > 0) {
+      throw new BadRequestException(
+        'This location has liquor inventory history and cannot be deleted.',
+      );
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const [clearedEmployees, clearedGroups, clearedCompanyOrders] =
+        await Promise.all([
+          tx.employee.updateMany({
+            where: { tenantId: tenant.id, officeId: existing.id },
+            data: { officeId: null },
+          }),
+          tx.group.updateMany({
+            where: { tenantId: tenant.id, officeId: existing.id },
+            data: { officeId: null },
+          }),
+          tx.companyOrder.updateMany({
+            where: { tenantId: tenant.id, officeId: existing.id },
+            data: { officeId: null },
+          }),
+        ]);
+
+      await tx.office.delete({
+        where: { id: existing.id },
+      });
+
+      return {
+        clearedEmployees: clearedEmployees.count,
+        clearedGroups: clearedGroups.count,
+        clearedCompanyOrders: clearedCompanyOrders.count,
+      };
+    });
+
+    return {
+      ok: true,
+      id: existing.id,
+      ...result,
+    };
   }
 }

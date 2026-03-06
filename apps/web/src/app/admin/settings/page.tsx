@@ -41,6 +41,49 @@ const defaults: Settings = {
   multiLocationEnabled: false,
 };
 
+const pickSystemSettings = (value: unknown): Settings => {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+
+  return {
+    timezone:
+      typeof source.timezone === "string" && source.timezone.trim()
+        ? source.timezone
+        : defaults.timezone,
+    roundingMinutes:
+      typeof source.roundingMinutes === "number" &&
+      Number.isFinite(source.roundingMinutes)
+        ? source.roundingMinutes
+        : defaults.roundingMinutes,
+    requirePin:
+      typeof source.requirePin === "boolean"
+        ? source.requirePin
+        : defaults.requirePin,
+    ipRestrictions:
+      typeof source.ipRestrictions === "string"
+        ? source.ipRestrictions
+        : defaults.ipRestrictions,
+    reportsEnabled:
+      typeof source.reportsEnabled === "boolean"
+        ? source.reportsEnabled
+        : defaults.reportsEnabled,
+    allowManualTimeEdits:
+      typeof source.allowManualTimeEdits === "boolean"
+        ? source.allowManualTimeEdits
+        : defaults.allowManualTimeEdits,
+    dailySalesReportingEnabled:
+      typeof source.dailySalesReportingEnabled === "boolean"
+        ? source.dailySalesReportingEnabled
+        : defaults.dailySalesReportingEnabled,
+    multiLocationEnabled:
+      typeof source.multiLocationEnabled === "boolean"
+        ? source.multiLocationEnabled
+        : defaults.multiLocationEnabled,
+  };
+};
+
 export default function SystemSettings() {
   const [form, setForm] = useState<Settings>(defaults);
   const [status, setStatus] = useState<string | null>(null);
@@ -84,8 +127,8 @@ export default function SystemSettings() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await getSettings<Settings>();
-        setForm((prev) => ({ ...prev, ...data }));
+        const data = await getSettings<Record<string, unknown>>();
+        setForm((prev) => ({ ...prev, ...pickSystemSettings(data) }));
       } catch {
         // ignore
       }
@@ -113,10 +156,10 @@ export default function SystemSettings() {
     event.preventDefault();
     setStatus(null);
     try {
-      await updateSettings(form);
+      await updateSettings(pickSystemSettings(form));
       setStatus(t.saved);
-    } catch {
-      setStatus(t.saveError);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t.saveError);
     }
   };
 

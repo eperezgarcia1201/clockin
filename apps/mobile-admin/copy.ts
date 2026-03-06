@@ -18,6 +18,19 @@ export const copy: Record<
     password: string;
     signIn: string;
     signingIn: string;
+    forgetSavedAdmin: string;
+    savedAdminDetected: string;
+    biometricEnable: string;
+    biometricDisable: string;
+    biometricUnlockTitle: string;
+    biometricUnlockBody: string;
+    biometricUnlockButton: string;
+    biometricUnlocking: string;
+    biometricEnabledStatus: string;
+    biometricDisabledStatus: string;
+    biometricUnavailableStatus: string;
+    biometricCanceledStatus: string;
+    biometricFailedStatus: string;
     pushHelp: string;
     tenantPlaceholder: string;
     captureTitle: string;
@@ -69,6 +82,21 @@ export const copy: Record<
     password: "Password",
     signIn: "Sign In",
     signingIn: "Signing In...",
+    forgetSavedAdmin: "Forget Saved Admin",
+    savedAdminDetected: "Saved admin detected on this device.",
+    biometricEnable: "Enable Biometrics",
+    biometricDisable: "Disable Biometrics",
+    biometricUnlockTitle: "Unlock Admin Session",
+    biometricUnlockBody:
+      "Use device biometrics to reopen this admin session on Android or iPhone.",
+    biometricUnlockButton: "Unlock with Biometrics",
+    biometricUnlocking: "Waiting for biometric confirmation...",
+    biometricEnabledStatus: "Biometric unlock enabled on this device.",
+    biometricDisabledStatus: "Biometric unlock disabled on this device.",
+    biometricUnavailableStatus:
+      "Biometrics are not available or not enrolled on this device.",
+    biometricCanceledStatus: "Biometric verification was canceled.",
+    biometricFailedStatus: "Biometric verification failed. Try again.",
     pushHelp: "Push alerts are enabled once you sign in.",
     tenantPlaceholder: "tenant name",
     captureTitle: "Daily Data Capture",
@@ -119,6 +147,24 @@ export const copy: Record<
     password: "Contraseña",
     signIn: "Ingresar",
     signingIn: "Ingresando...",
+    forgetSavedAdmin: "Borrar Admin Guardado",
+    savedAdminDetected: "Hay un admin guardado en este dispositivo.",
+    biometricEnable: "Activar Biométricos",
+    biometricDisable: "Desactivar Biométricos",
+    biometricUnlockTitle: "Desbloquear Sesión Admin",
+    biometricUnlockBody:
+      "Usa los biométricos del dispositivo para reabrir esta sesión admin en Android o iPhone.",
+    biometricUnlockButton: "Desbloquear con Biométricos",
+    biometricUnlocking: "Esperando confirmación biométrica...",
+    biometricEnabledStatus:
+      "El desbloqueo biométrico quedó activado en este dispositivo.",
+    biometricDisabledStatus:
+      "El desbloqueo biométrico quedó desactivado en este dispositivo.",
+    biometricUnavailableStatus:
+      "Los biométricos no están disponibles o no están configurados en este dispositivo.",
+    biometricCanceledStatus: "La verificación biométrica fue cancelada.",
+    biometricFailedStatus:
+      "La verificación biométrica falló. Intenta otra vez.",
     pushHelp: "Las alertas push se activan al iniciar sesión.",
     tenantPlaceholder: "tenant name",
     captureTitle: "Captura Diaria de Datos",

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -40,5 +41,11 @@ export class OfficesController {
   ) {
     if (!req.user) throw new UnauthorizedException();
     return this.offices.update(req.user, id, dto);
+  }
+
+  @Delete(':id')
+  async remove(@Req() req: RequestWithUser, @Param('id') id: string) {
+    if (!req.user) throw new UnauthorizedException();
+    return this.offices.remove(req.user, id);
   }
 }

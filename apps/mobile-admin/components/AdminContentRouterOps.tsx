@@ -103,6 +103,14 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
         inlineOrNull={props.inlineOrNull}
         onRefreshAlerts={props.loadNotifications}
         alertsStatus={props.alertsStatus}
+        adminNotificationStatus={props.adminNotificationStatus}
+        adminNotificationSaving={props.adminNotificationSaving}
+        currentAdminPushDevice={props.currentAdminPushDevice}
+        tenantTimeZone={props.tenantTimeZone}
+        deviceTimeZone={props.deviceTimeZone}
+        canSyncTenantTimeZone={props.permissions.settings}
+        onToggleNotificationPreference={props.handleToggleAdminNotificationPreference}
+        onSyncTenantTimeZone={props.handleSyncTenantTimeZone}
         notifications={props.notifications}
         parseScheduleOverrideNotification={props.parseScheduleOverrideNotification}
         scheduleOverrideLoadingId={props.scheduleOverrideLoadingId}

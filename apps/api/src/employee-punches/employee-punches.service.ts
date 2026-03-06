@@ -120,11 +120,7 @@ export class EmployeePunchesService {
         tenant.id,
         employee.id,
       );
-      if (
-        ownerClockExempt ||
-        this.shouldBypassScheduleOverrideForEmployee(employee)
-      ) {
-      } else {
+      if (!ownerClockExempt) {
         scheduleOverrideRequestId = await this.enforceScheduleWithOverride(
           tenant.id,
           {
@@ -738,10 +734,46 @@ export class EmployeePunchesService {
   }
 
   private parseTime(value?: string | null) {
-    if (!value) return null;
-    const [hours, minutes] = value.split(':').map((part) => Number(part));
-    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
-    return hours * 60 + minutes;
+    const raw = value?.trim();
+    if (!raw) return null;
+
+    const militaryMatch = /^(\d{1,2}):(\d{2})$/.exec(raw);
+    if (militaryMatch) {
+      const hours = Number(militaryMatch[1]);
+      const minutes = Number(militaryMatch[2]);
+      if (
+        Number.isNaN(hours) ||
+        Number.isNaN(minutes) ||
+        hours < 0 ||
+        hours > 23 ||
+        minutes < 0 ||
+        minutes > 59
+      ) {
+        return null;
+      }
+      return hours * 60 + minutes;
+    }
+
+    const meridiemMatch = /^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/.exec(raw);
+    if (!meridiemMatch) {
+      return null;
+    }
+    const hour12 = Number(meridiemMatch[1]);
+    const minutes = Number(meridiemMatch[2]);
+    const meridiem = meridiemMatch[3].toUpperCase();
+    if (
+      Number.isNaN(hour12) ||
+      Number.isNaN(minutes) ||
+      hour12 < 1 ||
+      hour12 > 12 ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      return null;
+    }
+    const hourBase = hour12 % 12;
+    const hour24 = meridiem === 'PM' ? hourBase + 12 : hourBase;
+    return hour24 * 60 + minutes;
   }
 
   private toLocalDateKey(date: Date, timeZone?: string) {
@@ -1197,24 +1229,6 @@ export class EmployeePunchesService {
     );
   }
 
-  private shouldBypassScheduleOverrideForEmployee(employee: {
-    group?: { name: string | null } | null;
-    isKitchenManager?: boolean;
-  }) {
-    if (employee.isKitchenManager) {
-      return true;
-    }
-    const groupName = employee.group?.name?.trim().toLowerCase() || '';
-    if (!groupName) {
-      return false;
-    }
-    return (
-      groupName.includes('cook') ||
-      groupName.includes('kitchen') ||
-      groupName.includes('cocina')
-    );
-  }
-
   private async enforceNoActiveShift(tenantId: string, employeeId: string) {
     const latestPunch = await this.prisma.employeePunch.findFirst({
       where: { tenantId, employeeId },
@@ -1394,13 +1408,6 @@ export class EmployeePunchesService {
     });
 
     if (!scheduleForDay) {
-      const hasAnySchedule = await this.prisma.employeeSchedule.findFirst({
-        where: { tenantId, employeeId },
-        select: { id: true },
-      });
-      if (!hasAnySchedule) {
-        return null;
-      }
       return {
         reason: ScheduleOverrideReason.NOT_SCHEDULED_TODAY,
         message: 'You are not scheduled to work today.',

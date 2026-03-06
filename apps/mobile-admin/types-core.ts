@@ -71,6 +71,29 @@ export type NotificationRow = {
   metadata?: Record<string, unknown> | null;
 };
 
+export type AdminNotificationPreferences = {
+  notifyPunchActivity: boolean;
+  notifyNoBreakAlerts: boolean;
+  notifyLateClockInReminders: boolean;
+  notifyScheduleOverrides: boolean;
+  notifyTipSummaries: boolean;
+  notifyDailySalesReminders: boolean;
+};
+
+export type AdminNotificationPreferenceKey =
+  keyof AdminNotificationPreferences;
+
+export type AdminPushDevice = {
+  id: string;
+  label?: string | null;
+  platform?: string | null;
+  timeZone?: string | null;
+  tokenPreview?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  notifications: AdminNotificationPreferences;
+};
+
 export type ExpensePaymentMethod = "CHECK" | "DEBIT_CARD" | "CASH";
 export type ReceiptAttachment = {
   uri: string;
