@@ -2612,6 +2612,27 @@ export default function LiquorControlPage() {
             </button>
           </div>
         </div>
+        <LiquorCatalogEditorTable
+          items={items}
+          drafts={sheetDrafts}
+          noItemsLabel={t.noItems}
+          companyLabel={t.company}
+          liquorNameLabel={t.liquorName}
+          liquorKindLabel={t.liquorKind}
+          qtyMlLabel={t.qtyMl}
+          priceLabel={t.price}
+          actionsLabel="Actions"
+          saveLabel={t.saveItemRow}
+          disabled={loading || isAnyActionBusy}
+          onUpdateField={updateSheetDraft}
+          onSave={(itemId) => {
+            void runWithReload(
+              `sheet-item-${itemId}`,
+              () => saveSpreadsheetItem(itemId),
+              "Catalog row updated.",
+            );
+          }}
+        />
         <LiquorKindManager
           title={t.kindList}
           addLabel={t.addKind}
@@ -2642,27 +2663,6 @@ export default function LiquorControlPage() {
               "delete-kind",
               deleteLiquorKind,
               "Kind deleted.",
-            );
-          }}
-        />
-        <LiquorCatalogEditorTable
-          items={items}
-          drafts={sheetDrafts}
-          noItemsLabel={t.noItems}
-          companyLabel={t.company}
-          liquorNameLabel={t.liquorName}
-          liquorKindLabel={t.liquorKind}
-          qtyMlLabel={t.qtyMl}
-          priceLabel={t.price}
-          actionsLabel="Actions"
-          saveLabel={t.saveItemRow}
-          disabled={loading || isAnyActionBusy}
-          onUpdateField={updateSheetDraft}
-          onSave={(itemId) => {
-            void runWithReload(
-              `sheet-item-${itemId}`,
-              () => saveSpreadsheetItem(itemId),
-              "Catalog row updated.",
             );
           }}
         />
