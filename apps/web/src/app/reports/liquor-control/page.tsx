@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LiquorKindTagList } from "./components/LiquorKindTagList";
+import { readPersistedLocationScope } from "./location-scope";
 import {
   analyzeLiquorBottleScanRequest,
   analyzeLiquorInvoiceRequest,
@@ -364,6 +366,8 @@ const copy = {
     newKindPlaceholder: "Add new kind",
     kindDeletePlaceholder: "Select kind to hide",
     noKindsConfigured: "No kinds configured yet.",
+    showMoreKinds: "Show more kinds",
+    showLessKinds: "Show fewer kinds",
     price: "Price",
     qtyMl: "Qty/ML",
     bar: "Bar",
@@ -488,6 +492,8 @@ const copy = {
     newKindPlaceholder: "Agregar tipo nuevo",
     kindDeletePlaceholder: "Selecciona tipo para ocultar",
     noKindsConfigured: "Aún no hay tipos configurados.",
+    showMoreKinds: "Mostrar más tipos",
+    showLessKinds: "Mostrar menos tipos",
     price: "Precio",
     qtyMl: "Cant/ML",
     bar: "Bar",
@@ -626,6 +632,7 @@ export default function LiquorControlPage() {
   const [month, setMonth] = useState(currentMonthKey);
   const [year, setYear] = useState(currentYearKey);
   const [officeId, setOfficeId] = useState("");
+  const [locationScopeHydrated, setLocationScopeHydrated] = useState(false);
   const [targetCostPct, setTargetCostPct] = useState("0.30");
   const [liquorPremiumEnabled, setLiquorPremiumEnabled] = useState(false);
 
@@ -813,6 +820,28 @@ export default function LiquorControlPage() {
   );
 
   useEffect(() => {
+    const persistedScope = readPersistedLocationScope();
+    setOfficeId(persistedScope.officeId);
+    setLocationScopeHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!locationScopeHydrated) {
+      return;
+    }
+    if (!officeId) {
+      return;
+    }
+    if (offices.length === 0) {
+      return;
+    }
+    if (offices.some((office) => office.id === officeId)) {
+      return;
+    }
+    setOfficeId("");
+  }, [locationScopeHydrated, officeId, offices]);
+
+  useEffect(() => {
     setSheetDrafts((previous) => {
       const next: Record<string, SpreadsheetDraft> = {};
       spreadsheetRows.forEach((row) => {
@@ -844,6 +873,9 @@ export default function LiquorControlPage() {
   }, [hasLiquorPremiumAccess, workspace]);
 
   const loadAll = useCallback(async (options?: { silent?: boolean }) => {
+    if (!locationScopeHydrated) {
+      return;
+    }
     if (parsedTargetCostPct === null) {
       setStatusKind("danger");
       setStatus("Target cost percent must be a number between 0 and 1.");
@@ -1041,11 +1073,21 @@ export default function LiquorControlPage() {
     } finally {
       setLoading(false);
     }
-  }, [month, officeId, parsedTargetCostPct, t.featureDisabled, year]);
+  }, [
+    locationScopeHydrated,
+    month,
+    officeId,
+    parsedTargetCostPct,
+    t.featureDisabled,
+    year,
+  ]);
 
   useEffect(() => {
+    if (!locationScopeHydrated) {
+      return;
+    }
     void loadAll();
-  }, [loadAll]);
+  }, [loadAll, locationScopeHydrated]);
 
   useEffect(() => {
     const monthYear = month.slice(0, 4);
@@ -2156,11 +2198,12 @@ export default function LiquorControlPage() {
             </button>
           </div>
           <div className="col-12">
-            <div className="small text-muted">
-              {liquorKinds.length > 0
-                ? liquorKinds.join(" • ")
-                : t.noKindsConfigured}
-            </div>
+            <LiquorKindTagList
+              kinds={liquorKinds}
+              emptyLabel={t.noKindsConfigured}
+              showMoreLabel={t.showMoreKinds}
+              showLessLabel={t.showLessKinds}
+            />
           </div>
         </div>
         <div className="table-responsive">
