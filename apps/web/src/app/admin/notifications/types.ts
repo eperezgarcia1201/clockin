@@ -25,6 +25,9 @@ export type NotificationPolicySettings = {
   noBreakAlertHours: number;
   noBreakReminderIntervalMinutes: number;
   noBreakReminderMax: number;
+  missedBreakDeductionEnabled: boolean;
+  missedBreakScheduleHours: number;
+  missedBreakDeductionMinutes: number;
   dailySalesReminderEnabled: boolean;
   dailySalesReminderFirstMinutes: number;
   dailySalesReminderFinalMinutes: number;

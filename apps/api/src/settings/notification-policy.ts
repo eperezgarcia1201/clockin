@@ -22,6 +22,9 @@ export type NotificationPolicy = AdminDeviceNotificationDefaults & {
   noBreakAlertHours: number;
   noBreakReminderIntervalMinutes: number;
   noBreakReminderMax: number;
+  missedBreakDeductionEnabled: boolean;
+  missedBreakScheduleHours: number;
+  missedBreakDeductionMinutes: number;
   dailySalesReminderEnabled: boolean;
   dailySalesReminderFirstMinutes: number;
   dailySalesReminderFinalMinutes: number;
@@ -43,6 +46,8 @@ const DEFAULT_LATE_REMINDER_MAX = 3;
 const DEFAULT_NO_BREAK_ALERT_HOURS = 6;
 const DEFAULT_NO_BREAK_REMINDER_INTERVAL_MINUTES = 60;
 const DEFAULT_NO_BREAK_REMINDER_MAX = 1;
+const DEFAULT_MISSED_BREAK_SCHEDULE_HOURS = 6;
+const DEFAULT_MISSED_BREAK_DEDUCTION_MINUTES = 120;
 const DEFAULT_DAILY_SALES_REMINDER_FIRST_MINUTES = 20 * 60 + 50;
 const DEFAULT_DAILY_SALES_REMINDER_FINAL_MINUTES = 22 * 60 + 20;
 const DEFAULT_OWNER_REPORT_SEND_MINUTES = 22 * 60;
@@ -153,6 +158,22 @@ export const buildNotificationPolicy = (
       DEFAULT_NO_BREAK_REMINDER_MAX,
       1,
       12,
+    ),
+    missedBreakDeductionEnabled:
+      typeof settings?.missedBreakDeductionEnabled === 'boolean'
+        ? settings.missedBreakDeductionEnabled
+        : false,
+    missedBreakScheduleHours: normalizeIntegerSetting(
+      settings?.missedBreakScheduleHours,
+      DEFAULT_MISSED_BREAK_SCHEDULE_HOURS,
+      1,
+      24,
+    ),
+    missedBreakDeductionMinutes: normalizeIntegerSetting(
+      settings?.missedBreakDeductionMinutes,
+      DEFAULT_MISSED_BREAK_DEDUCTION_MINUTES,
+      1,
+      720,
     ),
     dailySalesReminderEnabled:
       typeof settings?.dailySalesReminderEnabled === 'boolean'

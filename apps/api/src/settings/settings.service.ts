@@ -38,6 +38,9 @@ const defaultSettings = () => ({
   noBreakAlertHours: 6,
   noBreakReminderIntervalMinutes: 60,
   noBreakReminderMax: 1,
+  missedBreakDeductionEnabled: false,
+  missedBreakScheduleHours: 6,
+  missedBreakDeductionMinutes: 120,
   dailySalesReminderEnabled: true,
   dailySalesReminderFirstMinutes: 20 * 60 + 50,
   dailySalesReminderFinalMinutes: 22 * 60 + 20,
@@ -149,6 +152,11 @@ export class SettingsService {
         noBreakReminderIntervalMinutes:
           dto.noBreakReminderIntervalMinutes ?? undefined,
         noBreakReminderMax: dto.noBreakReminderMax ?? undefined,
+        missedBreakDeductionEnabled:
+          dto.missedBreakDeductionEnabled ?? undefined,
+        missedBreakScheduleHours: dto.missedBreakScheduleHours ?? undefined,
+        missedBreakDeductionMinutes:
+          dto.missedBreakDeductionMinutes ?? undefined,
         dailySalesReminderEnabled: dto.dailySalesReminderEnabled ?? undefined,
         dailySalesReminderFirstMinutes:
           dto.dailySalesReminderFirstMinutes ?? undefined,
@@ -228,6 +236,14 @@ export class SettingsService {
           defaults.noBreakReminderIntervalMinutes,
         noBreakReminderMax:
           dto.noBreakReminderMax ?? defaults.noBreakReminderMax,
+        missedBreakDeductionEnabled:
+          dto.missedBreakDeductionEnabled ??
+          defaults.missedBreakDeductionEnabled,
+        missedBreakScheduleHours:
+          dto.missedBreakScheduleHours ?? defaults.missedBreakScheduleHours,
+        missedBreakDeductionMinutes:
+          dto.missedBreakDeductionMinutes ??
+          defaults.missedBreakDeductionMinutes,
         dailySalesReminderEnabled:
           dto.dailySalesReminderEnabled ?? defaults.dailySalesReminderEnabled,
         dailySalesReminderFirstMinutes:

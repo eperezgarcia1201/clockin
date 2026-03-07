@@ -143,8 +143,8 @@ export function ServerReminderRuleCards({
               <div className="fw-semibold">{tr("No-Break Alerts", "Alertas sin Descanso")}</div>
               <div className="text-muted small">
                 {tr(
-                  "These controls only apply when the no-break source is enabled above.",
-                  "Estos controles solo aplican cuando la fuente de alertas sin descanso esta activada arriba.",
+                  "Alert timing follows the no-break source above. The deduction rule below is independent and affects reported hours.",
+                  "Los tiempos de alerta siguen la fuente de alertas sin descanso. La regla de descuento abajo es independiente y afecta las horas reportadas.",
                 )}
               </div>
             </div>
@@ -196,6 +196,79 @@ export function ServerReminderRuleCards({
                     onPolicyChange(
                       "noBreakReminderMax",
                       clampInteger(Number(event.target.value), 1, 1, 12),
+                    )
+                  }
+                />
+              </div>
+              <div className="col-12">
+                <div className="form-check form-switch">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    role="switch"
+                    checked={policy.missedBreakDeductionEnabled}
+                    disabled={settingsBusy}
+                    onChange={(event) =>
+                      onPolicyChange(
+                        "missedBreakDeductionEnabled",
+                        event.target.checked,
+                      )
+                    }
+                  />
+                  <label className="form-check-label">
+                    {tr(
+                      "Deduct time when a full long shift ends without a break or lunch punch",
+                      "Descontar tiempo cuando un turno largo completo termina sin punch de descanso o lunch",
+                    )}
+                  </label>
+                </div>
+                <div className="text-muted small mt-2">
+                  {tr(
+                    "This only applies after the employee reaches the full scheduled shift length.",
+                    "Esto solo aplica despues de que el empleado cumple la duracion completa del turno programado.",
+                  )}
+                </div>
+              </div>
+              <div className="col-12 col-md-6 col-xl-12">
+                <label className="form-label">
+                  {tr("Scheduled Hours Trigger", "Horas Programadas de Activacion")}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  className="form-control"
+                  value={policy.missedBreakScheduleHours}
+                  disabled={
+                    settingsBusy ||
+                    !policy.missedBreakDeductionEnabled
+                  }
+                  onChange={(event) =>
+                    onPolicyChange(
+                      "missedBreakScheduleHours",
+                      clampInteger(Number(event.target.value), 6, 1, 24),
+                    )
+                  }
+                />
+              </div>
+              <div className="col-12 col-md-6 col-xl-12">
+                <label className="form-label">
+                  {tr("Deduct Minutes", "Minutos a Descontar")}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={720}
+                  className="form-control"
+                  value={policy.missedBreakDeductionMinutes}
+                  disabled={
+                    settingsBusy ||
+                    !policy.missedBreakDeductionEnabled
+                  }
+                  onChange={(event) =>
+                    onPolicyChange(
+                      "missedBreakDeductionMinutes",
+                      clampInteger(Number(event.target.value), 120, 1, 720),
                     )
                   }
                 />

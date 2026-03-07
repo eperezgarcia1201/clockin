@@ -10,6 +10,9 @@ describe('notification-policy', () => {
     expect(policy.timeZone).toBe('America/Chicago');
     expect(policy.lateClockInReminderMax).toBe(3);
     expect(policy.noBreakReminderMax).toBe(1);
+    expect(policy.missedBreakDeductionEnabled).toBe(false);
+    expect(policy.missedBreakScheduleHours).toBe(6);
+    expect(policy.missedBreakDeductionMinutes).toBe(120);
     expect(policy.defaultNotifyPunchActivity).toBe(true);
     expect(policy.punchActivityNotificationsEnabled).toBe(true);
   });
@@ -19,6 +22,8 @@ describe('notification-policy', () => {
       lateClockInGraceMinutes: -3,
       noBreakReminderIntervalMinutes: 9999,
       noBreakReminderMax: 0,
+      missedBreakScheduleHours: 99,
+      missedBreakDeductionMinutes: -10,
       dailySalesReminderFirstMinutes: 1400,
       dailySalesReminderFinalMinutes: 1390,
     });
@@ -26,6 +31,8 @@ describe('notification-policy', () => {
     expect(policy.lateClockInGraceMinutes).toBe(0);
     expect(policy.noBreakReminderIntervalMinutes).toBe(720);
     expect(policy.noBreakReminderMax).toBe(1);
+    expect(policy.missedBreakScheduleHours).toBe(24);
+    expect(policy.missedBreakDeductionMinutes).toBe(1);
     expect(policy.dailySalesReminderFirstMinutes).toBe(1400);
     expect(policy.dailySalesReminderFinalMinutes).toBe(1401);
   });

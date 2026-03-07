@@ -166,6 +166,22 @@ export class UpdateSettingsDto {
 
   @IsOptional()
   @IsBoolean()
+  missedBreakDeductionEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(24)
+  missedBreakScheduleHours?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  missedBreakDeductionMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
   dailySalesReminderEnabled?: boolean;
 
   @IsOptional()

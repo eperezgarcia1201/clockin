@@ -29,6 +29,9 @@ export const defaultNotificationPolicy: NotificationPolicySettings = {
   noBreakAlertHours: 6,
   noBreakReminderIntervalMinutes: 60,
   noBreakReminderMax: 1,
+  missedBreakDeductionEnabled: false,
+  missedBreakScheduleHours: 6,
+  missedBreakDeductionMinutes: 120,
   dailySalesReminderEnabled: true,
   dailySalesReminderFirstMinutes: 20 * 60 + 50,
   dailySalesReminderFinalMinutes: 22 * 60 + 20,
@@ -172,6 +175,22 @@ export const pickNotificationPolicy = (
       1,
       12,
     ),
+    missedBreakDeductionEnabled:
+      typeof source.missedBreakDeductionEnabled === "boolean"
+        ? source.missedBreakDeductionEnabled
+        : defaultNotificationPolicy.missedBreakDeductionEnabled,
+    missedBreakScheduleHours: clampInteger(
+      source.missedBreakScheduleHours,
+      defaultNotificationPolicy.missedBreakScheduleHours,
+      1,
+      24,
+    ),
+    missedBreakDeductionMinutes: clampInteger(
+      source.missedBreakDeductionMinutes,
+      defaultNotificationPolicy.missedBreakDeductionMinutes,
+      1,
+      720,
+    ),
     dailySalesReminderEnabled:
       typeof source.dailySalesReminderEnabled === "boolean"
         ? source.dailySalesReminderEnabled
@@ -233,6 +252,9 @@ export const buildNotificationPolicyPayload = (
   noBreakAlertHours: policy.noBreakAlertHours,
   noBreakReminderIntervalMinutes: policy.noBreakReminderIntervalMinutes,
   noBreakReminderMax: policy.noBreakReminderMax,
+  missedBreakDeductionEnabled: policy.missedBreakDeductionEnabled,
+  missedBreakScheduleHours: policy.missedBreakScheduleHours,
+  missedBreakDeductionMinutes: policy.missedBreakDeductionMinutes,
   dailySalesReminderEnabled: policy.dailySalesReminderEnabled,
   dailySalesReminderFirstMinutes: policy.dailySalesReminderFirstMinutes,
   dailySalesReminderFinalMinutes: policy.dailySalesReminderFinalMinutes,

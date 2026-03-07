@@ -13,8 +13,15 @@ import {
   Role,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildNotificationPolicy } from '../settings/notification-policy';
 import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
+import {
+  getScheduledShiftDurationMinutes,
+  getWeekdayFromDateKey,
+  resolveMissedBreakDeductionMinutes,
+  type MissedBreakDeductionPolicy,
+} from './missed-break-deduction';
 
 const WORKING_TYPES = new Set<PunchType>([PunchType.IN]);
 const LIQUOR_OUTGOING_TYPES = new Set<LiquorInventoryMovementType>([
@@ -182,6 +189,9 @@ export class ReportsService {
       const { days, totalMinutes } = buildDailySummary({
         punches: context.punchesByEmployee.get(employee.id) || [],
         before: context.lastBeforeMap.get(employee.id),
+        scheduledMinutesByWeekday:
+          context.scheduleMinutesByEmployee.get(employee.id) || undefined,
+        missedBreakDeductionPolicy: context.missedBreakDeductionPolicy,
         rangeStartUtc: context.rangeStartUtc,
         rangeEndUtc: context.rangeEndUtc,
         offsetMs: context.offsetMs,
@@ -224,6 +234,9 @@ export class ReportsService {
       const { days, totalMinutes } = buildDailySummary({
         punches: context.punchesByEmployee.get(employee.id) || [],
         before: context.lastBeforeMap.get(employee.id),
+        scheduledMinutesByWeekday:
+          context.scheduleMinutesByEmployee.get(employee.id) || undefined,
+        missedBreakDeductionPolicy: context.missedBreakDeductionPolicy,
         rangeStartUtc: context.rangeStartUtc,
         rangeEndUtc: context.rangeEndUtc,
         offsetMs: context.offsetMs,
@@ -275,6 +288,9 @@ export class ReportsService {
       const { days, totalMinutes } = buildDailySummary({
         punches: context.punchesByEmployee.get(employee.id) || [],
         before: context.lastBeforeMap.get(employee.id),
+        scheduledMinutesByWeekday:
+          context.scheduleMinutesByEmployee.get(employee.id) || undefined,
+        missedBreakDeductionPolicy: context.missedBreakDeductionPolicy,
         rangeStartUtc: context.rangeStartUtc,
         rangeEndUtc: context.rangeEndUtc,
         offsetMs: context.offsetMs,
@@ -766,6 +782,9 @@ export class ReportsService {
       const summary = buildDailySummary({
         punches: context.punchesByEmployee.get(employee.id) || [],
         before: context.lastBeforeMap.get(employee.id),
+        scheduledMinutesByWeekday:
+          context.scheduleMinutesByEmployee.get(employee.id) || undefined,
+        missedBreakDeductionPolicy: context.missedBreakDeductionPolicy,
         rangeStartUtc: context.rangeStartUtc,
         rangeEndUtc: context.rangeEndUtc,
         offsetMs: context.offsetMs,
@@ -1990,6 +2009,10 @@ export class ReportsService {
     const settings = await this.prisma.tenantSettings.findUnique({
       where: { tenantId: tenant.id },
     });
+    const notificationPolicy = buildNotificationPolicy(
+      settings,
+      settings?.timezone,
+    );
 
     const offsetMs = (input.tzOffset || 0) * 60 * 1000;
     const rangeStartUtc =
@@ -2020,6 +2043,18 @@ export class ReportsService {
         rangeStartUtc,
         rangeEndUtc,
         reportsEnabled: settings?.reportsEnabled ?? true,
+        scheduleMinutesByEmployee: new Map(),
+        missedBreakDeductionPolicy: notificationPolicy.missedBreakDeductionEnabled
+          ? {
+              enabled: true,
+              scheduleHours: notificationPolicy.missedBreakScheduleHours,
+              deductionMinutes: notificationPolicy.missedBreakDeductionMinutes,
+            }
+          : {
+              enabled: false,
+              scheduleHours: notificationPolicy.missedBreakScheduleHours,
+              deductionMinutes: notificationPolicy.missedBreakDeductionMinutes,
+            },
       };
     }
 
@@ -2057,11 +2092,53 @@ export class ReportsService {
       punchesByEmployee.set(punch.employeeId, list);
     }
 
+    const scheduleMinutesByEmployee = new Map<string, Map<number, number>>();
+    if (notificationPolicy.missedBreakDeductionEnabled) {
+      const scheduleRows = await this.prisma.employeeSchedule.findMany({
+        where: {
+          tenantId: tenant.id,
+          employeeId: { in: employeeIds },
+        },
+        select: {
+          employeeId: true,
+          weekday: true,
+          startTime: true,
+          endTime: true,
+        },
+      });
+
+      for (const schedule of scheduleRows) {
+        const durationMinutes = getScheduledShiftDurationMinutes(
+          schedule.startTime,
+          schedule.endTime,
+        );
+        if (durationMinutes <= 0) {
+          continue;
+        }
+        const byWeekday =
+          scheduleMinutesByEmployee.get(schedule.employeeId) || new Map();
+        byWeekday.set(schedule.weekday, durationMinutes);
+        scheduleMinutesByEmployee.set(schedule.employeeId, byWeekday);
+      }
+    }
+
     return {
       tenant,
       employees,
       punchesByEmployee,
       lastBeforeMap,
+      scheduleMinutesByEmployee,
+      missedBreakDeductionPolicy: notificationPolicy.missedBreakDeductionEnabled
+        ? {
+            enabled: true,
+            scheduleHours: notificationPolicy.missedBreakScheduleHours,
+            deductionMinutes: notificationPolicy.missedBreakDeductionMinutes,
+          }
+        : {
+            enabled: false,
+            scheduleHours: notificationPolicy.missedBreakScheduleHours,
+            deductionMinutes: notificationPolicy.missedBreakDeductionMinutes,
+          },
       offsetMs,
       rangeStartUtc,
       rangeEndUtc,
@@ -2161,6 +2238,8 @@ function formatHoursMinutes(minutes: number) {
 function buildDailySummary({
   punches,
   before,
+  scheduledMinutesByWeekday,
+  missedBreakDeductionPolicy,
   rangeStartUtc,
   rangeEndUtc,
   offsetMs,
@@ -2169,6 +2248,8 @@ function buildDailySummary({
 }: {
   punches: Array<{ occurredAt: Date; type: PunchType; notes?: string | null }>;
   before?: { type: PunchType } | null;
+  scheduledMinutesByWeekday?: Map<number, number>;
+  missedBreakDeductionPolicy?: MissedBreakDeductionPolicy | null;
   rangeStartUtc: number;
   rangeEndUtc: number;
   offsetMs: number;
@@ -2250,14 +2331,30 @@ function buildDailySummary({
     .map((date) => {
       const minutes = minutesByDay.get(date) || 0;
       const penaltyMinutes = penaltyByDay.get(date) || 0;
-      const adjustedMinutes = Math.max(0, minutes - penaltyMinutes);
+      const dayPunches = punchesByDay.get(date) || [];
+      const scheduledMinutes =
+        scheduledMinutesByWeekday?.get(getWeekdayFromDateKey(date)) || 0;
+      const missedBreakDeductionMinutes =
+        resolveMissedBreakDeductionMinutes({
+          policy: missedBreakDeductionPolicy,
+          scheduledMinutes,
+          workedMinutes: minutes,
+          existingPenaltyMinutes: penaltyMinutes,
+          hasBreakOrLunchPunch: dayPunches.some(
+            (punch) =>
+              punch.type === PunchType.BREAK || punch.type === PunchType.LUNCH,
+          ),
+        });
+      const adjustedMinutes = Math.max(
+        0,
+        minutes - penaltyMinutes - missedBreakDeductionMinutes,
+      );
       const roundedMinutes = roundMinutes(adjustedMinutes, roundTo);
 
       let firstIn: string | null = null;
       let lastOut: string | null = null;
 
       if (includeInOutTimes) {
-        const dayPunches = punchesByDay.get(date) || [];
         const firstInPunch = dayPunches.find(
           (punch) => punch.type === PunchType.IN,
         );
