@@ -55,6 +55,188 @@ const resolveTenantTimeZone = (value: unknown) => {
   return defaultTimeZone;
 };
 
+type NotificationPolicySettings = {
+  timezone: string;
+  lateClockInWorkflowEnabled: boolean;
+  lateClockInGraceMinutes: number;
+  lateClockInReminderIntervalMinutes: number;
+  lateClockInReminderMax: number;
+  autoClockInAfterLateReminders: boolean;
+  autoClockInOnGeofence: boolean;
+  noBreakAlertsEnabled: boolean;
+  noBreakAlertHours: number;
+  dailySalesReminderEnabled: boolean;
+  dailySalesReminderFirstMinutes: number;
+  dailySalesReminderFinalMinutes: number;
+  ownerDailyReportEnabled: boolean;
+  ownerDailyReportSendMinutes: number;
+};
+
+const defaultNotificationPolicy: NotificationPolicySettings = {
+  timezone: defaultTimeZone,
+  lateClockInWorkflowEnabled: true,
+  lateClockInGraceMinutes: 5,
+  lateClockInReminderIntervalMinutes: 5,
+  lateClockInReminderMax: 3,
+  autoClockInAfterLateReminders: true,
+  autoClockInOnGeofence: true,
+  noBreakAlertsEnabled: true,
+  noBreakAlertHours: 6,
+  dailySalesReminderEnabled: true,
+  dailySalesReminderFirstMinutes: 20 * 60 + 50,
+  dailySalesReminderFinalMinutes: 22 * 60 + 20,
+  ownerDailyReportEnabled: true,
+  ownerDailyReportSendMinutes: 22 * 60,
+};
+
+const clampInteger = (
+  value: unknown,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  const rounded = Math.round(value);
+  if (rounded < minimum) {
+    return minimum;
+  }
+  if (rounded > maximum) {
+    return maximum;
+  }
+  return rounded;
+};
+
+const pickNotificationPolicy = (value: unknown): NotificationPolicySettings => {
+  const source =
+    value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : ({} as Record<string, unknown>);
+
+  const dailySalesReminderFirstMinutes = clampInteger(
+    source.dailySalesReminderFirstMinutes,
+    defaultNotificationPolicy.dailySalesReminderFirstMinutes,
+    0,
+    1438,
+  );
+  const dailySalesReminderFinalMinutes = Math.max(
+    dailySalesReminderFirstMinutes + 1,
+    clampInteger(
+      source.dailySalesReminderFinalMinutes,
+      defaultNotificationPolicy.dailySalesReminderFinalMinutes,
+      1,
+      1439,
+    ),
+  );
+
+  return {
+    timezone: resolveTenantTimeZone(source),
+    lateClockInWorkflowEnabled:
+      typeof source.lateClockInWorkflowEnabled === "boolean"
+        ? source.lateClockInWorkflowEnabled
+        : defaultNotificationPolicy.lateClockInWorkflowEnabled,
+    lateClockInGraceMinutes: clampInteger(
+      source.lateClockInGraceMinutes,
+      defaultNotificationPolicy.lateClockInGraceMinutes,
+      0,
+      180,
+    ),
+    lateClockInReminderIntervalMinutes: clampInteger(
+      source.lateClockInReminderIntervalMinutes,
+      defaultNotificationPolicy.lateClockInReminderIntervalMinutes,
+      1,
+      180,
+    ),
+    lateClockInReminderMax: clampInteger(
+      source.lateClockInReminderMax,
+      defaultNotificationPolicy.lateClockInReminderMax,
+      1,
+      12,
+    ),
+    autoClockInAfterLateReminders:
+      typeof source.autoClockInAfterLateReminders === "boolean"
+        ? source.autoClockInAfterLateReminders
+        : defaultNotificationPolicy.autoClockInAfterLateReminders,
+    autoClockInOnGeofence:
+      typeof source.autoClockInOnGeofence === "boolean"
+        ? source.autoClockInOnGeofence
+        : defaultNotificationPolicy.autoClockInOnGeofence,
+    noBreakAlertsEnabled:
+      typeof source.noBreakAlertsEnabled === "boolean"
+        ? source.noBreakAlertsEnabled
+        : defaultNotificationPolicy.noBreakAlertsEnabled,
+    noBreakAlertHours: clampInteger(
+      source.noBreakAlertHours,
+      defaultNotificationPolicy.noBreakAlertHours,
+      1,
+      24,
+    ),
+    dailySalesReminderEnabled:
+      typeof source.dailySalesReminderEnabled === "boolean"
+        ? source.dailySalesReminderEnabled
+        : defaultNotificationPolicy.dailySalesReminderEnabled,
+    dailySalesReminderFirstMinutes,
+    dailySalesReminderFinalMinutes,
+    ownerDailyReportEnabled:
+      typeof source.ownerDailyReportEnabled === "boolean"
+        ? source.ownerDailyReportEnabled
+        : defaultNotificationPolicy.ownerDailyReportEnabled,
+    ownerDailyReportSendMinutes: clampInteger(
+      source.ownerDailyReportSendMinutes,
+      defaultNotificationPolicy.ownerDailyReportSendMinutes,
+      0,
+      1439,
+    ),
+  };
+};
+
+const buildNotificationPolicyPayload = (
+  policy: NotificationPolicySettings,
+): Record<string, string | number | boolean | null> => ({
+  timezone: policy.timezone,
+  lateClockInWorkflowEnabled: policy.lateClockInWorkflowEnabled,
+  lateClockInGraceMinutes: policy.lateClockInGraceMinutes,
+  lateClockInReminderIntervalMinutes: policy.lateClockInReminderIntervalMinutes,
+  lateClockInReminderMax: policy.lateClockInReminderMax,
+  autoClockInAfterLateReminders: policy.autoClockInAfterLateReminders,
+  autoClockInOnGeofence: policy.autoClockInOnGeofence,
+  noBreakAlertsEnabled: policy.noBreakAlertsEnabled,
+  noBreakAlertHours: policy.noBreakAlertHours,
+  dailySalesReminderEnabled: policy.dailySalesReminderEnabled,
+  dailySalesReminderFirstMinutes: policy.dailySalesReminderFirstMinutes,
+  dailySalesReminderFinalMinutes: policy.dailySalesReminderFinalMinutes,
+  ownerDailyReportEnabled: policy.ownerDailyReportEnabled,
+  ownerDailyReportSendMinutes: policy.ownerDailyReportSendMinutes,
+});
+
+const formatMinutesAsTimeInput = (value: number) => {
+  const normalized = ((Math.round(value) % 1440) + 1440) % 1440;
+  const hours = String(Math.floor(normalized / 60)).padStart(2, "0");
+  const minutes = String(normalized % 60).padStart(2, "0");
+  return `${hours}:${minutes}`;
+};
+
+const parseTimeInputToMinutes = (value: string) => {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    return null;
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    hours < 0 ||
+    hours > 23 ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+  return hours * 60 + minutes;
+};
+
 type StatusKind = "success" | "danger" | "info";
 
 type PreferenceDefinition = {
@@ -98,8 +280,12 @@ export default function AdminNotifications() {
   const [settingsStatusKind, setSettingsStatusKind] = useState<StatusKind>(
     "info",
   );
-  const [tenantTimeZone, setTenantTimeZone] = useState(defaultTimeZone);
-  const [timezoneDraft, setTimezoneDraft] = useState(defaultTimeZone);
+  const [notificationPolicy, setNotificationPolicy] = useState(
+    defaultNotificationPolicy,
+  );
+  const [notificationPolicyDraft, setNotificationPolicyDraft] = useState(
+    defaultNotificationPolicy,
+  );
 
   const preferenceDefinitions = useMemo<PreferenceDefinition[]>(
     () => [
@@ -181,6 +367,25 @@ export default function AdminNotifications() {
     }));
   }, [devices, preferenceDefinitions]);
 
+  const availableTimeZones = useMemo(() => {
+    const values = [...TIMEZONES];
+    [browserTimeZone, notificationPolicy.timezone, notificationPolicyDraft.timezone]
+      .filter((value): value is string => Boolean(value && value.trim()))
+      .forEach((value) => {
+        if (!values.includes(value)) {
+          values.push(value);
+        }
+      });
+    return values;
+  }, [browserTimeZone, notificationPolicy.timezone, notificationPolicyDraft.timezone]);
+
+  const policyDirty = useMemo(
+    () =>
+      JSON.stringify(notificationPolicyDraft) !==
+      JSON.stringify(notificationPolicy),
+    [notificationPolicy, notificationPolicyDraft],
+  );
+
   const setSettingsAlert = useCallback(
     (kind: StatusKind, message: string | null) => {
       setSettingsStatusKind(kind);
@@ -227,9 +432,9 @@ export default function AdminNotifications() {
     }
 
     if (settingsResult.status === "fulfilled") {
-      const nextTimeZone = resolveTenantTimeZone(settingsResult.value);
-      setTenantTimeZone(nextTimeZone);
-      setTimezoneDraft(nextTimeZone);
+      const nextPolicy = pickNotificationPolicy(settingsResult.value);
+      setNotificationPolicy(nextPolicy);
+      setNotificationPolicyDraft(nextPolicy);
     }
 
     if (
@@ -557,18 +762,44 @@ export default function AdminNotifications() {
     }
   };
 
-  const handleSaveTenantTimeZone = async (nextTimeZone: string) => {
+  const updatePolicyDraft = useCallback(
+    <Key extends keyof NotificationPolicySettings>(
+      key: Key,
+      value: NotificationPolicySettings[Key],
+    ) => {
+      setNotificationPolicyDraft((previous) => ({
+        ...previous,
+        [key]: value,
+      }));
+    },
+    [],
+  );
+
+  const handleSaveNotificationPolicy = async () => {
+    if (
+      notificationPolicyDraft.dailySalesReminderFinalMinutes <=
+      notificationPolicyDraft.dailySalesReminderFirstMinutes
+    ) {
+      setSettingsAlert(
+        "danger",
+        tr(
+          "The final daily sales reminder must be later than the first reminder.",
+          "El recordatorio final de ventas diarias debe ser posterior al primer recordatorio.",
+        ),
+      );
+      return;
+    }
+
     setSettingsBusy(true);
     setSettingsAlert("info", null);
     try {
-      await updateSettings({ timezone: nextTimeZone });
-      setTenantTimeZone(nextTimeZone);
-      setTimezoneDraft(nextTimeZone);
+      await updateSettings(buildNotificationPolicyPayload(notificationPolicyDraft));
+      setNotificationPolicy(notificationPolicyDraft);
       setSettingsAlert(
         "success",
         tr(
-          "Tenant timezone updated. Reminder scheduling will follow this timezone.",
-          "Zona horaria del tenant actualizada. La programación de recordatorios seguirá esta zona horaria.",
+          "Notification policy saved. Server reminders will follow these rules.",
+          "Política de notificaciones guardada. Los recordatorios del servidor seguirán estas reglas.",
         ),
       );
     } catch (error) {
@@ -577,8 +808,8 @@ export default function AdminNotifications() {
         error instanceof Error
           ? error.message
           : tr(
-              "Unable to save tenant timezone.",
-              "No se pudo guardar la zona horaria del tenant.",
+              "Unable to save notification policy.",
+              "No se pudo guardar la política de notificaciones.",
             ),
       );
     } finally {
@@ -618,62 +849,453 @@ export default function AdminNotifications() {
       <div className="admin-card d-flex flex-column gap-3">
         <div>
           <h2 className="h5 mb-1">
-            {tr("Push Notification Settings", "Ajustes de Notificaciones Push")}
+            {tr(
+              "Notification Policy and Push Delivery",
+              "Política de Notificaciones y Entrega Push",
+            )}
           </h2>
           <p className="text-muted mb-0">
             {tr(
-              "Reminder scheduling uses the tenant timezone on the server. The toggles below control which registered admin devices receive each push category.",
-              "La programación de recordatorios usa la zona horaria del tenant en el servidor. Los controles de abajo definen qué dispositivos admin registrados reciben cada categoría push.",
+              "Configure tenant-wide reminder behavior on the server and control which registered admin devices receive each push category.",
+              "Configura el comportamiento global de recordatorios en el servidor y controla qué dispositivos admin registrados reciben cada categoría push.",
             )}
           </p>
         </div>
 
-        <div className="row g-3 align-items-end">
-          <div className="col-12 col-lg-4">
-            <label className="form-label">
-              {tr("Tenant Timezone", "Zona Horaria del Tenant")}
-            </label>
-            <select
-              className="form-select"
-              value={timezoneDraft}
-              onChange={(event) => setTimezoneDraft(event.target.value)}
-              disabled={settingsBusy}
-            >
-              {TIMEZONES.map((timeZone) => (
-                <option key={timeZone} value={timeZone}>
-                  {timeZone}
-                </option>
-              ))}
-            </select>
+        <div className="border rounded p-3 bg-body-tertiary d-flex flex-column gap-3">
+          <div>
+            <h3 className="h6 mb-1">
+              {tr("Server Reminder Policy", "Política de Recordatorios del Servidor")}
+            </h3>
+            <p className="text-muted mb-0 small">
+              {tr(
+                "These settings control how often reminder notifications are generated, when they fire, and whether automatic follow-up actions should happen.",
+                "Estos ajustes controlan cuántas veces se generan recordatorios, cuándo se envían y si deben ocurrir acciones automáticas de seguimiento.",
+              )}
+            </p>
           </div>
-          <div className="col-12 col-lg-4">
-            <label className="form-label">
-              {tr("This Browser Timezone", "Zona Horaria de Este Navegador")}
-            </label>
-            <input className="form-control" value={browserTimeZone} readOnly />
+
+          <div className="row g-3 align-items-end">
+            <div className="col-12 col-lg-4">
+              <label className="form-label">
+                {tr("Tenant Timezone", "Zona Horaria del Tenant")}
+              </label>
+              <select
+                className="form-select"
+                value={notificationPolicyDraft.timezone}
+                onChange={(event) =>
+                  updatePolicyDraft("timezone", event.target.value)
+                }
+                disabled={settingsBusy}
+              >
+                {availableTimeZones.map((timeZone) => (
+                  <option key={timeZone} value={timeZone}>
+                    {timeZone}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="col-12 col-lg-4">
+              <label className="form-label">
+                {tr("This Browser Timezone", "Zona Horaria de Este Navegador")}
+              </label>
+              <input className="form-control" value={browserTimeZone} readOnly />
+            </div>
+            <div className="col-12 col-lg-4 d-flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleSaveNotificationPolicy()}
+                disabled={settingsBusy || settingsLoading || !policyDirty}
+              >
+                {tr("Save Policy", "Guardar Política")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={() => updatePolicyDraft("timezone", browserTimeZone)}
+                disabled={settingsBusy || browserTimeZone === notificationPolicyDraft.timezone}
+              >
+                {tr("Use Browser Timezone", "Usar Zona del Navegador")}
+              </button>
+            </div>
           </div>
-          <div className="col-12 col-lg-4 d-flex flex-wrap gap-2">
+
+          <div className="border rounded p-3 bg-white d-flex flex-column gap-3">
+            <div className="d-flex justify-content-between align-items-start gap-3">
+              <div>
+                <div className="fw-semibold">
+                  {tr(
+                    "Late / Missing Clock-In Workflow",
+                    "Flujo de Clock In Tardío o Faltante",
+                  )}
+                </div>
+                <div className="text-muted small">
+                  {tr(
+                    "Manage reminder timing, reminder count, and automatic clock-in actions for employees who miss their scheduled start.",
+                    "Administra el tiempo, la cantidad de recordatorios y las acciones automáticas para empleados que pierden su hora programada.",
+                  )}
+                </div>
+              </div>
+              <div className="form-check form-switch m-0 pt-1">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  checked={notificationPolicyDraft.lateClockInWorkflowEnabled}
+                  disabled={settingsBusy}
+                  onChange={(event) =>
+                    updatePolicyDraft(
+                      "lateClockInWorkflowEnabled",
+                      event.target.checked,
+                    )
+                  }
+                />
+              </div>
+            </div>
+            <div className="row g-3">
+              <div className="col-12 col-md-4">
+                <label className="form-label">
+                  {tr("Grace Minutes", "Minutos de Gracia")}
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={180}
+                  className="form-control"
+                  value={notificationPolicyDraft.lateClockInGraceMinutes}
+                  disabled={
+                    settingsBusy || !notificationPolicyDraft.lateClockInWorkflowEnabled
+                  }
+                  onChange={(event) =>
+                    updatePolicyDraft(
+                      "lateClockInGraceMinutes",
+                      clampInteger(Number(event.target.value), 0, 0, 180),
+                    )
+                  }
+                />
+              </div>
+              <div className="col-12 col-md-4">
+                <label className="form-label">
+                  {tr(
+                    "Reminder Interval (Minutes)",
+                    "Intervalo entre Recordatorios (Minutos)",
+                  )}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={180}
+                  className="form-control"
+                  value={notificationPolicyDraft.lateClockInReminderIntervalMinutes}
+                  disabled={
+                    settingsBusy || !notificationPolicyDraft.lateClockInWorkflowEnabled
+                  }
+                  onChange={(event) =>
+                    updatePolicyDraft(
+                      "lateClockInReminderIntervalMinutes",
+                      clampInteger(Number(event.target.value), 1, 1, 180),
+                    )
+                  }
+                />
+              </div>
+              <div className="col-12 col-md-4">
+                <label className="form-label">
+                  {tr("Maximum Reminders", "Máximo de Recordatorios")}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={12}
+                  className="form-control"
+                  value={notificationPolicyDraft.lateClockInReminderMax}
+                  disabled={
+                    settingsBusy || !notificationPolicyDraft.lateClockInWorkflowEnabled
+                  }
+                  onChange={(event) =>
+                    updatePolicyDraft(
+                      "lateClockInReminderMax",
+                      clampInteger(Number(event.target.value), 1, 1, 12),
+                    )
+                  }
+                />
+              </div>
+              <div className="col-12 col-md-6">
+                <div className="form-check form-switch">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    role="switch"
+                    checked={notificationPolicyDraft.autoClockInAfterLateReminders}
+                    disabled={
+                      settingsBusy || !notificationPolicyDraft.lateClockInWorkflowEnabled
+                    }
+                    onChange={(event) =>
+                      updatePolicyDraft(
+                        "autoClockInAfterLateReminders",
+                        event.target.checked,
+                      )
+                    }
+                  />
+                  <label className="form-check-label">
+                    {tr(
+                      "Auto clock in after the final reminder",
+                      "Hacer clock in automático después del último recordatorio",
+                    )}
+                  </label>
+                </div>
+              </div>
+              <div className="col-12 col-md-6">
+                <div className="form-check form-switch">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    role="switch"
+                    checked={notificationPolicyDraft.autoClockInOnGeofence}
+                    disabled={
+                      settingsBusy || !notificationPolicyDraft.lateClockInWorkflowEnabled
+                    }
+                    onChange={(event) =>
+                      updatePolicyDraft(
+                        "autoClockInOnGeofence",
+                        event.target.checked,
+                      )
+                    }
+                  />
+                  <label className="form-check-label">
+                    {tr(
+                      "Auto clock in when the latest punch is inside the assigned geofence",
+                      "Hacer clock in automático cuando el último punch esté dentro del geofence asignado",
+                    )}
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="row g-3">
+            <div className="col-12 col-xl-6">
+              <div className="border rounded p-3 bg-white h-100 d-flex flex-column gap-3">
+                <div className="d-flex justify-content-between align-items-start gap-3">
+                  <div>
+                    <div className="fw-semibold">
+                      {tr("No-Break Alerts", "Alertas sin Descanso")}
+                    </div>
+                    <div className="text-muted small">
+                      {tr(
+                        "Alert managers when someone stays clocked in too long without taking a break.",
+                        "Avisa a los managers cuando alguien permanece activo demasiado tiempo sin descanso.",
+                      )}
+                    </div>
+                  </div>
+                  <div className="form-check form-switch m-0 pt-1">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                      checked={notificationPolicyDraft.noBreakAlertsEnabled}
+                      disabled={settingsBusy}
+                      onChange={(event) =>
+                        updatePolicyDraft(
+                          "noBreakAlertsEnabled",
+                          event.target.checked,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label">
+                    {tr("Threshold Hours", "Horas de Umbral")}
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={24}
+                    className="form-control"
+                    value={notificationPolicyDraft.noBreakAlertHours}
+                    disabled={settingsBusy || !notificationPolicyDraft.noBreakAlertsEnabled}
+                    onChange={(event) =>
+                      updatePolicyDraft(
+                        "noBreakAlertHours",
+                        clampInteger(Number(event.target.value), 1, 1, 24),
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="col-12 col-xl-6">
+              <div className="border rounded p-3 bg-white h-100 d-flex flex-column gap-3">
+                <div className="d-flex justify-content-between align-items-start gap-3">
+                  <div>
+                    <div className="fw-semibold">
+                      {tr(
+                        "Owner Daily Report Email",
+                        "Correo Diario del Reporte para Owner",
+                      )}
+                    </div>
+                    <div className="text-muted small">
+                      {tr(
+                        "Send the owner summary email at a fixed time each day in the tenant timezone.",
+                        "Envía el correo resumen al owner a una hora fija cada día según la zona horaria del tenant.",
+                      )}
+                    </div>
+                  </div>
+                  <div className="form-check form-switch m-0 pt-1">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                      checked={notificationPolicyDraft.ownerDailyReportEnabled}
+                      disabled={settingsBusy}
+                      onChange={(event) =>
+                        updatePolicyDraft(
+                          "ownerDailyReportEnabled",
+                          event.target.checked,
+                        )
+                      }
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label">
+                    {tr("Send Time", "Hora de Envío")}
+                  </label>
+                  <input
+                    type="time"
+                    className="form-control"
+                    value={formatMinutesAsTimeInput(
+                      notificationPolicyDraft.ownerDailyReportSendMinutes,
+                    )}
+                    disabled={
+                      settingsBusy || !notificationPolicyDraft.ownerDailyReportEnabled
+                    }
+                    onChange={(event) => {
+                      const nextMinutes = parseTimeInputToMinutes(
+                        event.target.value,
+                      );
+                      if (nextMinutes === null) {
+                        return;
+                      }
+                      updatePolicyDraft(
+                        "ownerDailyReportSendMinutes",
+                        nextMinutes,
+                      );
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border rounded p-3 bg-white d-flex flex-column gap-3">
+            <div className="d-flex justify-content-between align-items-start gap-3">
+              <div>
+                <div className="fw-semibold">
+                  {tr("Daily Sales Reminders", "Recordatorios de Ventas Diarias")}
+                </div>
+                <div className="text-muted small">
+                  {tr(
+                    "Control the first reminder and the overdue follow-up when daily sales have not been submitted.",
+                    "Controla el primer recordatorio y el seguimiento por atraso cuando no se han enviado las ventas diarias.",
+                  )}
+                </div>
+              </div>
+              <div className="form-check form-switch m-0 pt-1">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  checked={notificationPolicyDraft.dailySalesReminderEnabled}
+                  disabled={settingsBusy}
+                  onChange={(event) =>
+                    updatePolicyDraft(
+                      "dailySalesReminderEnabled",
+                      event.target.checked,
+                    )
+                  }
+                />
+              </div>
+            </div>
+            <div className="row g-3">
+              <div className="col-12 col-md-6">
+                <label className="form-label">
+                  {tr("First Reminder Time", "Hora del Primer Recordatorio")}
+                </label>
+                <input
+                  type="time"
+                  className="form-control"
+                  value={formatMinutesAsTimeInput(
+                    notificationPolicyDraft.dailySalesReminderFirstMinutes,
+                  )}
+                  disabled={
+                    settingsBusy || !notificationPolicyDraft.dailySalesReminderEnabled
+                  }
+                  onChange={(event) => {
+                    const nextMinutes = parseTimeInputToMinutes(
+                      event.target.value,
+                    );
+                    if (nextMinutes === null) {
+                      return;
+                    }
+                    updatePolicyDraft("dailySalesReminderFirstMinutes", nextMinutes);
+                  }}
+                />
+              </div>
+              <div className="col-12 col-md-6">
+                <label className="form-label">
+                  {tr("Final Reminder Time", "Hora del Recordatorio Final")}
+                </label>
+                <input
+                  type="time"
+                  className="form-control"
+                  value={formatMinutesAsTimeInput(
+                    notificationPolicyDraft.dailySalesReminderFinalMinutes,
+                  )}
+                  disabled={
+                    settingsBusy || !notificationPolicyDraft.dailySalesReminderEnabled
+                  }
+                  onChange={(event) => {
+                    const nextMinutes = parseTimeInputToMinutes(
+                      event.target.value,
+                    );
+                    if (nextMinutes === null) {
+                      return;
+                    }
+                    updatePolicyDraft("dailySalesReminderFinalMinutes", nextMinutes);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="d-flex flex-wrap gap-2">
             <button
               type="button"
               className="btn btn-primary"
-              onClick={() => void handleSaveTenantTimeZone(timezoneDraft)}
-              disabled={settingsBusy || timezoneDraft === tenantTimeZone}
+              onClick={() => void handleSaveNotificationPolicy()}
+              disabled={settingsBusy || settingsLoading || !policyDirty}
             >
-              {tr("Save Timezone", "Guardar Zona Horaria")}
+              {tr("Save Server Policy", "Guardar Política del Servidor")}
             </button>
             <button
               type="button"
               className="btn btn-outline-secondary"
-              onClick={() => {
-                setTimezoneDraft(browserTimeZone);
-                void handleSaveTenantTimeZone(browserTimeZone);
-              }}
-              disabled={settingsBusy || browserTimeZone === tenantTimeZone}
+              onClick={() => setNotificationPolicyDraft(notificationPolicy)}
+              disabled={settingsBusy || settingsLoading || !policyDirty}
             >
-              {tr("Use Browser Timezone", "Usar Zona del Navegador")}
+              {tr("Reset Draft", "Restablecer Borrador")}
             </button>
           </div>
         </div>
+
+        {settingsStatus ? (
+          <div className={`alert alert-${settingsStatusKind} mb-0`}>
+            {settingsStatus}
+          </div>
+        ) : null}
 
         <div className="d-flex flex-wrap gap-2">
           <button
@@ -693,12 +1315,6 @@ export default function AdminNotifications() {
             {tr("Disable All Devices", "Desactivar Todos los Dispositivos")}
           </button>
         </div>
-
-        {settingsStatus ? (
-          <div className={`alert alert-${settingsStatusKind} mb-0`}>
-            {settingsStatus}
-          </div>
-        ) : null}
 
         <div className="border rounded p-3 bg-body-tertiary">
           <div className="d-flex flex-column gap-3">

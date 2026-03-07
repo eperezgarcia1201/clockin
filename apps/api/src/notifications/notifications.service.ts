@@ -17,26 +17,27 @@ import {
 } from '@prisma/client';
 import type { CreateEmployeeMessageDto } from './dto/create-employee-message.dto';
 
-const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 const LOCAL_DAY_SCAN_WINDOW_MS = 36 * 60 * 60 * 1000;
-const LATE_CLOCK_IN_GRACE_MINUTES = 5;
-const LATE_REMINDER_INTERVAL_MINUTES = 5;
-const LATE_REMINDER_MAX = 3;
+const DEFAULT_NO_BREAK_ALERT_HOURS = 6;
+const DEFAULT_LATE_CLOCK_IN_GRACE_MINUTES = 5;
+const DEFAULT_LATE_REMINDER_INTERVAL_MINUTES = 5;
+const DEFAULT_LATE_REMINDER_MAX = 3;
 const MANAGER_MESSAGE_KIND = 'MANAGER_MESSAGE';
 const LATE_CLOCK_IN_REMINDER_KIND = 'LATE_CLOCK_IN_REMINDER';
 const AUTO_CLOCK_IN_KIND = 'AUTO_CLOCK_IN_AFTER_REMINDERS';
 const AUTO_CLOCK_IN_GEOFENCE_KIND = 'AUTO_CLOCK_IN_GEOFENCE';
 const OWNER_DAILY_REPORT_KIND = 'OWNER_DAILY_REPORT_EMAIL';
 const COMPANY_ORDER_META_PREFIX = '__company_order_meta__';
-const OWNER_REPORT_SEND_MINUTES = 22 * 60;
-const DAILY_SALES_REMINDER_FIRST_MINUTES = 20 * 60 + 50;
-const DAILY_SALES_REMINDER_FINAL_MINUTES = 22 * 60 + 20;
+const DEFAULT_OWNER_REPORT_SEND_MINUTES = 22 * 60;
+const DEFAULT_DAILY_SALES_REMINDER_FIRST_MINUTES = 20 * 60 + 50;
+const DEFAULT_DAILY_SALES_REMINDER_FINAL_MINUTES = 22 * 60 + 20;
 const DAILY_SALES_REMINDER_KIND = 'DAILY_SALES_REMINDER_2050';
 const DAILY_SALES_OVERDUE_KIND = 'DAILY_SALES_OVERDUE_2220';
 const OPERATIONAL_ALERT_TICK_MS = 60_000;
 const SUPPLIER_ORDER_WEEKDAY_START = 0;
 const SUPPLIER_ORDER_START_HOUR = 9;
 const DEFAULT_GEOFENCE_RADIUS_METERS = 120;
+const DEFAULT_TENANT_TIME_ZONE = 'UTC';
 type AdminPushPreferenceKey =
   | 'notifyPunchActivity'
   | 'notifyNoBreakAlerts'
@@ -83,6 +84,23 @@ type OwnerReportSummary = {
     createdAt: string | null;
     updatedAt: string | null;
   };
+};
+
+type NotificationPolicy = {
+  timeZone: string;
+  lateClockInWorkflowEnabled: boolean;
+  lateClockInGraceMinutes: number;
+  lateClockInReminderIntervalMinutes: number;
+  lateClockInReminderMax: number;
+  autoClockInAfterLateReminders: boolean;
+  autoClockInOnGeofence: boolean;
+  noBreakAlertsEnabled: boolean;
+  noBreakAlertHours: number;
+  dailySalesReminderEnabled: boolean;
+  dailySalesReminderFirstMinutes: number;
+  dailySalesReminderFinalMinutes: number;
+  ownerDailyReportEnabled: boolean;
+  ownerDailyReportSendMinutes: number;
 };
 
 @Injectable()
@@ -134,20 +152,146 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async ensureOperationalAlerts(tenantId: string, timeZone?: string) {
-    const resolvedTimeZone =
-      timeZone ||
-      (
-        await this.prisma.tenantSettings.findUnique({
-          where: { tenantId },
-          select: { timezone: true },
-        })
-      )?.timezone;
+  private normalizeIntegerSetting(
+    value: unknown,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+  ) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return fallback;
+    }
+    const rounded = Math.round(value);
+    if (rounded < minimum) {
+      return minimum;
+    }
+    if (rounded > maximum) {
+      return maximum;
+    }
+    return rounded;
+  }
 
-    await this.ensureBreakAlerts(tenantId);
-    await this.ensureLateClockInReminders(tenantId, resolvedTimeZone);
-    await this.ensureOwnerDailyReportEmails(tenantId, resolvedTimeZone);
-    await this.ensureDailySalesInputReminders(tenantId, resolvedTimeZone);
+  private buildNotificationPolicy(
+    settings:
+      | (Record<string, unknown> & {
+          timezone?: string | null;
+        })
+      | null
+      | undefined,
+    fallbackTimeZone?: string,
+  ): NotificationPolicy {
+    const timeZone =
+      settings?.timezone?.trim() || fallbackTimeZone || DEFAULT_TENANT_TIME_ZONE;
+    const dailySalesReminderFirstMinutes = this.normalizeIntegerSetting(
+      settings?.dailySalesReminderFirstMinutes,
+      DEFAULT_DAILY_SALES_REMINDER_FIRST_MINUTES,
+      0,
+      1438,
+    );
+    const dailySalesReminderFinalMinutes = Math.max(
+      dailySalesReminderFirstMinutes + 1,
+      this.normalizeIntegerSetting(
+        settings?.dailySalesReminderFinalMinutes,
+        DEFAULT_DAILY_SALES_REMINDER_FINAL_MINUTES,
+        1,
+        1439,
+      ),
+    );
+
+    return {
+      timeZone,
+      lateClockInWorkflowEnabled:
+        typeof settings?.lateClockInWorkflowEnabled === 'boolean'
+          ? settings.lateClockInWorkflowEnabled
+          : true,
+      lateClockInGraceMinutes: this.normalizeIntegerSetting(
+        settings?.lateClockInGraceMinutes,
+        DEFAULT_LATE_CLOCK_IN_GRACE_MINUTES,
+        0,
+        180,
+      ),
+      lateClockInReminderIntervalMinutes: this.normalizeIntegerSetting(
+        settings?.lateClockInReminderIntervalMinutes,
+        DEFAULT_LATE_REMINDER_INTERVAL_MINUTES,
+        1,
+        180,
+      ),
+      lateClockInReminderMax: this.normalizeIntegerSetting(
+        settings?.lateClockInReminderMax,
+        DEFAULT_LATE_REMINDER_MAX,
+        1,
+        12,
+      ),
+      autoClockInAfterLateReminders:
+        typeof settings?.autoClockInAfterLateReminders === 'boolean'
+          ? settings.autoClockInAfterLateReminders
+          : true,
+      autoClockInOnGeofence:
+        typeof settings?.autoClockInOnGeofence === 'boolean'
+          ? settings.autoClockInOnGeofence
+          : true,
+      noBreakAlertsEnabled:
+        typeof settings?.noBreakAlertsEnabled === 'boolean'
+          ? settings.noBreakAlertsEnabled
+          : true,
+      noBreakAlertHours: this.normalizeIntegerSetting(
+        settings?.noBreakAlertHours,
+        DEFAULT_NO_BREAK_ALERT_HOURS,
+        1,
+        24,
+      ),
+      dailySalesReminderEnabled:
+        typeof settings?.dailySalesReminderEnabled === 'boolean'
+          ? settings.dailySalesReminderEnabled
+          : true,
+      dailySalesReminderFirstMinutes,
+      dailySalesReminderFinalMinutes,
+      ownerDailyReportEnabled:
+        typeof settings?.ownerDailyReportEnabled === 'boolean'
+          ? settings.ownerDailyReportEnabled
+          : true,
+      ownerDailyReportSendMinutes: this.normalizeIntegerSetting(
+        settings?.ownerDailyReportSendMinutes,
+        DEFAULT_OWNER_REPORT_SEND_MINUTES,
+        0,
+        1439,
+      ),
+    };
+  }
+
+  private async getNotificationPolicy(
+    tenantId: string,
+    fallbackTimeZone?: string,
+  ): Promise<NotificationPolicy> {
+    const settings = await this.prisma.tenantSettings.findUnique({
+      where: { tenantId },
+      select: {
+        timezone: true,
+        lateClockInWorkflowEnabled: true,
+        lateClockInGraceMinutes: true,
+        lateClockInReminderIntervalMinutes: true,
+        lateClockInReminderMax: true,
+        autoClockInAfterLateReminders: true,
+        autoClockInOnGeofence: true,
+        noBreakAlertsEnabled: true,
+        noBreakAlertHours: true,
+        dailySalesReminderEnabled: true,
+        dailySalesReminderFirstMinutes: true,
+        dailySalesReminderFinalMinutes: true,
+        ownerDailyReportEnabled: true,
+        ownerDailyReportSendMinutes: true,
+      },
+    });
+    return this.buildNotificationPolicy(settings, fallbackTimeZone);
+  }
+
+  async ensureOperationalAlerts(tenantId: string, timeZone?: string) {
+    const policy = await this.getNotificationPolicy(tenantId, timeZone);
+
+    await this.ensureBreakAlerts(tenantId, policy);
+    await this.ensureLateClockInReminders(tenantId, policy);
+    await this.ensureOwnerDailyReportEmails(tenantId, policy);
+    await this.ensureDailySalesInputReminders(tenantId, policy);
   }
 
   async list(
@@ -545,8 +689,16 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async ensureBreakAlerts(tenantId: string) {
+  private async ensureBreakAlerts(
+    tenantId: string,
+    policy: NotificationPolicy,
+  ) {
+    if (!policy.noBreakAlertsEnabled) {
+      return;
+    }
+
     const now = Date.now();
+    const noBreakThresholdMs = policy.noBreakAlertHours * 60 * 60 * 1000;
     const latestPunches = await this.prisma.employeePunch.findMany({
       where: { tenantId },
       orderBy: { occurredAt: 'desc' },
@@ -576,7 +728,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         return false;
       }
       const elapsed = now - punch.occurredAt.getTime();
-      return elapsed >= SIX_HOURS_MS;
+      return elapsed >= noBreakThresholdMs;
     });
 
     if (!overdue.length) {
@@ -605,11 +757,13 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           tenantId,
           employeeId: punch.employeeId,
           type: NotificationType.NO_BREAK_6H,
-          message: `${name} has been working over 6 hours without a break.`,
+          message:
+            `${name} has been working over ${policy.noBreakAlertHours} ` +
+            `hour${policy.noBreakAlertHours === 1 ? '' : 's'} without a break.`,
           metadata: {
             employeeName: name,
             inPunchAt: punch.occurredAt.toISOString(),
-            hours: 6,
+            hours: policy.noBreakAlertHours,
           },
         },
       });
@@ -838,11 +992,15 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
   private async ensureLateClockInReminders(
     tenantId: string,
-    timeZone?: string,
+    policy: NotificationPolicy,
   ) {
+    if (!policy.lateClockInWorkflowEnabled) {
+      return;
+    }
+
     const now = new Date();
-    const current = this.getLocalDayInfo(now, timeZone);
-    const workDate = this.toLocalDateKey(now, timeZone);
+    const current = this.getLocalDayInfo(now, policy.timeZone);
+    const workDate = this.toLocalDateKey(now, policy.timeZone);
 
     const schedules = await this.prisma.employeeSchedule.findMany({
       where: {
@@ -880,7 +1038,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         (schedule) =>
           schedule.startMinutes !== null &&
           current.minutes >=
-            schedule.startMinutes + LATE_CLOCK_IN_GRACE_MINUTES,
+            schedule.startMinutes + policy.lateClockInGraceMinutes,
       );
 
     if (!dueReminders.length) {
@@ -978,9 +1136,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
     const clockedInToday = new Set(
       clockInPunches
-        .filter(
+      .filter(
           (punch) =>
-            this.toLocalDateKey(punch.occurredAt, timeZone) === workDate,
+            this.toLocalDateKey(punch.occurredAt, policy.timeZone) === workDate,
         )
         .map((punch) => punch.employeeId),
     );
@@ -995,7 +1153,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       if (!notice.employeeId) {
         return;
       }
-      if (this.toLocalDateKey(notice.createdAt, timeZone) !== workDate) {
+      if (this.toLocalDateKey(notice.createdAt, policy.timeZone) !== workDate) {
         return;
       }
 
@@ -1073,12 +1231,13 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
             message:
               options?.message ||
               `${reminder.employeeName} was auto clocked in after ` +
-                `${LATE_REMINDER_MAX} late reminders.`,
+                `${policy.lateClockInReminderMax} late reminders.`,
             metadata: {
               kind: options?.kind || AUTO_CLOCK_IN_KIND,
               workDate,
               startTime: reminder.startTime,
-              reminderCount: options?.reminderCount ?? LATE_REMINDER_MAX,
+              reminderCount:
+                options?.reminderCount ?? policy.lateClockInReminderMax,
             },
           },
         );
@@ -1094,15 +1253,17 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         return true;
       };
 
-      if (reminderCount >= LATE_REMINDER_MAX) {
-        await autoClockIn();
+      if (reminderCount >= policy.lateClockInReminderMax) {
+        if (policy.autoClockInAfterLateReminders) {
+          await autoClockIn();
+        }
         continue;
       }
 
       const nextReminderMinute =
         (reminder.startMinutes || 0) +
-        LATE_CLOCK_IN_GRACE_MINUTES +
-        reminderCount * LATE_REMINDER_INTERVAL_MINUTES;
+        policy.lateClockInGraceMinutes +
+        reminderCount * policy.lateClockInReminderIntervalMinutes;
 
       if (current.minutes < nextReminderMinute) {
         continue;
@@ -1113,9 +1274,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           latestPunch,
           office: officeByEmployee.get(reminder.employeeId) || null,
           workDate,
-          timeZone,
+          timeZone: policy.timeZone,
         });
-      if (latestPunchInsideAssignedOffice) {
+      if (latestPunchInsideAssignedOffice && policy.autoClockInOnGeofence) {
         await autoClockIn({
           kind: AUTO_CLOCK_IN_GEOFENCE_KIND,
           message:
@@ -1134,17 +1295,17 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           type: NotificationType.LATE_CLOCK_IN_5M,
           message:
             `${reminder.employeeName} has not clocked in. ` +
-            `Reminder ${reminderNumber}/${LATE_REMINDER_MAX} ` +
-            `(scheduled ${reminder.startTime || 'N/A'} ${timeZone || 'UTC'}).`,
+            `Reminder ${reminderNumber}/${policy.lateClockInReminderMax} ` +
+            `(scheduled ${reminder.startTime || 'N/A'} ${policy.timeZone}).`,
           metadata: {
             kind: LATE_CLOCK_IN_REMINDER_KIND,
             employeeName: reminder.employeeName,
             workDate,
             startTime: reminder.startTime,
-            graceMinutes: LATE_CLOCK_IN_GRACE_MINUTES,
+            graceMinutes: policy.lateClockInGraceMinutes,
             reminderNumber,
-            reminderMax: LATE_REMINDER_MAX,
-            intervalMinutes: LATE_REMINDER_INTERVAL_MINUTES,
+            reminderMax: policy.lateClockInReminderMax,
+            intervalMinutes: policy.lateClockInReminderIntervalMinutes,
           },
         },
       });
@@ -1157,7 +1318,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       );
       reminderCountByEmployee.set(reminder.employeeId, reminderNumber);
 
-      if (reminderNumber >= LATE_REMINDER_MAX) {
+      if (
+        reminderNumber >= policy.lateClockInReminderMax &&
+        policy.autoClockInAfterLateReminders
+      ) {
         await autoClockIn();
       }
     }
@@ -1165,28 +1329,28 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
   private async ensureOwnerDailyReportEmails(
     tenantId: string,
-    timeZone?: string,
+    policy: NotificationPolicy,
   ) {
-    const now = new Date();
-    const current = this.getLocalDayInfo(now, timeZone);
-    if (current.minutes < OWNER_REPORT_SEND_MINUTES) {
+    if (!policy.ownerDailyReportEnabled) {
       return;
     }
 
-    const workDate = this.toLocalDateKey(now, timeZone);
+    const now = new Date();
+    const current = this.getLocalDayInfo(now, policy.timeZone);
+    if (current.minutes < policy.ownerDailyReportSendMinutes) {
+      return;
+    }
+
+    const workDate = this.toLocalDateKey(now, policy.timeZone);
     const ownerEmails = await this.getTenantOwnerEmails(tenantId);
     if (!ownerEmails.length) {
       return;
     }
 
-    const [tenant, settings, offices] = await Promise.all([
+    const [tenant, offices] = await Promise.all([
       this.prisma.tenant.findUnique({
         where: { id: tenantId },
         select: { name: true },
-      }),
-      this.prisma.tenantSettings.findUnique({
-        where: { tenantId },
-        select: { timezone: true },
       }),
       this.prisma.office.findMany({
         where: { tenantId },
@@ -1194,7 +1358,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         orderBy: [{ name: 'asc' }],
       }),
     ]);
-    const reportTimeZone = settings?.timezone || timeZone || 'UTC';
+    const reportTimeZone = policy.timeZone;
     const officeScopes = offices.length
       ? offices.map((office) => ({
           officeId: office.id,
@@ -1297,15 +1461,19 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
   private async ensureDailySalesInputReminders(
     tenantId: string,
-    timeZone?: string,
+    policy: NotificationPolicy,
   ) {
-    const now = new Date();
-    const current = this.getLocalDayInfo(now, timeZone);
-    if (current.minutes < DAILY_SALES_REMINDER_FIRST_MINUTES) {
+    if (!policy.dailySalesReminderEnabled) {
       return;
     }
 
-    const workDate = this.toLocalDateKey(now, timeZone);
+    const now = new Date();
+    const current = this.getLocalDayInfo(now, policy.timeZone);
+    if (current.minutes < policy.dailySalesReminderFirstMinutes) {
+      return;
+    }
+
+    const workDate = this.toLocalDateKey(now, policy.timeZone);
     const reportDate = new Date(`${workDate}T00:00:00.000Z`);
     if (Number.isNaN(reportDate.getTime())) {
       return;
@@ -1325,7 +1493,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     }
 
     const reminderKind =
-      current.minutes >= DAILY_SALES_REMINDER_FINAL_MINUTES
+      current.minutes >= policy.dailySalesReminderFinalMinutes
         ? DAILY_SALES_OVERDUE_KIND
         : DAILY_SALES_REMINDER_KIND;
 
@@ -1369,24 +1537,26 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
 
     const reportDateLabel = this.formatDateKeyUs(workDate);
     const dueByLabel = this.formatMinutesAsClockLabel(
-      DAILY_SALES_REMINDER_FINAL_MINUTES,
+      policy.dailySalesReminderFinalMinutes,
     );
     const sentAtLabel = this.formatMinutesAsClockLabel(
       reminderKind === DAILY_SALES_REMINDER_KIND
-        ? DAILY_SALES_REMINDER_FIRST_MINUTES
-        : DAILY_SALES_REMINDER_FINAL_MINUTES,
+        ? policy.dailySalesReminderFirstMinutes
+        : policy.dailySalesReminderFinalMinutes,
     );
     const message =
       reminderKind === DAILY_SALES_REMINDER_KIND
-        ? `Daily sales input for ${reportDateLabel} is still pending. Please submit it before ${dueByLabel} (${timeZone || 'UTC'}).`
-        : `Daily sales input for ${reportDateLabel} is still missing as of ${sentAtLabel} (${timeZone || 'UTC'}). Please submit it now.`;
+        ? `Daily sales input for ${reportDateLabel} is still pending. Please submit it before ${dueByLabel} (${policy.timeZone}).`
+        : `Daily sales input for ${reportDateLabel} is still missing as of ${sentAtLabel} (${policy.timeZone}). Please submit it now.`;
     const notificationMetadata = {
       kind: reminderKind,
       workDate,
       dueBy: dueByLabel,
       sentAt: sentAtLabel,
       scope: 'daily_sales_capture',
-      timeZone: timeZone || 'UTC',
+      timeZone: policy.timeZone,
+      firstReminderMinutes: policy.dailySalesReminderFirstMinutes,
+      finalReminderMinutes: policy.dailySalesReminderFinalMinutes,
     };
 
     await this.prisma.notification.createMany({

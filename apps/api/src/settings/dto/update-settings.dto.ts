@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsInt,
+  Max,
   IsOptional,
   IsString,
   MaxLength,
@@ -98,4 +99,70 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsBoolean()
   multiLocationEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  lateClockInWorkflowEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(180)
+  lateClockInGraceMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(180)
+  lateClockInReminderIntervalMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  lateClockInReminderMax?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  autoClockInAfterLateReminders?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  autoClockInOnGeofence?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  noBreakAlertsEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(24)
+  noBreakAlertHours?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  dailySalesReminderEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1438)
+  dailySalesReminderFirstMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1439)
+  dailySalesReminderFinalMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  ownerDailyReportEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1439)
+  ownerDailyReportSendMinutes?: number;
 }

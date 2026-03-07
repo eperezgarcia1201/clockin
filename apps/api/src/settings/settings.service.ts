@@ -25,6 +25,19 @@ const defaultSettings = () => ({
   allowManualTimeEdits: true,
   dailySalesReportingEnabled: false,
   multiLocationEnabled: false,
+  lateClockInWorkflowEnabled: true,
+  lateClockInGraceMinutes: 5,
+  lateClockInReminderIntervalMinutes: 5,
+  lateClockInReminderMax: 3,
+  autoClockInAfterLateReminders: true,
+  autoClockInOnGeofence: true,
+  noBreakAlertsEnabled: true,
+  noBreakAlertHours: 6,
+  dailySalesReminderEnabled: true,
+  dailySalesReminderFirstMinutes: 20 * 60 + 50,
+  dailySalesReminderFinalMinutes: 22 * 60 + 20,
+  ownerDailyReportEnabled: true,
+  ownerDailyReportSendMinutes: 22 * 60,
 });
 
 @Injectable()
@@ -106,6 +119,24 @@ export class SettingsService {
         reportsEnabled: dto.reportsEnabled ?? undefined,
         allowManualTimeEdits: dto.allowManualTimeEdits ?? undefined,
         multiLocationEnabled: dto.multiLocationEnabled ?? undefined,
+        lateClockInWorkflowEnabled: dto.lateClockInWorkflowEnabled ?? undefined,
+        lateClockInGraceMinutes: dto.lateClockInGraceMinutes ?? undefined,
+        lateClockInReminderIntervalMinutes:
+          dto.lateClockInReminderIntervalMinutes ?? undefined,
+        lateClockInReminderMax: dto.lateClockInReminderMax ?? undefined,
+        autoClockInAfterLateReminders:
+          dto.autoClockInAfterLateReminders ?? undefined,
+        autoClockInOnGeofence: dto.autoClockInOnGeofence ?? undefined,
+        noBreakAlertsEnabled: dto.noBreakAlertsEnabled ?? undefined,
+        noBreakAlertHours: dto.noBreakAlertHours ?? undefined,
+        dailySalesReminderEnabled: dto.dailySalesReminderEnabled ?? undefined,
+        dailySalesReminderFirstMinutes:
+          dto.dailySalesReminderFirstMinutes ?? undefined,
+        dailySalesReminderFinalMinutes:
+          dto.dailySalesReminderFinalMinutes ?? undefined,
+        ownerDailyReportEnabled: dto.ownerDailyReportEnabled ?? undefined,
+        ownerDailyReportSendMinutes:
+          dto.ownerDailyReportSendMinutes ?? undefined,
       },
       create: {
         tenantId: tenant.id,
@@ -134,6 +165,37 @@ export class SettingsService {
           dto.allowManualTimeEdits ?? defaults.allowManualTimeEdits,
         multiLocationEnabled:
           dto.multiLocationEnabled ?? defaults.multiLocationEnabled,
+        lateClockInWorkflowEnabled:
+          dto.lateClockInWorkflowEnabled ?? defaults.lateClockInWorkflowEnabled,
+        lateClockInGraceMinutes:
+          dto.lateClockInGraceMinutes ?? defaults.lateClockInGraceMinutes,
+        lateClockInReminderIntervalMinutes:
+          dto.lateClockInReminderIntervalMinutes ??
+          defaults.lateClockInReminderIntervalMinutes,
+        lateClockInReminderMax:
+          dto.lateClockInReminderMax ?? defaults.lateClockInReminderMax,
+        autoClockInAfterLateReminders:
+          dto.autoClockInAfterLateReminders ??
+          defaults.autoClockInAfterLateReminders,
+        autoClockInOnGeofence:
+          dto.autoClockInOnGeofence ?? defaults.autoClockInOnGeofence,
+        noBreakAlertsEnabled:
+          dto.noBreakAlertsEnabled ?? defaults.noBreakAlertsEnabled,
+        noBreakAlertHours:
+          dto.noBreakAlertHours ?? defaults.noBreakAlertHours,
+        dailySalesReminderEnabled:
+          dto.dailySalesReminderEnabled ?? defaults.dailySalesReminderEnabled,
+        dailySalesReminderFirstMinutes:
+          dto.dailySalesReminderFirstMinutes ??
+          defaults.dailySalesReminderFirstMinutes,
+        dailySalesReminderFinalMinutes:
+          dto.dailySalesReminderFinalMinutes ??
+          defaults.dailySalesReminderFinalMinutes,
+        ownerDailyReportEnabled:
+          dto.ownerDailyReportEnabled ?? defaults.ownerDailyReportEnabled,
+        ownerDailyReportSendMinutes:
+          dto.ownerDailyReportSendMinutes ??
+          defaults.ownerDailyReportSendMinutes,
       },
     });
   }
