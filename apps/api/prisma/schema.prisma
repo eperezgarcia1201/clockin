@@ -482,6 +482,12 @@ model CompanyOrderItem {
   @@index([companyOrderId])
 }
 
+model CompanyOrderCatalogOverride {
+  tenantId    String   @id
+  catalogJson Json
+  updatedAt   DateTime @default(now())
+}
+
 model DailySalesReport {
   id                 String   @id @default(cuid())
   tenantId           String
