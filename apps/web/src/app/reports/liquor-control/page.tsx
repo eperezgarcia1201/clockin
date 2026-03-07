@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LiquorCatalogEditorTable } from "./components/LiquorCatalogEditorTable";
 import { LiquorKindManager } from "./components/LiquorKindManager";
-import { LiquorKindTagList } from "./components/LiquorKindTagList";
+import { LiquorInventoryCountTable } from "./components/LiquorInventoryCountTable";
 import { readPersistedLocationScope } from "./location-scope";
 import {
   analyzeLiquorBottleScanRequest,
@@ -105,6 +106,7 @@ type BottleScanAnalyzeResponse = {
 type SpreadsheetDraft = {
   name: string;
   brand: string;
+  upc: string;
   supplierName: string;
   unitCost: string;
   sizeMl: string;
@@ -850,6 +852,7 @@ export default function LiquorControlPage() {
         next[row.item.id] = {
           name: existing?.name ?? row.item.name ?? "",
           brand: existing?.brand ?? row.item.brand ?? "",
+          upc: existing?.upc ?? row.item.upc ?? "",
           supplierName: existing?.supplierName ?? row.item.supplierName ?? "",
           unitCost: existing?.unitCost ?? String(row.item.unitCost ?? ""),
           sizeMl:
@@ -1325,6 +1328,7 @@ export default function LiquorControlPage() {
       [itemId]: {
         name: previous[itemId]?.name ?? "",
         brand: previous[itemId]?.brand ?? "",
+        upc: previous[itemId]?.upc ?? "",
         supplierName: previous[itemId]?.supplierName ?? "",
         unitCost: previous[itemId]?.unitCost ?? "",
         sizeMl: previous[itemId]?.sizeMl ?? "",
@@ -1363,6 +1367,7 @@ export default function LiquorControlPage() {
     const response = await updateLiquorCatalogItemRequest(itemId, {
       name,
       brand: draft.brand.trim() || undefined,
+      upc: draft.upc.trim() || undefined,
       supplierName: draft.supplierName.trim() || undefined,
       unitCost,
       sizeMl: parsedSizeMl ?? undefined,
@@ -2137,164 +2142,30 @@ export default function LiquorControlPage() {
           </div>
         </div>
         <div className="table-responsive">
-          <table className="report-table">
-            <thead>
-              <tr>
-                <th>{t.company}</th>
-                <th>{t.liquorName}</th>
-                <th>{t.liquorKind}</th>
-                <th>{t.price}</th>
-                <th>{t.qtyMl}</th>
-                <th>{t.bar}</th>
-                <th>{t.bodegaBottles}</th>
-                <th>{t.bodegaMl}</th>
-                <th>{t.inventory}</th>
-                <th>{t.total}</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {spreadsheetRows.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="text-muted text-center py-3">
-                    {t.noItems}
-                  </td>
-                </tr>
-              ) : null}
-              {spreadsheetRows.map((row) => {
-                const draft = sheetDrafts[row.item.id];
-                const bar = Number(draft?.barQuantity ?? row.barQuantity) || 0;
-                const price = Number(draft?.unitCost ?? row.item.unitCost) || 0;
-                const qtyMl = Number(draft?.sizeMl ?? row.item.sizeMl) || 0;
-                const bodegaBottleCount =
-                  Number(draft?.bodegaBottleCount ?? row.bodegaBottleCount) || 0;
-                const bodegaMl =
-                  qtyMl > 0
-                    ? bodegaBottleCount * qtyMl
-                    : Number(row.bodegaQuantityMl) || 0;
-                const inventory = bar + bodegaMl;
-                const total = qtyMl > 0 ? (price * inventory) / qtyMl : null;
-
-                return (
-                  <tr key={`sheet-${row.item.id}`}>
-                    <td>
-                      <input
-                        className="form-control form-control-sm"
-                        value={draft?.supplierName ?? row.item.supplierName ?? ""}
-                        onChange={(event) =>
-                          updateSheetDraft(
-                            row.item.id,
-                            "supplierName",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="form-control form-control-sm"
-                        value={draft?.name ?? row.item.name}
-                        onChange={(event) =>
-                          updateSheetDraft(row.item.id, "name", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="form-control form-control-sm"
-                        list="liquor-kind-options"
-                        value={draft?.brand ?? row.item.brand ?? ""}
-                        onChange={(event) =>
-                          updateSheetDraft(row.item.id, "brand", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="form-control form-control-sm"
-                        value={draft?.unitCost ?? String(row.item.unitCost)}
-                        onChange={(event) =>
-                          updateSheetDraft(row.item.id, "unitCost", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="form-control form-control-sm"
-                        value={draft?.sizeMl ?? String(row.item.sizeMl ?? "")}
-                        onChange={(event) =>
-                          updateSheetDraft(row.item.id, "sizeMl", event.target.value)
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="form-control form-control-sm"
-                        value={draft?.barQuantity ?? String(row.barQuantity)}
-                        onChange={(event) =>
-                          updateSheetDraft(
-                            row.item.id,
-                            "barQuantity",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="form-control form-control-sm"
-                        value={
-                          draft?.bodegaBottleCount ?? String(row.bodegaBottleCount)
-                        }
-                        onChange={(event) =>
-                          updateSheetDraft(
-                            row.item.id,
-                            "bodegaBottleCount",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </td>
-                    <td>{formatQty(bodegaMl)}</td>
-                    <td>{formatQty(inventory)}</td>
-                    <td>{formatMoney(total)}</td>
-                    <td>
-                      <div className="d-flex gap-2">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-primary"
-                          disabled={loading || isAnyActionBusy}
-                          onClick={() => {
-                            void runWithReload(
-                              `sheet-item-${row.item.id}`,
-                              () => saveSpreadsheetItem(row.item.id),
-                              "Catalog row updated.",
-                            );
-                          }}
-                        >
-                          {t.saveItemRow}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-primary"
-                          disabled={loading || isAnyActionBusy}
-                          onClick={() => {
-                            void runWithReload(
-                              `sheet-count-${row.item.id}`,
-                              () => saveSpreadsheetCount(row.item.id),
-                              "Inventory row updated.",
-                            );
-                          }}
-                        >
-                          {t.saveCountRow}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <LiquorInventoryCountTable
+            rows={spreadsheetRows}
+            drafts={sheetDrafts}
+            noItemsLabel={t.noItems}
+            itemLabel={t.item}
+            barLabel={t.bar}
+            bodegaBottlesLabel={t.bodegaBottles}
+            bodegaMlLabel={t.bodegaMl}
+            inventoryLabel={t.inventory}
+            totalLabel={t.total}
+            actionsLabel="Actions"
+            saveLabel={t.saveCountRow}
+            disabled={loading || isAnyActionBusy}
+            formatQty={formatQty}
+            formatMoney={formatMoney}
+            onUpdateField={updateSheetDraft}
+            onSave={(itemId) => {
+              void runWithReload(
+                `sheet-count-${itemId}`,
+                () => saveSpreadsheetCount(itemId),
+                "Inventory row updated.",
+              );
+            }}
+          />
         </div>
       </section>
       ) : null}
@@ -2774,39 +2645,27 @@ export default function LiquorControlPage() {
             );
           }}
         />
-        <div className="table-responsive">
-          <table className="report-table">
-            <thead>
-              <tr>
-                <th>{t.company}</th>
-                <th>{t.liquorName}</th>
-                <th>{t.liquorKind}</th>
-                <th>UPC</th>
-                <th>ml</th>
-                <th>Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="text-muted text-center py-3">
-                    {t.noItems}
-                  </td>
-                </tr>
-              ) : null}
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.supplierName || "—"}</td>
-                  <td>{item.name}</td>
-                  <td>{item.brand || "—"}</td>
-                  <td>{item.upc || "—"}</td>
-                  <td>{item.sizeMl ?? "—"}</td>
-                  <td>{formatMoney(item.unitCost)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <LiquorCatalogEditorTable
+          items={items}
+          drafts={sheetDrafts}
+          noItemsLabel={t.noItems}
+          companyLabel={t.company}
+          liquorNameLabel={t.liquorName}
+          liquorKindLabel={t.liquorKind}
+          qtyMlLabel={t.qtyMl}
+          priceLabel={t.price}
+          actionsLabel="Actions"
+          saveLabel={t.saveItemRow}
+          disabled={loading || isAnyActionBusy}
+          onUpdateField={updateSheetDraft}
+          onSave={(itemId) => {
+            void runWithReload(
+              `sheet-item-${itemId}`,
+              () => saveSpreadsheetItem(itemId),
+              "Catalog row updated.",
+            );
+          }}
+        />
       </section>
       ) : null}
 
