@@ -51,102 +51,6 @@ const defaultBottleScanLimit = 80;
 const normalCostShockThresholdPct = 0.08;
 const elevatedCostShockThresholdPct = 0.15;
 const criticalCostShockThresholdPct = 0.3;
-const defaultLiquorKinds = [
-  'Agave Spirit',
-  'Tequila',
-  'Tequila Silver',
-  'Tequila Gold',
-  'Tequila Blanco',
-  'Tequila Reposado',
-  'Tequila Anejo',
-  'Tequila Extra Anejo',
-  'Tequila Cristalino',
-  'Mezcal',
-  'Joven Mezcal',
-  'Reposado Mezcal',
-  'Anejo Mezcal',
-  'Sotol',
-  'Raicilla',
-  'Bacanora',
-  'Whiskey',
-  'American Whiskey',
-  'Bourbon',
-  'Wheated Bourbon',
-  'High Rye Bourbon',
-  'Rye Whiskey',
-  'Blended Whiskey',
-  'Single Malt Whiskey',
-  'Corn Whiskey',
-  'Tennessee Whiskey',
-  'Wheat Whiskey',
-  'Malt Whiskey',
-  'Whisky',
-  'Scotch Whisky',
-  'Scotch Single Malt',
-  'Scotch Blended',
-  'Scotch Grain',
-  'Speyside Scotch',
-  'Highland Scotch',
-  'Islay Scotch',
-  'Irish Whiskey',
-  'Japanese Whisky',
-  'Canadian Whisky',
-  'Rum',
-  'White Rum',
-  'Silver Rum',
-  'Gold Rum',
-  'Dark Rum',
-  'Black Rum',
-  'Spiced Rum',
-  'Flavored Rum',
-  'Coconut Rum',
-  'Blackstrap Rum',
-  'Aged Rum',
-  'Overproof Rum',
-  'Agricole Rum',
-  'Vodka',
-  'Flavored Vodka',
-  'Potato Vodka',
-  'Wheat Vodka',
-  'Gin',
-  'London Dry Gin',
-  'Plymouth Gin',
-  'Old Tom Gin',
-  'Navy Strength Gin',
-  'Contemporary Gin',
-  'Sloe Gin',
-  'Brandy',
-  'Fruit Brandy',
-  'Cognac',
-  'Armagnac',
-  'Pisco',
-  'Cachaca',
-  'Cane Spirit',
-  'Aguardiente',
-  'Liqueur',
-  'Triple Sec',
-  'Curacao',
-  'Orange Liqueur',
-  'Coffee Liqueur',
-  'Cream Liqueur',
-  'Nut Liqueur',
-  'Fruit Liqueur',
-  'Herbal Liqueur',
-  'Amaro',
-  'Bitters',
-  'Vermouth',
-  'Dry Vermouth',
-  'Sweet Vermouth',
-  'Rosso Vermouth',
-  'Bianco Vermouth',
-  'Aperitif',
-  'Digestif',
-  'Ready to Drink',
-  'Absinthe',
-  'Baijiu',
-  'Soju',
-  'Shochu',
-];
 
 const toMoney = (value: number) => Number(value.toFixed(2));
 const toQuantity = (value: number) => Number(value.toFixed(3));
@@ -2173,15 +2077,6 @@ ${JSON.stringify(candidatePool)}`,
         .map((row) => this.normalizeLiquorKindKey(row.name)),
     );
     const merged = new Map<string, string>();
-
-    for (const kind of defaultLiquorKinds) {
-      const normalized = this.normalizeLiquorKindName(kind);
-      const key = this.normalizeLiquorKindKey(normalized);
-      if (!key || hiddenKeys.has(key) || merged.has(key)) {
-        continue;
-      }
-      merged.set(key, normalized);
-    }
 
     for (const row of kindRows.filter((entry) => !entry.isHidden)) {
       const normalized = this.normalizeLiquorKindName(row.name);
