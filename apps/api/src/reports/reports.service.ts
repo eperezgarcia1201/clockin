@@ -2340,9 +2340,8 @@ function buildDailySummary({
           scheduledMinutes,
           workedMinutes: minutes,
           existingPenaltyMinutes: penaltyMinutes,
-          hasBreakOrLunchPunch: dayPunches.some(
-            (punch) =>
-              punch.type === PunchType.BREAK || punch.type === PunchType.LUNCH,
+          hasBreakPunch: dayPunches.some(
+            (punch) => punch.type === PunchType.BREAK,
           ),
         });
       const adjustedMinutes = Math.max(

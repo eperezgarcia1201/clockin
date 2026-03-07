@@ -4,7 +4,7 @@ import {
 } from './missed-break-deduction';
 
 describe('missed-break-deduction', () => {
-  it('returns the configured deduction for a full long shift without break or lunch', () => {
+  it('returns the configured deduction for a full long shift without a break punch', () => {
     expect(
       resolveMissedBreakDeductionMinutes({
         policy: {
@@ -14,12 +14,12 @@ describe('missed-break-deduction', () => {
         },
         scheduledMinutes: 8 * 60,
         workedMinutes: 8 * 60,
-        hasBreakOrLunchPunch: false,
+        hasBreakPunch: false,
       }),
     ).toBe(120);
   });
 
-  it('skips the deduction when there was a break or lunch punch', () => {
+  it('skips the deduction when there was a break punch', () => {
     expect(
       resolveMissedBreakDeductionMinutes({
         policy: {
@@ -29,9 +29,24 @@ describe('missed-break-deduction', () => {
         },
         scheduledMinutes: 8 * 60,
         workedMinutes: 8 * 60,
-        hasBreakOrLunchPunch: true,
+        hasBreakPunch: true,
       }),
     ).toBe(0);
+  });
+
+  it('still deducts when there was only a lunch punch and no break punch', () => {
+    expect(
+      resolveMissedBreakDeductionMinutes({
+        policy: {
+          enabled: true,
+          scheduleHours: 6,
+          deductionMinutes: 120,
+        },
+        scheduledMinutes: 8 * 60,
+        workedMinutes: 8 * 60,
+        hasBreakPunch: false,
+      }),
+    ).toBe(120);
   });
 
   it('skips the deduction when the employee did not reach the full scheduled shift', () => {
@@ -44,7 +59,7 @@ describe('missed-break-deduction', () => {
         },
         scheduledMinutes: 8 * 60,
         workedMinutes: 7 * 60,
-        hasBreakOrLunchPunch: false,
+        hasBreakPunch: false,
       }),
     ).toBe(0);
   });

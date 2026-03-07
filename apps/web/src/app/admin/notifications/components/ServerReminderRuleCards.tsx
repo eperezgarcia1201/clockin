@@ -217,8 +217,8 @@ export function ServerReminderRuleCards({
                   />
                   <label className="form-check-label">
                     {tr(
-                      "Deduct time when a full long shift ends without a break or lunch punch",
-                      "Descontar tiempo cuando un turno largo completo termina sin punch de descanso o lunch",
+                      "Deduct time when a full long shift ends without a break punch",
+                      "Descontar tiempo cuando un turno largo completo termina sin punch de descanso",
                     )}
                   </label>
                 </div>

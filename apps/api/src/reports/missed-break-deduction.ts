@@ -72,7 +72,7 @@ export function resolveMissedBreakDeductionMinutes(input: {
   scheduledMinutes: number;
   workedMinutes: number;
   existingPenaltyMinutes?: number;
-  hasBreakOrLunchPunch: boolean;
+  hasBreakPunch: boolean;
 }) {
   const { policy } = input;
   if (!policy?.enabled) {
@@ -83,7 +83,7 @@ export function resolveMissedBreakDeductionMinutes(input: {
   if (
     input.scheduledMinutes < triggerMinutes ||
     input.workedMinutes < input.scheduledMinutes ||
-    input.hasBreakOrLunchPunch
+    input.hasBreakPunch
   ) {
     return 0;
   }
