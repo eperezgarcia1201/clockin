@@ -415,6 +415,11 @@ const copy = {
     supplierNameLabel: "Supplier",
     invoiceRows: "Extracted Invoice Rows",
     noInvoiceRows: "No rows extracted yet.",
+    manageKindDictionary: "Manage kind dictionary",
+    catalogEmptyState:
+      "This tenant has no liquor catalog items yet. Add liquor items here first.",
+    inventoryEmptyState:
+      "Inventory sheet is empty because this tenant has no liquor catalog items yet.",
     varianceIntelligence: "Variance Intelligence",
     topVarianceItems: "Top Variance Items",
     topRiskItems: "Top Risk Items",
@@ -541,6 +546,11 @@ const copy = {
     supplierNameLabel: "Proveedor",
     invoiceRows: "Filas Extraídas",
     noInvoiceRows: "Aún no hay filas extraídas.",
+    manageKindDictionary: "Administrar diccionario de tipos",
+    catalogEmptyState:
+      "Este tenant aún no tiene artículos en el catálogo de licor. Agrega artículos aquí primero.",
+    inventoryEmptyState:
+      "La hoja de inventario está vacía porque este tenant aún no tiene artículos en el catálogo de licor.",
     varianceIntelligence: "Inteligencia de Variaciones",
     topVarianceItems: "Mayores Variaciones",
     topRiskItems: "Mayor Riesgo",
@@ -2145,7 +2155,7 @@ export default function LiquorControlPage() {
           <LiquorInventoryCountTable
             rows={spreadsheetRows}
             drafts={sheetDrafts}
-            noItemsLabel={t.noItems}
+            noItemsLabel={t.inventoryEmptyState}
             itemLabel={t.item}
             barLabel={t.bar}
             bodegaBottlesLabel={t.bodegaBottles}
@@ -2615,7 +2625,7 @@ export default function LiquorControlPage() {
         <LiquorCatalogEditorTable
           items={items}
           drafts={sheetDrafts}
-          noItemsLabel={t.noItems}
+          noItemsLabel={t.catalogEmptyState}
           companyLabel={t.company}
           liquorNameLabel={t.liquorName}
           liquorKindLabel={t.liquorKind}
@@ -2633,39 +2643,52 @@ export default function LiquorControlPage() {
             );
           }}
         />
-        <LiquorKindManager
-          title={t.kindList}
-          addLabel={t.addKind}
-          deleteLabel={t.deleteKind}
-          newKindPlaceholder={t.newKindPlaceholder}
-          deleteKindPlaceholder={t.kindDeletePlaceholder}
-          noKindsConfigured={t.noKindsConfigured}
-          showMoreKinds={t.showMoreKinds}
-          showLessKinds={t.showLessKinds}
-          newKindValue={kindForm.newKind}
-          deleteKindValue={kindForm.deleteKind}
-          kinds={liquorKinds}
-          createDisabled={loading || isAnyActionBusy || !kindForm.newKind.trim()}
-          deleteDisabled={
-            loading || isAnyActionBusy || !kindForm.deleteKind.trim()
-          }
-          onNewKindChange={(value) =>
-            setKindForm((prev) => ({ ...prev, newKind: value }))
-          }
-          onDeleteKindChange={(value) =>
-            setKindForm((prev) => ({ ...prev, deleteKind: value }))
-          }
-          onCreate={() => {
-            void runWithReload("create-kind", createLiquorKind, "Kind saved.");
-          }}
-          onDelete={() => {
-            void runWithReload(
-              "delete-kind",
-              deleteLiquorKind,
-              "Kind deleted.",
-            );
-          }}
-        />
+        <details className="border rounded-3 p-3">
+          <summary className="fw-semibold" style={{ cursor: "pointer" }}>
+            {t.manageKindDictionary}
+          </summary>
+          <div className="mt-3">
+            <LiquorKindManager
+              title={t.kindList}
+              addLabel={t.addKind}
+              deleteLabel={t.deleteKind}
+              newKindPlaceholder={t.newKindPlaceholder}
+              deleteKindPlaceholder={t.kindDeletePlaceholder}
+              noKindsConfigured={t.noKindsConfigured}
+              showMoreKinds={t.showMoreKinds}
+              showLessKinds={t.showLessKinds}
+              newKindValue={kindForm.newKind}
+              deleteKindValue={kindForm.deleteKind}
+              kinds={liquorKinds}
+              createDisabled={
+                loading || isAnyActionBusy || !kindForm.newKind.trim()
+              }
+              deleteDisabled={
+                loading || isAnyActionBusy || !kindForm.deleteKind.trim()
+              }
+              onNewKindChange={(value) =>
+                setKindForm((prev) => ({ ...prev, newKind: value }))
+              }
+              onDeleteKindChange={(value) =>
+                setKindForm((prev) => ({ ...prev, deleteKind: value }))
+              }
+              onCreate={() => {
+                void runWithReload(
+                  "create-kind",
+                  createLiquorKind,
+                  "Kind saved.",
+                );
+              }}
+              onDelete={() => {
+                void runWithReload(
+                  "delete-kind",
+                  deleteLiquorKind,
+                  "Kind deleted.",
+                );
+              }}
+            />
+          </div>
+        </details>
       </section>
       ) : null}
 
