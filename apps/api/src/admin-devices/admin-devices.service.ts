@@ -4,15 +4,7 @@ import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
 import type { RegisterAdminDeviceDto } from './dto/register-admin-device.dto';
 import type { UpdateAdminDeviceDto } from './dto/update-admin-device.dto';
-
-const defaultAdminDeviceNotifications = () => ({
-  notifyPunchActivity: true,
-  notifyNoBreakAlerts: true,
-  notifyLateClockInReminders: true,
-  notifyScheduleOverrides: true,
-  notifyTipSummaries: true,
-  notifyDailySalesReminders: true,
-});
+import { resolveDefaultAdminDeviceNotifications } from '../settings/notification-policy';
 
 @Injectable()
 export class AdminDevicesService {
@@ -33,6 +25,7 @@ export class AdminDevicesService {
   async register(authUser: AuthUser, payload: RegisterAdminDeviceDto) {
     const { tenant } = await this.tenancy.requireTenantAndUser(authUser);
     const updatePreferences = this.extractPreferencePatch(payload);
+    const defaultPreferences = await this.loadDefaultNotifications(tenant.id);
     const device = await this.prisma.adminDevice.upsert({
       where: { expoPushToken: payload.expoPushToken },
       update: {
@@ -48,7 +41,7 @@ export class AdminDevicesService {
         label: this.normalizeOptionalString(payload.label) ?? null,
         platform: this.normalizeOptionalString(payload.platform) ?? null,
         timeZone: this.normalizeOptionalString(payload.timeZone) ?? null,
-        ...defaultAdminDeviceNotifications(),
+        ...defaultPreferences,
         ...updatePreferences,
       },
     });
@@ -118,6 +111,21 @@ export class AdminDevicesService {
       notifyDailySalesReminders:
         payload.notifyDailySalesReminders ?? undefined,
     };
+  }
+
+  private async loadDefaultNotifications(tenantId: string) {
+    const settings = await this.prisma.tenantSettings.findUnique({
+      where: { tenantId },
+      select: {
+        defaultNotifyPunchActivity: true,
+        defaultNotifyNoBreakAlerts: true,
+        defaultNotifyLateClockInReminders: true,
+        defaultNotifyScheduleOverrides: true,
+        defaultNotifyTipSummaries: true,
+        defaultNotifyDailySalesReminders: true,
+      },
+    });
+    return resolveDefaultAdminDeviceNotifications(settings);
   }
 
   private serializeDevice(

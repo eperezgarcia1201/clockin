@@ -26,6 +26,9 @@ const defaultSettings = () => ({
   dailySalesReportingEnabled: false,
   multiLocationEnabled: false,
   lateClockInWorkflowEnabled: true,
+  punchActivityNotificationsEnabled: true,
+  scheduleOverrideNotificationsEnabled: true,
+  tipSummaryNotificationsEnabled: true,
   lateClockInGraceMinutes: 5,
   lateClockInReminderIntervalMinutes: 5,
   lateClockInReminderMax: 3,
@@ -33,11 +36,19 @@ const defaultSettings = () => ({
   autoClockInOnGeofence: true,
   noBreakAlertsEnabled: true,
   noBreakAlertHours: 6,
+  noBreakReminderIntervalMinutes: 60,
+  noBreakReminderMax: 1,
   dailySalesReminderEnabled: true,
   dailySalesReminderFirstMinutes: 20 * 60 + 50,
   dailySalesReminderFinalMinutes: 22 * 60 + 20,
   ownerDailyReportEnabled: true,
   ownerDailyReportSendMinutes: 22 * 60,
+  defaultNotifyPunchActivity: true,
+  defaultNotifyNoBreakAlerts: true,
+  defaultNotifyLateClockInReminders: true,
+  defaultNotifyScheduleOverrides: true,
+  defaultNotifyTipSummaries: true,
+  defaultNotifyDailySalesReminders: true,
 });
 
 @Injectable()
@@ -120,6 +131,12 @@ export class SettingsService {
         allowManualTimeEdits: dto.allowManualTimeEdits ?? undefined,
         multiLocationEnabled: dto.multiLocationEnabled ?? undefined,
         lateClockInWorkflowEnabled: dto.lateClockInWorkflowEnabled ?? undefined,
+        punchActivityNotificationsEnabled:
+          dto.punchActivityNotificationsEnabled ?? undefined,
+        scheduleOverrideNotificationsEnabled:
+          dto.scheduleOverrideNotificationsEnabled ?? undefined,
+        tipSummaryNotificationsEnabled:
+          dto.tipSummaryNotificationsEnabled ?? undefined,
         lateClockInGraceMinutes: dto.lateClockInGraceMinutes ?? undefined,
         lateClockInReminderIntervalMinutes:
           dto.lateClockInReminderIntervalMinutes ?? undefined,
@@ -129,6 +146,9 @@ export class SettingsService {
         autoClockInOnGeofence: dto.autoClockInOnGeofence ?? undefined,
         noBreakAlertsEnabled: dto.noBreakAlertsEnabled ?? undefined,
         noBreakAlertHours: dto.noBreakAlertHours ?? undefined,
+        noBreakReminderIntervalMinutes:
+          dto.noBreakReminderIntervalMinutes ?? undefined,
+        noBreakReminderMax: dto.noBreakReminderMax ?? undefined,
         dailySalesReminderEnabled: dto.dailySalesReminderEnabled ?? undefined,
         dailySalesReminderFirstMinutes:
           dto.dailySalesReminderFirstMinutes ?? undefined,
@@ -137,6 +157,17 @@ export class SettingsService {
         ownerDailyReportEnabled: dto.ownerDailyReportEnabled ?? undefined,
         ownerDailyReportSendMinutes:
           dto.ownerDailyReportSendMinutes ?? undefined,
+        defaultNotifyPunchActivity:
+          dto.defaultNotifyPunchActivity ?? undefined,
+        defaultNotifyNoBreakAlerts:
+          dto.defaultNotifyNoBreakAlerts ?? undefined,
+        defaultNotifyLateClockInReminders:
+          dto.defaultNotifyLateClockInReminders ?? undefined,
+        defaultNotifyScheduleOverrides:
+          dto.defaultNotifyScheduleOverrides ?? undefined,
+        defaultNotifyTipSummaries: dto.defaultNotifyTipSummaries ?? undefined,
+        defaultNotifyDailySalesReminders:
+          dto.defaultNotifyDailySalesReminders ?? undefined,
       },
       create: {
         tenantId: tenant.id,
@@ -167,6 +198,15 @@ export class SettingsService {
           dto.multiLocationEnabled ?? defaults.multiLocationEnabled,
         lateClockInWorkflowEnabled:
           dto.lateClockInWorkflowEnabled ?? defaults.lateClockInWorkflowEnabled,
+        punchActivityNotificationsEnabled:
+          dto.punchActivityNotificationsEnabled ??
+          defaults.punchActivityNotificationsEnabled,
+        scheduleOverrideNotificationsEnabled:
+          dto.scheduleOverrideNotificationsEnabled ??
+          defaults.scheduleOverrideNotificationsEnabled,
+        tipSummaryNotificationsEnabled:
+          dto.tipSummaryNotificationsEnabled ??
+          defaults.tipSummaryNotificationsEnabled,
         lateClockInGraceMinutes:
           dto.lateClockInGraceMinutes ?? defaults.lateClockInGraceMinutes,
         lateClockInReminderIntervalMinutes:
@@ -183,6 +223,11 @@ export class SettingsService {
           dto.noBreakAlertsEnabled ?? defaults.noBreakAlertsEnabled,
         noBreakAlertHours:
           dto.noBreakAlertHours ?? defaults.noBreakAlertHours,
+        noBreakReminderIntervalMinutes:
+          dto.noBreakReminderIntervalMinutes ??
+          defaults.noBreakReminderIntervalMinutes,
+        noBreakReminderMax:
+          dto.noBreakReminderMax ?? defaults.noBreakReminderMax,
         dailySalesReminderEnabled:
           dto.dailySalesReminderEnabled ?? defaults.dailySalesReminderEnabled,
         dailySalesReminderFirstMinutes:
@@ -196,6 +241,21 @@ export class SettingsService {
         ownerDailyReportSendMinutes:
           dto.ownerDailyReportSendMinutes ??
           defaults.ownerDailyReportSendMinutes,
+        defaultNotifyPunchActivity:
+          dto.defaultNotifyPunchActivity ?? defaults.defaultNotifyPunchActivity,
+        defaultNotifyNoBreakAlerts:
+          dto.defaultNotifyNoBreakAlerts ?? defaults.defaultNotifyNoBreakAlerts,
+        defaultNotifyLateClockInReminders:
+          dto.defaultNotifyLateClockInReminders ??
+          defaults.defaultNotifyLateClockInReminders,
+        defaultNotifyScheduleOverrides:
+          dto.defaultNotifyScheduleOverrides ??
+          defaults.defaultNotifyScheduleOverrides,
+        defaultNotifyTipSummaries:
+          dto.defaultNotifyTipSummaries ?? defaults.defaultNotifyTipSummaries,
+        defaultNotifyDailySalesReminders:
+          dto.defaultNotifyDailySalesReminders ??
+          defaults.defaultNotifyDailySalesReminders,
       },
     });
   }

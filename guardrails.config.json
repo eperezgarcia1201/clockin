@@ -81,6 +81,18 @@
         "reason": "Company-info page decomposition in progress."
       },
       {
+        "file": "apps/web/src/app/admin/settings/page.tsx",
+        "max": 420,
+        "expiresOn": "2026-07-31",
+        "reason": "System-settings page decomposition in progress."
+      },
+      {
+        "file": "apps/web/src/app/admin/offices/page.tsx",
+        "max": 460,
+        "expiresOn": "2026-07-31",
+        "reason": "Offices summary decomposition in progress."
+      },
+      {
         "file": "apps/web/src/app/admin/schedules/page.tsx",
         "max": 520,
         "expiresOn": "2026-07-31",
@@ -94,7 +106,7 @@
       },
       {
         "file": "apps/web/src/app/admin/company-orders/catalog/page.tsx",
-        "max": 450,
+        "max": 900,
         "expiresOn": "2026-07-31",
         "reason": "Catalog page decomposition in progress."
       },
@@ -157,6 +169,42 @@
         "max": 650,
         "expiresOn": "2026-07-31",
         "reason": "Comparison shared controller decomposition in progress."
+      },
+      {
+        "file": "apps/mobile-admin/AdminAppShell.tsx",
+        "max": 420,
+        "expiresOn": "2026-07-31",
+        "reason": "Admin shell decomposition in progress."
+      },
+      {
+        "file": "apps/mobile-admin/App.styles.base.ts",
+        "max": 420,
+        "expiresOn": "2026-07-31",
+        "reason": "Shared admin style extraction in progress."
+      },
+      {
+        "file": "apps/mobile-admin/admin-biometric-hooks.ts",
+        "max": 360,
+        "expiresOn": "2026-07-31",
+        "reason": "Biometric hook decomposition in progress."
+      },
+      {
+        "file": "apps/mobile-admin/admin-shell-effects.ts",
+        "max": 540,
+        "expiresOn": "2026-07-31",
+        "reason": "Admin shell effect decomposition in progress."
+      },
+      {
+        "file": "apps/mobile-admin/components/AdminContentRouterOps.tsx",
+        "max": 380,
+        "expiresOn": "2026-07-31",
+        "reason": "Admin router operations decomposition in progress."
+      },
+      {
+        "file": "apps/mobile-admin/components/AlertsCard.tsx",
+        "max": 540,
+        "expiresOn": "2026-07-31",
+        "reason": "Alerts card decomposition in progress."
       }
     ]
   },

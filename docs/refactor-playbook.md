@@ -2,8 +2,8 @@
 
 ## Current Status
 
-- Date: 2026-03-01
-- Phase: Foundation + guardrails + mobile shell decomposition
+- Date: 2026-03-06
+- Phase: Foundation + guardrails + notifications decomposition + mobile shell decomposition
 - Overall health: In progress (latest chunk validated)
 - Progress snapshot:
   - Entry shells: `apps/mobile/App.tsx` `1` line and `apps/mobile-admin/App.tsx` `1` line (from combined `19020`, `99.99%` reduced)
@@ -22,6 +22,7 @@
 | Web users wrapper (`[id]`)                          | `admin/users/[id]` now uses shared users-admin and time-admin wrappers                         | Full validation matrix run after migration                         | Preserved edit-user, archive-user, and manual time-entry flows                      |
 | Web settings/company/dashboard wrappers             | `admin/settings`, `admin/company`, and `admin` dashboard now use shared wrappers               | Full validation matrix run after migration                         | Preserved save and load behavior; removed direct-fetch from migrated pages          |
 | Web schedules/notifications/company-orders wrappers | `admin/schedules`, `admin/notifications`, and `admin/company-orders*` now use shared wrappers  | Full validation matrix run after migration                         | Preserved scheduling, messaging, and ordering behaviors while removing direct-fetch |
+| Web notifications policy decomposition              | Split `admin/notifications/page.tsx` into hooks and focused panels; expanded browser controls for source toggles, repeated no-break cadence, and default device presets | API build + web build + mobile/mobile-admin typechecks + guard scripts + API tests | Restored handbook compliance for the notifications route while keeping browser-side notification management in one bounded feature module |
 | Web owner wrappers                                  | `owner`, `owner/tenants`, and `owner-login` now use shared owner wrapper modules               | Full validation matrix run after migration                         | Preserved owner login, tenant CRUD, fallback feature handling, and export behavior  |
 | Web reports core wrappers                           | `reports`, `audit`, `daily`, `hours`, `payroll`, `tips`, and `comparison/shared` use wrappers | Full validation matrix run after migration                         | Preserved report params, load/error behavior, and export links while removing fetch |
 | Web reports hotspot wrappers                        | `reports/sales` and `reports/liquor-control` now use shared wrappers                            | Full validation matrix run after migration                         | Preserved high-complexity report workflows while removing direct-fetch in both pages |
@@ -132,8 +133,8 @@
 
 - Current bounded context: Mobile shell decomposition
 - Current extraction target: Continue extracting remaining dense orchestration from `apps/mobile-admin/AdminAppShell.tsx` and `apps/mobile/MobileAppShell.tsx`
-- Known risks: implementation shell modules (`MobileAppShell.tsx`, `AdminAppShell.tsx`) remain dense and should continue bounded-context decomposition
-- Temporary overrides in use: none for root mobile entry shells
+- Known risks: implementation shell modules (`MobileAppShell.tsx`, `AdminAppShell.tsx`) remain dense and still rely on temporary line-limit overrides
+- Temporary overrides in use: targeted hotspots in `guardrails.config.json` now document remaining oversized files outside the notifications slice
 
 ## Next Slice
 
@@ -213,6 +214,8 @@ Run this matrix after each chunk:
 - Scope expanded to `admin/users/[id]` with shared wrapper modules and no direct fetch in migrated page.
 - Scope expanded to `admin/settings`, `admin/company`, and `admin` dashboard with shared wrapper modules and no direct fetch in migrated pages.
 - Scope expanded to `admin/schedules`, `admin/notifications`, and `admin/company-orders*`; admin fetch count is now `0`.
+- `apps/web/src/app/admin/notifications/page.tsx` is back to a thin route shell (`5` lines); the browser notification feature now lives in focused panels and hooks under `apps/web/src/app/admin/notifications/{components,hooks}`.
+- Browser notification management now covers source-level generation toggles, repeated no-break cadence/count, default delivery presets for newly registered devices, device-wide category delivery, registered-device management, employee messaging, and the live admin inbox.
 - Scope expanded to `owner`, `owner/tenants`, and `owner-login` with shared wrappers and no direct fetch in migrated owner pages.
 - Scope expanded to core reports (`reports`, `audit`, `daily`, `hours`, `payroll`, `tips`, `comparison/shared`) with shared wrappers and no direct fetch in migrated report pages.
 - Scope expanded to report hotspots (`reports/sales` and `reports/liquor-control`) with shared wrappers and no direct fetch in those pages.

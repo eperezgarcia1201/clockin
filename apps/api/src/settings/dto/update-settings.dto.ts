@@ -105,6 +105,18 @@ export class UpdateSettingsDto {
   lateClockInWorkflowEnabled?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  punchActivityNotificationsEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  scheduleOverrideNotificationsEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  tipSummaryNotificationsEnabled?: boolean;
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(180)
@@ -141,6 +153,18 @@ export class UpdateSettingsDto {
   noBreakAlertHours?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  noBreakReminderIntervalMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(12)
+  noBreakReminderMax?: number;
+
+  @IsOptional()
   @IsBoolean()
   dailySalesReminderEnabled?: boolean;
 
@@ -165,4 +189,28 @@ export class UpdateSettingsDto {
   @Min(0)
   @Max(1439)
   ownerDailyReportSendMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  defaultNotifyPunchActivity?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  defaultNotifyNoBreakAlerts?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  defaultNotifyLateClockInReminders?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  defaultNotifyScheduleOverrides?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  defaultNotifyTipSummaries?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  defaultNotifyDailySalesReminders?: boolean;
 }
