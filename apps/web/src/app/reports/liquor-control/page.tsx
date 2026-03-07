@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LiquorKindManager } from "./components/LiquorKindManager";
 import { LiquorKindTagList } from "./components/LiquorKindTagList";
 import { readPersistedLocationScope } from "./location-scope";
 import {
@@ -2135,77 +2136,6 @@ export default function LiquorControlPage() {
             </select>
           </div>
         </div>
-        <div className="row g-2 align-items-end">
-          <div className="col-12 col-md-4">
-            <label className="form-label">{t.kindList}</label>
-            <input
-              className="form-control"
-              value={kindForm.newKind}
-              onChange={(event) =>
-                setKindForm((prev) => ({ ...prev, newKind: event.target.value }))
-              }
-              placeholder={t.newKindPlaceholder}
-              list="liquor-kind-options"
-            />
-          </div>
-          <div className="col-6 col-md-2">
-            <button
-              type="button"
-              className="btn btn-outline-primary w-100"
-              disabled={loading || isAnyActionBusy || !kindForm.newKind.trim()}
-              onClick={() => {
-                void runWithReload(
-                  "create-kind",
-                  createLiquorKind,
-                  "Kind saved.",
-                );
-              }}
-            >
-              {t.addKind}
-            </button>
-          </div>
-          <div className="col-12 col-md-4">
-            <label className="form-label">{t.deleteKind}</label>
-            <select
-              className="form-select"
-              value={kindForm.deleteKind}
-              onChange={(event) =>
-                setKindForm((prev) => ({ ...prev, deleteKind: event.target.value }))
-              }
-            >
-              <option value="">{t.kindDeletePlaceholder}</option>
-              {liquorKinds.map((kind) => (
-                <option key={`kind-delete-${kind}`} value={kind}>
-                  {kind}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="col-6 col-md-2">
-            <button
-              type="button"
-              className="btn btn-outline-danger w-100"
-              disabled={loading || isAnyActionBusy || !kindForm.deleteKind.trim()}
-              onClick={() => {
-                void runWithReload(
-                  "delete-kind",
-                  deleteLiquorKind,
-                  "Kind deleted.",
-                );
-              }}
-            >
-              {t.deleteKind}
-            </button>
-          </div>
-          <div className="col-12">
-            <LiquorKindTagList
-              kinds={liquorKinds}
-              emptyLabel={t.noKindsConfigured}
-              showMoreLabel={t.showMoreKinds}
-              showLessLabel={t.showLessKinds}
-            />
-          </div>
-        </div>
         <div className="table-responsive">
           <table className="report-table">
             <thead>
@@ -2811,6 +2741,39 @@ export default function LiquorControlPage() {
             </button>
           </div>
         </div>
+        <LiquorKindManager
+          title={t.kindList}
+          addLabel={t.addKind}
+          deleteLabel={t.deleteKind}
+          newKindPlaceholder={t.newKindPlaceholder}
+          deleteKindPlaceholder={t.kindDeletePlaceholder}
+          noKindsConfigured={t.noKindsConfigured}
+          showMoreKinds={t.showMoreKinds}
+          showLessKinds={t.showLessKinds}
+          newKindValue={kindForm.newKind}
+          deleteKindValue={kindForm.deleteKind}
+          kinds={liquorKinds}
+          createDisabled={loading || isAnyActionBusy || !kindForm.newKind.trim()}
+          deleteDisabled={
+            loading || isAnyActionBusy || !kindForm.deleteKind.trim()
+          }
+          onNewKindChange={(value) =>
+            setKindForm((prev) => ({ ...prev, newKind: value }))
+          }
+          onDeleteKindChange={(value) =>
+            setKindForm((prev) => ({ ...prev, deleteKind: value }))
+          }
+          onCreate={() => {
+            void runWithReload("create-kind", createLiquorKind, "Kind saved.");
+          }}
+          onDelete={() => {
+            void runWithReload(
+              "delete-kind",
+              deleteLiquorKind,
+              "Kind deleted.",
+            );
+          }}
+        />
         <div className="table-responsive">
           <table className="report-table">
             <thead>
