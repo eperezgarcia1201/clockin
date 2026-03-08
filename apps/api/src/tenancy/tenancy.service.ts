@@ -539,13 +539,10 @@ export class TenancyService {
     isReports: boolean;
     managerPermissions: string[];
   }) {
-    const configured = normalizeManagerFeatures(manager.managerPermissions);
-    if (configured.length > 0) {
-      const enabled = new Set<ManagerFeatureKey>([...configured, 'dashboard']);
-      return allManagerFeatures().filter((feature) => enabled.has(feature));
-    }
-
-    const derived = new Set<ManagerFeatureKey>(['dashboard']);
+    const derived = new Set<ManagerFeatureKey>([
+      'dashboard',
+      ...normalizeManagerFeatures(manager.managerPermissions),
+    ]);
     if (!manager.isManager && manager.isAdmin) {
       allManagerFeatures().forEach((feature) => derived.add(feature));
     }
@@ -558,7 +555,6 @@ export class TenancyService {
       derived.add('tips');
       derived.add('salesCapture');
     }
-
     return allManagerFeatures().filter((feature) => derived.has(feature));
   }
 

@@ -12,6 +12,7 @@ import { timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   allManagerFeatures,
+  type ManagerFeatureKey,
   normalizeManagerFeatures,
 } from '../tenancy/manager-features';
 import type { TenantAdminLoginDto } from './dto/admin-login.dto';
@@ -294,8 +295,33 @@ export class TenantDirectoryService {
       );
     }
 
-    const configured = normalizeManagerFeatures(manager.managerPermissions);
-    const derived = new Set<string>(['dashboard']);
+    const featurePermissions = this.resolveManagerFeaturePermissions({
+      isManager: manager.isManager,
+      isAdmin: manager.isAdmin,
+      isTimeAdmin: manager.isTimeAdmin,
+      isReports: manager.isReports,
+      managerPermissions: manager.managerPermissions,
+    });
+
+    return {
+      id: manager.id,
+      username: manager.displayName || manager.fullName,
+      officeId: manager.officeId,
+      featurePermissions,
+    };
+  }
+
+  private resolveManagerFeaturePermissions(manager: {
+    isManager: boolean;
+    isAdmin: boolean;
+    isTimeAdmin: boolean;
+    isReports: boolean;
+    managerPermissions: string[];
+  }) {
+    const derived = new Set<ManagerFeatureKey>([
+      'dashboard',
+      ...normalizeManagerFeatures(manager.managerPermissions),
+    ]);
     if (!manager.isManager && manager.isAdmin) {
       allManagerFeatures().forEach((feature) => derived.add(feature));
     }
@@ -308,21 +334,7 @@ export class TenantDirectoryService {
       derived.add('tips');
       derived.add('salesCapture');
     }
-
-    const configuredWithDashboard = new Set([...configured, 'dashboard']);
-    const featurePermissions =
-      configured.length > 0
-        ? allManagerFeatures().filter((feature) =>
-            configuredWithDashboard.has(feature),
-          )
-        : allManagerFeatures().filter((feature) => derived.has(feature));
-
-    return {
-      id: manager.id,
-      username: manager.displayName || manager.fullName,
-      officeId: manager.officeId,
-      featurePermissions,
-    };
+    return allManagerFeatures().filter((feature) => derived.has(feature));
   }
 
   private async resolveTenantRecord(tenantInput: string, hostInput: string) {
