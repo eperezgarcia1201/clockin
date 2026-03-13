@@ -409,6 +409,7 @@ model TenantSettings {
   dailySalesReportingEnabled Boolean  @default(false)
   companyOrdersEnabled       Boolean  @default(false)
   multiLocationEnabled       Boolean  @default(false)
+  websysPosEnabled           Boolean  @default(false)
   lateClockInWorkflowEnabled Boolean  @default(true)
   punchActivityNotificationsEnabled Boolean @default(true)
   scheduleOverrideNotificationsEnabled Boolean @default(true)

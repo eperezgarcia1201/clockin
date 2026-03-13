@@ -41,6 +41,7 @@ type AdminAccess = {
     adminUsername: string;
     multiLocationEnabled: boolean;
     companyOrdersEnabled: boolean;
+    websysPosEnabled: boolean;
     liquorInventoryEnabled: boolean;
     premiumFeaturesEnabled: boolean;
   };
@@ -160,6 +161,7 @@ export class TenancyService {
         adminUsername: true,
         multiLocationEnabled: true,
         companyOrdersEnabled: true,
+        websysPosEnabled: true,
         liquorInventoryEnabled: true,
         premiumFeaturesEnabled: true,
       },
@@ -195,6 +197,7 @@ export class TenancyService {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
           companyOrdersEnabled,
+          websysPosEnabled: settings?.websysPosEnabled ?? false,
           liquorInventoryEnabled,
           premiumFeaturesEnabled,
         },
@@ -228,6 +231,7 @@ export class TenancyService {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
           companyOrdersEnabled,
+          websysPosEnabled: settings?.websysPosEnabled ?? false,
           liquorInventoryEnabled,
           premiumFeaturesEnabled,
         },
@@ -253,6 +257,7 @@ export class TenancyService {
           adminUsername,
           multiLocationEnabled: settings?.multiLocationEnabled ?? false,
           companyOrdersEnabled,
+          websysPosEnabled: settings?.websysPosEnabled ?? false,
           liquorInventoryEnabled,
           premiumFeaturesEnabled,
         },
@@ -271,6 +276,7 @@ export class TenancyService {
         adminUsername,
         multiLocationEnabled: settings?.multiLocationEnabled ?? false,
         companyOrdersEnabled,
+        websysPosEnabled: settings?.websysPosEnabled ?? false,
         liquorInventoryEnabled,
         premiumFeaturesEnabled,
       },

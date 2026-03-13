@@ -35,6 +35,7 @@ type TenantAccountRecord = {
     dailySalesReportingEnabled: boolean;
     companyOrdersEnabled: boolean;
     multiLocationEnabled: boolean;
+    websysPosEnabled: boolean;
     liquorInventoryEnabled: boolean;
     premiumFeaturesEnabled: boolean;
   } | null;
@@ -69,6 +70,7 @@ type TenantAccountResponse = {
     dailySalesReportingEnabled: boolean;
     companyOrdersEnabled: boolean;
     multiLocationEnabled: boolean;
+    websysPosEnabled: boolean;
     liquorInventoryEnabled: boolean;
     premiumFeaturesEnabled: boolean;
   };
@@ -173,6 +175,7 @@ const defaultFeatures = () => ({
   dailySalesReportingEnabled: false,
   companyOrdersEnabled: false,
   multiLocationEnabled: false,
+  websysPosEnabled: false,
   liquorInventoryEnabled: false,
   premiumFeaturesEnabled: false,
 });
@@ -208,6 +211,7 @@ export class TenantAccountsService {
             dailySalesReportingEnabled: true,
             companyOrdersEnabled: true,
             multiLocationEnabled: true,
+            websysPosEnabled: true,
             liquorInventoryEnabled: true,
             premiumFeaturesEnabled: true,
           },
@@ -306,6 +310,7 @@ export class TenantAccountsService {
           dailySalesReportingEnabled: features.dailySalesReportingEnabled,
           companyOrdersEnabled: features.companyOrdersEnabled,
           multiLocationEnabled: features.multiLocationEnabled,
+          websysPosEnabled: features.websysPosEnabled,
           liquorInventoryEnabled: features.liquorInventoryEnabled,
           premiumFeaturesEnabled: features.premiumFeaturesEnabled,
           ipRestrictions: null,
@@ -403,6 +408,7 @@ export class TenantAccountsService {
       dto.features?.dailySalesReportingEnabled !== undefined ||
       dto.features?.companyOrdersEnabled !== undefined ||
       dto.features?.multiLocationEnabled !== undefined ||
+      dto.features?.websysPosEnabled !== undefined ||
       dto.features?.liquorInventoryEnabled !== undefined ||
       dto.features?.premiumFeaturesEnabled !== undefined;
 
@@ -434,17 +440,14 @@ export class TenantAccountsService {
               dto.features?.requirePin !== undefined
                 ? dto.features.requirePin
                 : undefined,
-            reportsEnabled:
-              dto.features?.reportsEnabled !== undefined
-                ? dto.features.reportsEnabled
-                : undefined,
             allowManualTimeEdits:
               dto.features?.allowManualTimeEdits !== undefined
                 ? dto.features.allowManualTimeEdits
                 : undefined,
             dailySalesReportingEnabled:
-              dto.features?.dailySalesReportingEnabled !== undefined
-                ? dto.features.dailySalesReportingEnabled
+              dto.features?.dailySalesReportingEnabled !== undefined ||
+              dto.features?.websysPosEnabled === true
+                ? features.dailySalesReportingEnabled
                 : undefined,
             companyOrdersEnabled:
               dto.features?.companyOrdersEnabled !== undefined
@@ -453,6 +456,15 @@ export class TenantAccountsService {
             multiLocationEnabled:
               dto.features?.multiLocationEnabled !== undefined
                 ? dto.features.multiLocationEnabled
+                : undefined,
+            websysPosEnabled:
+              dto.features?.websysPosEnabled !== undefined
+                ? features.websysPosEnabled
+                : undefined,
+            reportsEnabled:
+              dto.features?.reportsEnabled !== undefined ||
+              dto.features?.websysPosEnabled === true
+                ? features.reportsEnabled
                 : undefined,
             liquorInventoryEnabled:
               dto.features?.liquorInventoryEnabled !== undefined
@@ -478,6 +490,7 @@ export class TenantAccountsService {
             dailySalesReportingEnabled: features.dailySalesReportingEnabled,
             companyOrdersEnabled: features.companyOrdersEnabled,
             multiLocationEnabled: features.multiLocationEnabled,
+            websysPosEnabled: features.websysPosEnabled,
             liquorInventoryEnabled: features.liquorInventoryEnabled,
             premiumFeaturesEnabled: features.premiumFeaturesEnabled,
             ipRestrictions: null,
@@ -1361,18 +1374,27 @@ export class TenantAccountsService {
 
   private normalizeFeatures(features?: TenantFeaturesDto) {
     const defaults = defaultFeatures();
+    const websysPosEnabled =
+      features?.websysPosEnabled ?? defaults.websysPosEnabled;
+    const reportsEnabled = websysPosEnabled
+      ? true
+      : features?.reportsEnabled ?? defaults.reportsEnabled;
+    const dailySalesReportingEnabled = websysPosEnabled
+      ? true
+      : features?.dailySalesReportingEnabled ??
+        defaults.dailySalesReportingEnabled;
+
     return {
       requirePin: features?.requirePin ?? defaults.requirePin,
-      reportsEnabled: features?.reportsEnabled ?? defaults.reportsEnabled,
+      reportsEnabled,
       allowManualTimeEdits:
         features?.allowManualTimeEdits ?? defaults.allowManualTimeEdits,
-      dailySalesReportingEnabled:
-        features?.dailySalesReportingEnabled ??
-        defaults.dailySalesReportingEnabled,
+      dailySalesReportingEnabled,
       companyOrdersEnabled:
         features?.companyOrdersEnabled ?? defaults.companyOrdersEnabled,
       multiLocationEnabled:
         features?.multiLocationEnabled ?? defaults.multiLocationEnabled,
+      websysPosEnabled,
       liquorInventoryEnabled:
         features?.liquorInventoryEnabled ?? defaults.liquorInventoryEnabled,
       premiumFeaturesEnabled:
@@ -1510,6 +1532,7 @@ export class TenantAccountsService {
             dailySalesReportingEnabled: true,
             companyOrdersEnabled: true,
             multiLocationEnabled: true,
+            websysPosEnabled: true,
             liquorInventoryEnabled: true,
             premiumFeaturesEnabled: true,
           },
@@ -1576,6 +1599,8 @@ export class TenantAccountsService {
         multiLocationEnabled:
           tenant.settings?.multiLocationEnabled ??
           defaults.multiLocationEnabled,
+        websysPosEnabled:
+          tenant.settings?.websysPosEnabled ?? defaults.websysPosEnabled,
         liquorInventoryEnabled:
           tenant.settings?.liquorInventoryEnabled ??
           defaults.liquorInventoryEnabled,

@@ -2,8 +2,8 @@
 
 ## Current Status
 
-- Date: 2026-03-06
-- Phase: Foundation + guardrails + notifications decomposition + mobile shell decomposition
+- Date: 2026-03-12
+- Phase: Foundation + guardrails + notifications decomposition + mobile shell decomposition + Websys POS integration surface
 - Overall health: In progress (latest chunk validated)
 - Progress snapshot:
   - Entry shells: `apps/mobile/App.tsx` `1` line and `apps/mobile-admin/App.tsx` `1` line (from combined `19020`, `99.99%` reduced)
@@ -23,6 +23,7 @@
 | Web settings/company/dashboard wrappers             | `admin/settings`, `admin/company`, and `admin` dashboard now use shared wrappers               | Full validation matrix run after migration                         | Preserved save and load behavior; removed direct-fetch from migrated pages          |
 | Web schedules/notifications/company-orders wrappers | `admin/schedules`, `admin/notifications`, and `admin/company-orders*` now use shared wrappers  | Full validation matrix run after migration                         | Preserved scheduling, messaging, and ordering behaviors while removing direct-fetch |
 | Web notifications policy decomposition              | Split `admin/notifications/page.tsx` into hooks and focused panels; expanded browser controls for source toggles, repeated no-break cadence, and default device presets | API build + web build + mobile/mobile-admin typechecks + guard scripts + API tests | Restored handbook compliance for the notifications route while keeping browser-side notification management in one bounded feature module |
+| Websys POS integration surface                      | Added a dedicated `/integrations/restaurant-pos` API adapter, reusable typed client/hooks package, POS handoff handbook, and owner-side `Websys POS Tenant` provisioning flag | Full validation matrix + package typecheck | Reused existing reports/schedules services instead of duplicating business logic; documented tenant-vs-office scope explicitly for payouts and exposed a persisted owner-managed POS tenant profile |
 | Web owner wrappers                                  | `owner`, `owner/tenants`, and `owner-login` now use shared owner wrapper modules               | Full validation matrix run after migration                         | Preserved owner login, tenant CRUD, fallback feature handling, and export behavior  |
 | Web reports core wrappers                           | `reports`, `audit`, `daily`, `hours`, `payroll`, `tips`, and `comparison/shared` use wrappers | Full validation matrix run after migration                         | Preserved report params, load/error behavior, and export links while removing fetch |
 | Web reports hotspot wrappers                        | `reports/sales` and `reports/liquor-control` now use shared wrappers                            | Full validation matrix run after migration                         | Preserved high-complexity report workflows while removing direct-fetch in both pages |
@@ -178,7 +179,13 @@
   - `apps/web/src/app/reports/tips/page.tsx`
   - `apps/web/src/app/reports/sales/page.tsx`
   - `apps/web/src/app/reports/liquor-control/page.tsx`
-  - `apps/web/src/app/reports/comparison/shared.ts`
+- `apps/web/src/app/reports/comparison/shared.ts`
+- `apps/api/src/restaurant-pos-integration/restaurant-pos-integration.controller.ts`
+- `apps/api/src/restaurant-pos-integration/restaurant-pos-integration.service.ts`
+- `packages/restaurant-pos-client/src/index.ts`
+- `packages/restaurant-pos-client/src/client.ts`
+- `packages/restaurant-pos-client/src/hooks.ts`
+- `packages/restaurant-pos-client/src/types.ts`
 
 ## Validation Matrix
 
@@ -216,6 +223,7 @@ Run this matrix after each chunk:
 - Scope expanded to `admin/schedules`, `admin/notifications`, and `admin/company-orders*`; admin fetch count is now `0`.
 - `apps/web/src/app/admin/notifications/page.tsx` is back to a thin route shell (`5` lines); the browser notification feature now lives in focused panels and hooks under `apps/web/src/app/admin/notifications/{components,hooks}`.
 - Browser notification management now covers source-level generation toggles, repeated no-break cadence/count, default delivery presets for newly registered devices, device-wide category delivery, registered-device management, employee messaging, and the live admin inbox.
+- Websys POS now has a dedicated integration surface under `/integrations/restaurant-pos` for connection bootstrap, hours, payroll, tips, schedule management, and tenant-wide payouts, plus a reusable typed client/hooks package, a standalone handoff handbook for the POS team, and an owner-side `Websys POS Tenant` profile to provision supported tenants consistently.
 - Scope expanded to `owner`, `owner/tenants`, and `owner-login` with shared wrappers and no direct fetch in migrated owner pages.
 - Scope expanded to core reports (`reports`, `audit`, `daily`, `hours`, `payroll`, `tips`, `comparison/shared`) with shared wrappers and no direct fetch in migrated report pages.
 - Scope expanded to report hotspots (`reports/sales` and `reports/liquor-control`) with shared wrappers and no direct fetch in those pages.

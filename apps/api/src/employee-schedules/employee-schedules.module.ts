@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { EmployeeSchedulesController } from './employee-schedules.controller';
 import { EmployeeSchedulesService } from './employee-schedules.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { TenancyService } from '../tenancy/tenancy.service';
+import { PrismaModule } from '../prisma/prisma.module';
+import { TenancyModule } from '../tenancy/tenancy.module';
 
 @Module({
+  imports: [PrismaModule, TenancyModule],
   controllers: [EmployeeSchedulesController],
-  providers: [EmployeeSchedulesService, PrismaService, TenancyService],
+  providers: [EmployeeSchedulesService],
+  exports: [EmployeeSchedulesService],
 })
 export class EmployeeSchedulesModule {}

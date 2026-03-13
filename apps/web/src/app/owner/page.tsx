@@ -12,6 +12,7 @@ type TenantFeatures = {
   dailySalesReportingEnabled: boolean;
   companyOrdersEnabled: boolean;
   multiLocationEnabled: boolean;
+  websysPosEnabled: boolean;
   liquorInventoryEnabled: boolean;
   premiumFeaturesEnabled: boolean;
 };
@@ -129,6 +130,12 @@ export default function OwnerDashboardPage() {
     const activeRate = toPercent(activeTenants, totalTenants);
 
     const featureUsage = [
+      {
+        key: "websysPosEnabled",
+        label: tr("Websys POS Tenants", "Tenants Websys POS"),
+        enabledCount: tenants.filter((tenant) => tenant.features.websysPosEnabled)
+          .length,
+      },
       {
         key: "dailySalesReportingEnabled",
         label: tr("Daily Sales Reporting", "Reporte Diario de Ventas"),

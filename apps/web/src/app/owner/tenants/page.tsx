@@ -10,7 +10,10 @@ import {
   updateTenantAccountRequest,
 } from "../../../lib/api/owner-tenants";
 import { useUiLanguage } from "../../../lib/ui-language";
-
+import TenantFeatureBadges from "./TenantFeatureBadges";
+import TenantListFilterTabs, {
+  resolveTenantFilterEmptyMessage,
+} from "./TenantListFilterTabs";
 type TenantFeatures = {
   requirePin: boolean;
   reportsEnabled: boolean;
@@ -18,10 +21,13 @@ type TenantFeatures = {
   dailySalesReportingEnabled: boolean;
   companyOrdersEnabled: boolean;
   multiLocationEnabled: boolean;
+  websysPosEnabled: boolean;
   liquorInventoryEnabled: boolean;
   premiumFeaturesEnabled: boolean;
 };
 
+type TenantProfile = "standard" | "websys-pos";
+type TenantListFilter = "all" | "websys-pos" | "standard";
 type TenantAccount = {
   id: string;
   name: string;
@@ -42,7 +48,6 @@ type TenantAccount = {
   createdAt: string;
   updatedAt: string;
 };
-
 type TenantDraft = {
   name: string;
   subdomain: string;
@@ -55,7 +60,6 @@ type TenantDraft = {
   roundingMinutes: string;
   features: TenantFeatures;
 };
-
 type CreateForm = TenantDraft;
 type PendingTenantDelete = TenantAccount | null;
 type TenantDeleteDataItem = {
@@ -88,7 +92,6 @@ type TenantPayloadSource = {
   timezone: string;
   features: TenantFeatures;
 };
-
 const defaultFeatures: TenantFeatures = {
   requirePin: true,
   reportsEnabled: true,
@@ -96,10 +99,10 @@ const defaultFeatures: TenantFeatures = {
   dailySalesReportingEnabled: false,
   companyOrdersEnabled: false,
   multiLocationEnabled: false,
+  websysPosEnabled: false,
   liquorInventoryEnabled: false,
   premiumFeaturesEnabled: false,
 };
-
 const timezoneOptions = [
   "America/New_York",
   "America/Chicago",
@@ -167,21 +170,54 @@ const isLegacyFeatureValidationError = (payload: ApiErrorPayload) => {
   const message = resolveApiError(payload, "");
   return (
     message.includes("features.property multiLocationEnabled should not exist") ||
+    message.includes("features.property websysPosEnabled should not exist") ||
     message.includes("features.property liquorInventoryEnabled should not exist") ||
     message.includes("features.property premiumFeaturesEnabled should not exist")
   );
 };
+
+const applyFeatureDependencies = (features: TenantFeatures): TenantFeatures => {
+  if (!features.websysPosEnabled) {
+    return features;
+  }
+
+  return {
+    ...features,
+    reportsEnabled: true,
+    dailySalesReportingEnabled: true,
+  };
+};
+
+const setFeatureValue = (
+  features: TenantFeatures,
+  field: keyof TenantFeatures,
+  value: boolean,
+) => applyFeatureDependencies({ ...features, [field]: value });
+
+const getTenantProfile = (features: TenantFeatures): TenantProfile =>
+  features.websysPosEnabled ? "websys-pos" : "standard";
+
+const setTenantProfile = (
+  features: TenantFeatures,
+  profile: TenantProfile,
+): TenantFeatures =>
+  applyFeatureDependencies({
+    ...features,
+    websysPosEnabled: profile === "websys-pos",
+  });
 
 const buildTenantPayload = (
   source: TenantPayloadSource,
   roundingMinutes: number,
   options?: {
     includeMultiLocation?: boolean;
+    includeWebsysPos?: boolean;
     includeLiquorInventory?: boolean;
     includePremiumFeatures?: boolean;
   },
 ) => {
   const includeMultiLocation = options?.includeMultiLocation ?? true;
+  const includeWebsysPos = options?.includeWebsysPos ?? true;
   const includeLiquorInventory = options?.includeLiquorInventory ?? true;
   const includePremiumFeatures = options?.includePremiumFeatures ?? true;
   const features: Record<string, boolean> = {
@@ -194,6 +230,9 @@ const buildTenantPayload = (
 
   if (includeMultiLocation) {
     features.multiLocationEnabled = source.features.multiLocationEnabled;
+  }
+  if (includeWebsysPos) {
+    features.websysPosEnabled = source.features.websysPosEnabled;
   }
   if (includeLiquorInventory) {
     features.liquorInventoryEnabled = source.features.liquorInventoryEnabled;
@@ -246,6 +285,7 @@ export default function TenantAccountsPage() {
   const [pendingDeleteExporting, setPendingDeleteExporting] =
     useState<TenantExportFormat | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [tenantFilter, setTenantFilter] = useState<TenantListFilter>("all");
 
   const syncDrafts = useCallback((items: TenantAccount[]) => {
     const next: Record<string, TenantDraft> = {};
@@ -314,7 +354,14 @@ export default function TenantAccountsPage() {
   const updateCreateFeatures = (field: keyof TenantFeatures, value: boolean) => {
     setCreateForm((prev) => ({
       ...prev,
-      features: { ...prev.features, [field]: value },
+      features: setFeatureValue(prev.features, field, value),
+    }));
+  };
+
+  const updateCreateProfile = (profile: TenantProfile) => {
+    setCreateForm((prev) => ({
+      ...prev,
+      features: setTenantProfile(prev.features, profile),
     }));
   };
 
@@ -338,7 +385,17 @@ export default function TenantAccountsPage() {
       ...prev,
       [tenantId]: {
         ...prev[tenantId],
-        features: { ...prev[tenantId].features, [field]: value },
+        features: setFeatureValue(prev[tenantId].features, field, value),
+      },
+    }));
+  };
+
+  const updateDraftProfile = (tenantId: string, profile: TenantProfile) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [tenantId]: {
+        ...prev[tenantId],
+        features: setTenantProfile(prev[tenantId].features, profile),
       },
     }));
   };
@@ -385,7 +442,9 @@ export default function TenantAccountsPage() {
         response = await createTenantAccountRequest(
           buildTenantPayload(createForm, roundingMinutes, {
             includeMultiLocation: false,
+            includeWebsysPos: false,
             includeLiquorInventory: false,
+            includePremiumFeatures: false,
           }),
         );
         data = (await response.json()) as TenantAccount & ApiErrorPayload;
@@ -468,7 +527,9 @@ export default function TenantAccountsPage() {
           tenantId,
           buildTenantPayload(draft, roundingMinutes, {
             includeMultiLocation: false,
+            includeWebsysPos: false,
             includeLiquorInventory: false,
+            includePremiumFeatures: false,
           }),
         );
         data = (await response.json()) as TenantAccount & ApiErrorPayload;
@@ -736,6 +797,16 @@ export default function TenantAccountsPage() {
       (pendingDeleteDownloads.summary &&
         pendingDeleteDownloads.excel &&
         pendingDeleteDownloads.sql));
+  const createProfile = getTenantProfile(createForm.features);
+  const filteredTenants = tenants.filter((tenant) => {
+    if (tenantFilter === "websys-pos") {
+      return tenant.features.websysPosEnabled;
+    }
+    if (tenantFilter === "standard") {
+      return !tenant.features.websysPosEnabled;
+    }
+    return true;
+  });
 
   return (
     <div className="d-flex flex-column gap-4">
@@ -865,11 +936,37 @@ export default function TenantAccountsPage() {
             </div>
             <div className="col-12 col-md-3">
               <label className="form-label">
+                {tr("Tenant Profile", "Perfil del Tenant")}
+              </label>
+              <select
+                className="form-select"
+                value={createProfile}
+                onChange={(event) =>
+                  updateCreateProfile(event.target.value as TenantProfile)
+                }
+              >
+                <option value="standard">{tr("Standard", "Estandar")}</option>
+                <option value="websys-pos">
+                  {tr("Websys POS Tenant", "Tenant Websys POS")}
+                </option>
+              </select>
+              {createForm.features.websysPosEnabled && (
+                <div className="form-text">
+                  {tr(
+                    "Websys POS tenants always keep Reports and Daily Sales Reporting enabled.",
+                    "Los tenants Websys POS siempre mantienen Reportes y Reporte Diario de Ventas habilitados.",
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="col-12 col-md-3">
+              <label className="form-label">
                 {tr("Reports Enabled", "Reportes Habilitados")}
               </label>
               <select
                 className="form-select"
                 value={createForm.features.reportsEnabled ? "yes" : "no"}
+                disabled={createForm.features.websysPosEnabled}
                 onChange={(event) =>
                   updateCreateFeatures("reportsEnabled", event.target.value === "yes")
                 }
@@ -916,6 +1013,7 @@ export default function TenantAccountsPage() {
               <select
                 className="form-select"
                 value={createForm.features.dailySalesReportingEnabled ? "yes" : "no"}
+                disabled={createForm.features.websysPosEnabled}
                 onChange={(event) =>
                   updateCreateFeatures(
                     "dailySalesReportingEnabled",
@@ -1011,20 +1109,27 @@ export default function TenantAccountsPage() {
       )}
 
       <div className="admin-card">
-        <h2 className="h5 mb-3">
-          {tr("Existing Tenant Accounts", "Cuentas de Tenant Existentes")}
-        </h2>
+        <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+          <h2 className="h5 mb-0">
+            {tr("Existing Tenant Accounts", "Cuentas de Tenant Existentes")}
+          </h2>
+          <TenantListFilterTabs
+            tenantFilter={tenantFilter}
+            onChange={setTenantFilter}
+            tr={tr}
+          />
+        </div>
         {loading ? (
           <p className="mb-0">
             {tr("Loading tenant accounts...", "Cargando cuentas de tenant...")}
           </p>
-        ) : tenants.length === 0 ? (
+        ) : filteredTenants.length === 0 ? (
           <p className="mb-0">
-            {tr("No tenant accounts yet.", "Aun no hay cuentas de tenant.")}
+            {resolveTenantFilterEmptyMessage(tenantFilter, tr)}
           </p>
         ) : (
           <div className="d-flex flex-column gap-3">
-            {tenants.map((tenant) => {
+            {filteredTenants.map((tenant) => {
               const draft = drafts[tenant.id];
               const isEditing = editingTenantId === tenant.id;
               const isFeatureOpen = featuresTenantId === tenant.id;
@@ -1036,70 +1141,7 @@ export default function TenantAccountsPage() {
                     <div>
                       <div className="fw-semibold">{tenant.name}</div>
                       <div className="small text-muted">{tenant.subdomain || tenant.slug}</div>
-                      <div className="d-flex flex-wrap gap-2 mt-2">
-                        <span
-                          className={`badge ${featureState.dailySalesReportingEnabled ? "text-bg-success" : "text-bg-secondary"}`}
-                        >
-                          {tr("Daily Sales", "Ventas Diarias")}{" "}
-                          {featureState.dailySalesReportingEnabled
-                            ? tr("On", "On")
-                            : tr("Off", "Off")}
-                        </span>
-                        <span
-                          className={`badge ${featureState.reportsEnabled ? "text-bg-success" : "text-bg-secondary"}`}
-                        >
-                          {tr("Reports", "Reportes")}{" "}
-                          {featureState.reportsEnabled
-                            ? tr("On", "On")
-                            : tr("Off", "Off")}
-                        </span>
-                        <span
-                          className={`badge ${featureState.requirePin ? "text-bg-success" : "text-bg-secondary"}`}
-                        >
-                          {tr("Require PIN", "Requiere PIN")}{" "}
-                          {featureState.requirePin ? tr("On", "On") : tr("Off", "Off")}
-                        </span>
-                        <span
-                          className={`badge ${featureState.allowManualTimeEdits ? "text-bg-success" : "text-bg-secondary"}`}
-                        >
-                          {tr("Manual Edits", "Ediciones Manuales")}{" "}
-                          {featureState.allowManualTimeEdits
-                            ? tr("On", "On")
-                            : tr("Off", "Off")}
-                        </span>
-                        <span
-                          className={`badge ${featureState.companyOrdersEnabled ? "text-bg-success" : "text-bg-secondary"}`}
-                        >
-                          {tr("Company Orders", "Ordenes de Compania")}{" "}
-                          {featureState.companyOrdersEnabled
-                            ? tr("On", "On")
-                            : tr("Off", "Off")}
-                        </span>
-                        <span
-                          className={`badge ${featureState.multiLocationEnabled ? "text-bg-success" : "text-bg-secondary"}`}
-                        >
-                          {tr("Multi-Location", "Multi-Ubicacion")}{" "}
-                          {featureState.multiLocationEnabled
-                            ? tr("On", "On")
-                            : tr("Off", "Off")}
-                        </span>
-                        <span
-                          className={`badge ${featureState.liquorInventoryEnabled ? "text-bg-success" : "text-bg-secondary"}`}
-                        >
-                          {tr("Liquor Inventory", "Inventario de Licor")}{" "}
-                          {featureState.liquorInventoryEnabled
-                            ? tr("On", "On")
-                            : tr("Off", "Off")}
-                        </span>
-                        <span
-                          className={`badge ${featureState.premiumFeaturesEnabled ? "text-bg-success" : "text-bg-secondary"}`}
-                        >
-                          {tr("Premium", "Premium")}{" "}
-                          {featureState.premiumFeaturesEnabled
-                            ? tr("On", "On")
-                            : tr("Off", "Off")}
-                        </span>
-                      </div>
+                      <TenantFeatureBadges features={featureState} tr={tr} />
                     </div>
                     <div className="d-flex gap-2 flex-wrap">
                       <span
@@ -1169,11 +1211,32 @@ export default function TenantAccountsPage() {
                       </div>
                       <div className="col-12 col-md-3">
                         <label className="form-label">
+                          {tr("Tenant Profile", "Perfil del Tenant")}
+                        </label>
+                        <select
+                          className="form-select"
+                          value={getTenantProfile(draft.features)}
+                          onChange={(event) =>
+                            updateDraftProfile(
+                              tenant.id,
+                              event.target.value as TenantProfile,
+                            )
+                          }
+                        >
+                          <option value="standard">{tr("Standard", "Estandar")}</option>
+                          <option value="websys-pos">
+                            {tr("Websys POS Tenant", "Tenant Websys POS")}
+                          </option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">
                           {tr("Daily Sales Reporting", "Reporte Diario de Ventas")}
                         </label>
                         <select
                           className="form-select"
                           value={draft.features.dailySalesReportingEnabled ? "yes" : "no"}
+                          disabled={draft.features.websysPosEnabled}
                           onChange={(event) =>
                             updateDraftFeatures(
                               tenant.id,
@@ -1193,6 +1256,7 @@ export default function TenantAccountsPage() {
                         <select
                           className="form-select"
                           value={draft.features.reportsEnabled ? "yes" : "no"}
+                          disabled={draft.features.websysPosEnabled}
                           onChange={(event) =>
                             updateDraftFeatures(
                               tenant.id,
@@ -1319,6 +1383,16 @@ export default function TenantAccountsPage() {
                           <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
+                      {draft.features.websysPosEnabled && (
+                        <div className="col-12">
+                          <div className="form-text">
+                            {tr(
+                              "Websys POS tenants keep Reports and Daily Sales Reporting enabled so the POS integration always has the required reporting surface.",
+                              "Los tenants Websys POS mantienen Reportes y Reporte Diario de Ventas habilitados para que la integracion POS siempre tenga la superficie de reportes requerida.",
+                            )}
+                          </div>
+                        </div>
+                      )}
                       <div className="col-12 d-flex gap-2">
                         <button
                           type="button"
@@ -1465,11 +1539,32 @@ export default function TenantAccountsPage() {
                       </div>
                       <div className="col-12 col-md-3">
                         <label className="form-label">
+                          {tr("Tenant Profile", "Perfil del Tenant")}
+                        </label>
+                        <select
+                          className="form-select"
+                          value={getTenantProfile(draft.features)}
+                          onChange={(event) =>
+                            updateDraftProfile(
+                              tenant.id,
+                              event.target.value as TenantProfile,
+                            )
+                          }
+                        >
+                          <option value="standard">{tr("Standard", "Estandar")}</option>
+                          <option value="websys-pos">
+                            {tr("Websys POS Tenant", "Tenant Websys POS")}
+                          </option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label">
                           {tr("Reports Enabled", "Reportes Habilitados")}
                         </label>
                         <select
                           className="form-select"
                           value={draft.features.reportsEnabled ? "yes" : "no"}
+                          disabled={draft.features.websysPosEnabled}
                           onChange={(event) =>
                             updateDraftFeatures(
                               tenant.id,
@@ -1525,6 +1620,7 @@ export default function TenantAccountsPage() {
                         <select
                           className="form-select"
                           value={draft.features.dailySalesReportingEnabled ? "yes" : "no"}
+                          disabled={draft.features.websysPosEnabled}
                           onChange={(event) =>
                             updateDraftFeatures(
                               tenant.id,
@@ -1537,6 +1633,16 @@ export default function TenantAccountsPage() {
                           <option value="no">{tr("No", "No")}</option>
                         </select>
                       </div>
+                      {draft.features.websysPosEnabled && (
+                        <div className="col-12">
+                          <div className="form-text">
+                            {tr(
+                              "Websys POS tenants keep Reports and Daily Sales Reporting enabled.",
+                              "Los tenants Websys POS mantienen Reportes y Reporte Diario de Ventas habilitados.",
+                            )}
+                          </div>
+                        </div>
+                      )}
                       <div className="col-12 col-md-3">
                         <label className="form-label">
                           {tr("Company Orders", "Ordenes de Compania")}

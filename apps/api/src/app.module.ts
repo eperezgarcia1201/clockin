@@ -22,6 +22,7 @@ import { TenantDirectoryModule } from './tenant-directory/tenant-directory.modul
 import { EmployeeTipsModule } from './employee-tips/employee-tips.module';
 import { CompanyOrdersModule } from './company-orders/company-orders.module';
 import { LiquorInventoryModule } from './liquor-inventory/liquor-inventory.module';
+import { RestaurantPosIntegrationModule } from './restaurant-pos-integration/restaurant-pos-integration.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { LiquorInventoryModule } from './liquor-inventory/liquor-inventory.modul
     EmployeeTipsModule,
     CompanyOrdersModule,
     LiquorInventoryModule,
+    RestaurantPosIntegrationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

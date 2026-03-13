@@ -40,6 +40,10 @@ export class TenantFeaturesDto {
 
   @IsOptional()
   @IsBoolean()
+  websysPosEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   liquorInventoryEnabled?: boolean;
 
   @IsOptional()
