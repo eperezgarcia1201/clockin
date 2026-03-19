@@ -25,6 +25,7 @@ export const auditCopy: Record<UiLang, Record<string, string>> = {
     office: "Office",
     group: "Group",
     notes: "Notes",
+    photos: "Punch Photos",
     empty: "—",
   },
   es: {
@@ -51,6 +52,7 @@ export const auditCopy: Record<UiLang, Record<string, string>> = {
     office: "Ubicación",
     group: "Grupo",
     notes: "Notas",
+    photos: "Fotos de marcación",
     empty: "—",
   },
 };

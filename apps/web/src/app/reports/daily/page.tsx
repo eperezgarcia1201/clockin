@@ -10,6 +10,7 @@ import {
   useUiLanguage,
   type UiLang,
 } from "../../../lib/ui-language";
+import { PunchPhotoLinks } from "../components/PunchPhotoLinks";
 
 type Employee = { id: string; name: string };
 
@@ -20,6 +21,13 @@ type DayRow = {
   hoursFormatted: string;
   firstIn?: string | null;
   lastOut?: string | null;
+  photoCount?: number;
+  photoPunches?: Array<{
+    punchId: string;
+    type: string;
+    occurredAt: string;
+    photoCapturedAt?: string | null;
+  }>;
 };
 
 type EmployeeDaily = {
@@ -71,6 +79,7 @@ const copy: Record<UiLang, Record<string, string>> = {
     actions: "Actions",
     needsReview: "Needs review",
     span: "Span",
+    photos: "Punch Photos",
   },
   es: {
     title: "Reporte Diario de Tiempo",
@@ -105,6 +114,7 @@ const copy: Record<UiLang, Record<string, string>> = {
     actions: "Acciones",
     needsReview: "Requiere revisión",
     span: "Rango",
+    photos: "Fotos de marcación",
   },
 };
 
@@ -349,6 +359,7 @@ export default function DailyReport() {
                       <th>{t.lastOut}</th>
                       <th>{t.total}</th>
                       <th>{t.decimal}</th>
+                      <th>{t.photos}</th>
                       <th>{t.actions}</th>
                     </tr>
                   </thead>
@@ -397,6 +408,12 @@ export default function DailyReport() {
                           )}
                         </td>
                           <td>{day.hoursDecimal.toFixed(2)}</td>
+                          <td>
+                            <PunchPhotoLinks
+                              punches={day.photoPunches}
+                              lang={lang}
+                            />
+                          </td>
                           <td>
                             <a
                               className={`btn btn-sm ${

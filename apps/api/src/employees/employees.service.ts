@@ -77,6 +77,8 @@ export class EmployeesService {
       isReports: employee.isReports,
       isServer: employee.isServer,
       isKitchenManager: employee.isKitchenManager,
+      allowOpenSchedule: employee.allowOpenSchedule,
+      requiresPunchPhoto: employee.requiresPunchPhoto,
       isOwnerManager:
         employee.isManager &&
         this.hasOwnerManagerPermission(employee.managerPermissions),
@@ -121,6 +123,8 @@ export class EmployeesService {
         isReports: dto.isReports ?? false,
         isServer: dto.isServer ?? false,
         isKitchenManager: dto.isKitchenManager ?? false,
+        allowOpenSchedule: dto.allowOpenSchedule ?? false,
+        requiresPunchPhoto: dto.requiresPunchPhoto ?? false,
         disabled: dto.disabled ?? false,
         deletedAt: null,
         deletedBy: null,
@@ -164,6 +168,8 @@ export class EmployeesService {
       isReports: employee.isReports,
       isServer: employee.isServer,
       isKitchenManager: employee.isKitchenManager,
+      allowOpenSchedule: employee.allowOpenSchedule,
+      requiresPunchPhoto: employee.requiresPunchPhoto,
       isOwnerManager:
         employee.isManager &&
         this.hasOwnerManagerPermission(employee.managerPermissions),
@@ -259,6 +265,12 @@ export class EmployeesService {
     }
     if (dto.isKitchenManager !== undefined) {
       data.isKitchenManager = dto.isKitchenManager;
+    }
+    if (dto.allowOpenSchedule !== undefined) {
+      data.allowOpenSchedule = dto.allowOpenSchedule;
+    }
+    if (dto.requiresPunchPhoto !== undefined) {
+      data.requiresPunchPhoto = dto.requiresPunchPhoto;
     }
     if (dto.disabled !== undefined) {
       data.disabled = dto.disabled;

@@ -15,6 +15,8 @@ export type EmployeeRow = {
   isReports?: boolean;
   isServer?: boolean;
   isKitchenManager?: boolean;
+  allowOpenSchedule?: boolean;
+  requiresPunchPhoto?: boolean;
   deletedAt?: string | null;
   deletedBy?: string | null;
   hoursRecordCount?: number;
@@ -39,6 +41,8 @@ export type EmployeePayload = {
   isReports: boolean;
   isServer: boolean;
   isKitchenManager: boolean;
+  allowOpenSchedule: boolean;
+  requiresPunchPhoto: boolean;
   disabled: boolean;
 };
 
@@ -62,6 +66,8 @@ export type EmployeeDetail = {
   isReports: boolean;
   isServer: boolean;
   isKitchenManager: boolean;
+  allowOpenSchedule: boolean;
+  requiresPunchPhoto: boolean;
   disabled: boolean;
 };
 

@@ -15,6 +15,7 @@ type AuditRecord = {
   office?: string;
   group?: string;
   notes?: string;
+  hasPhoto?: boolean;
 };
 
 type AuditReportResponse = {
@@ -46,6 +47,7 @@ export async function GET(request: Request) {
       { header: "Office", key: "office", width: 18 },
       { header: "Group", key: "group", width: 18 },
       { header: "Notes", key: "notes", width: 30 },
+      { header: "Has Punch Photo", key: "hasPhoto", width: 16 },
     ];
 
     data.records?.forEach((record) => {
@@ -60,6 +62,7 @@ export async function GET(request: Request) {
         office: record.office || "",
         group: record.group || "",
         notes: record.notes || "",
+        hasPhoto: record.hasPhoto ? "Yes" : "No",
       });
     });
   });

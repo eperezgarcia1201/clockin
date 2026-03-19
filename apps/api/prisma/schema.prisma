@@ -208,6 +208,8 @@ model Employee {
   isReports          Boolean   @default(false)
   isServer           Boolean   @default(false)
   isKitchenManager   Boolean   @default(false)
+  allowOpenSchedule  Boolean   @default(false)
+  requiresPunchPhoto Boolean   @default(false)
   disabled           Boolean   @default(false)
   deletedAt          DateTime?
   deletedBy          String?
@@ -323,6 +325,9 @@ model EmployeePunch {
   ipAddress  String?
   latitude   Float?
   longitude  Float?
+  photoData  Bytes?
+  photoMimeType String?
+  photoCapturedAt DateTime?
   createdAt  DateTime  @default(now())
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id])

@@ -948,6 +948,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         employee: {
           disabled: false,
           deletedAt: null,
+          allowOpenSchedule: false,
         },
       },
       select: {

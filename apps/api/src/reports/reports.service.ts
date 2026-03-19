@@ -57,6 +57,15 @@ type DayHours = {
   hoursFormatted: string;
   firstIn?: string | null;
   lastOut?: string | null;
+  photoCount?: number;
+  photoPunches?: PunchPhotoSummary[];
+};
+
+type PunchPhotoSummary = {
+  punchId: string;
+  type: PunchType;
+  occurredAt: string;
+  photoCapturedAt: string | null;
 };
 
 type DayTips = {
@@ -404,7 +413,13 @@ export class ReportsService {
       },
       orderBy: { occurredAt: 'desc' },
       take: input.limit && input.limit > 0 ? input.limit : 200,
-      include: {
+      select: {
+        id: true,
+        type: true,
+        occurredAt: true,
+        notes: true,
+        photoMimeType: true,
+        photoCapturedAt: true,
         employee: {
           select: {
             fullName: true,
@@ -425,6 +440,8 @@ export class ReportsService {
         type: punch.type,
         occurredAt: punch.occurredAt.toISOString(),
         notes: punch.notes ?? '',
+        hasPhoto: Boolean(punch.photoMimeType),
+        photoCapturedAt: punch.photoCapturedAt?.toISOString() ?? null,
       })),
     };
   }
@@ -2069,6 +2086,15 @@ export class ReportsService {
         occurredAt: { gte: rangeStartDate, lte: rangeEndDate },
       },
       orderBy: { occurredAt: 'asc' },
+      select: {
+        id: true,
+        employeeId: true,
+        occurredAt: true,
+        type: true,
+        notes: true,
+        photoMimeType: true,
+        photoCapturedAt: true,
+      },
     });
 
     const lastBeforeRange = await this.prisma.employeePunch.findMany({
@@ -2079,6 +2105,15 @@ export class ReportsService {
       },
       orderBy: { occurredAt: 'desc' },
       distinct: ['employeeId'],
+      select: {
+        id: true,
+        employeeId: true,
+        occurredAt: true,
+        type: true,
+        notes: true,
+        photoMimeType: true,
+        photoCapturedAt: true,
+      },
     });
 
     const lastBeforeMap = new Map(
@@ -2098,6 +2133,9 @@ export class ReportsService {
         where: {
           tenantId: tenant.id,
           employeeId: { in: employeeIds },
+          employee: {
+            allowOpenSchedule: false,
+          },
         },
         select: {
           employeeId: true,
@@ -2246,8 +2284,22 @@ function buildDailySummary({
   roundTo,
   includeInOutTimes,
 }: {
-  punches: Array<{ occurredAt: Date; type: PunchType; notes?: string | null }>;
-  before?: { type: PunchType } | null;
+  punches: Array<{
+    id: string;
+    occurredAt: Date;
+    type: PunchType;
+    notes?: string | null;
+    photoMimeType?: string | null;
+    photoCapturedAt?: Date | null;
+  }>;
+  before?: {
+    id: string;
+    occurredAt: Date;
+    type: PunchType;
+    notes?: string | null;
+    photoMimeType?: string | null;
+    photoCapturedAt?: Date | null;
+  } | null;
   scheduledMinutesByWeekday?: Map<number, number>;
   missedBreakDeductionPolicy?: MissedBreakDeductionPolicy | null;
   rangeStartUtc: number;
@@ -2349,6 +2401,14 @@ function buildDailySummary({
         minutes - penaltyMinutes - missedBreakDeductionMinutes,
       );
       const roundedMinutes = roundMinutes(adjustedMinutes, roundTo);
+      const photoPunches = dayPunches
+        .filter((punch) => Boolean(punch.photoMimeType))
+        .map((punch) => ({
+          punchId: punch.id,
+          type: punch.type,
+          occurredAt: punch.occurredAt.toISOString(),
+          photoCapturedAt: punch.photoCapturedAt?.toISOString() ?? null,
+        }));
 
       let firstIn: string | null = null;
       let lastOut: string | null = null;
@@ -2372,6 +2432,8 @@ function buildDailySummary({
         hoursFormatted: formatHoursMinutes(roundedMinutes),
         firstIn,
         lastOut,
+        photoCount: photoPunches.length,
+        photoPunches,
       };
     });
 

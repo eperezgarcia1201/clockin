@@ -386,6 +386,7 @@ export default function UsersSummary() {
                   <th>{tr("Reports", "Reportes")}</th>
                   <th>{tr("Server", "Mesero")}</th>
                   <th>{tr("Kitchen Mgr", "Mgr Cocina")}</th>
+                  <th>{tr("Open Schedule", "Horario Abierto")}</th>
                   <th>{tr("Actions", "Acciones")}</th>
                 </tr>
               </thead>
@@ -420,6 +421,7 @@ export default function UsersSummary() {
                     <td>{employee.isReports ? tr("Yes", "Si") : ""}</td>
                     <td>{employee.isServer ? tr("Yes", "Si") : ""}</td>
                     <td>{employee.isKitchenManager ? tr("Yes", "Si") : ""}</td>
+                    <td>{employee.allowOpenSchedule ? tr("Yes", "Si") : ""}</td>
                     <td>
                       <div className="d-flex gap-2">
                         <a

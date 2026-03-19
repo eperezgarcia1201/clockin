@@ -10,6 +10,7 @@ import {
   useUiLanguage,
   type UiLang,
 } from "../../../lib/ui-language";
+import { PunchPhotoLinks } from "../components/PunchPhotoLinks";
 
 type Employee = { id: string; name: string };
 
@@ -18,6 +19,13 @@ type DayHours = {
   minutes: number;
   hoursDecimal: number;
   hoursFormatted: string;
+  photoCount?: number;
+  photoPunches?: Array<{
+    punchId: string;
+    type: string;
+    occurredAt: string;
+    photoCapturedAt?: string | null;
+  }>;
 };
 
 type EmployeeReport = {
@@ -68,6 +76,7 @@ const copy: Record<UiLang, Record<string, string>> = {
     decimal: "Decimal",
     otWeek: "OT (Week)",
     weekTotalHours: "Week Total (hrs)",
+    photos: "Punch Photos",
   },
   es: {
     title: "Reporte de Horas Trabajadas",
@@ -101,6 +110,7 @@ const copy: Record<UiLang, Record<string, string>> = {
     decimal: "Decimal",
     otWeek: "HE (semana)",
     weekTotalHours: "Total semanal (hrs)",
+    photos: "Fotos de marcación",
   },
 };
 
@@ -407,6 +417,7 @@ export default function HoursReport() {
                         <th>{t.hours}</th>
                         <th>{t.decimal}</th>
                         <th>{t.otWeek}</th>
+                        <th>{t.photos}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -419,6 +430,12 @@ export default function HoursReport() {
                             <td>{day.hoursFormatted}</td>
                             <td>{day.hoursDecimal.toFixed(2)}</td>
                             <td>{(weekInfo?.overtimeHours || 0).toFixed(2)}</td>
+                            <td>
+                              <PunchPhotoLinks
+                                punches={day.photoPunches}
+                                lang={lang}
+                              />
+                            </td>
                           </tr>
                         );
                       })}

@@ -17,6 +17,12 @@ type DayHours = {
   minutes: number;
   hoursDecimal: number;
   hoursFormatted: string;
+  photoCount?: number;
+  photoPunches?: Array<{
+    punchId?: string;
+    type?: string;
+    occurredAt?: string;
+  }>;
 };
 
 type EmployeeReport = {
@@ -602,6 +608,8 @@ export async function GET(request: Request) {
         { header: "Decimal", key: "decimal", width: 10 },
         { header: "Minutes", key: "minutes", width: 10 },
         { header: "OT (week hrs)", key: "weeklyOtHours", width: 14 },
+        { header: "Photo Count", key: "photoCount", width: 12 },
+        { header: "Photo Punches", key: "photoPunches", width: 28 },
       ];
 
       (data.employees || []).forEach((employee) => {
@@ -616,6 +624,19 @@ export async function GET(request: Request) {
             decimal: day.hoursDecimal,
             minutes: day.minutes,
             weeklyOtHours: Number((weekInfo?.overtimeHours || 0).toFixed(2)),
+            photoCount: day.photoCount ?? 0,
+            photoPunches:
+              day.photoPunches
+                ?.map((punch) => {
+                  const occurredAt = punch.occurredAt
+                    ? new Date(punch.occurredAt).toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                    : "";
+                  return `${punch.type || ""} ${occurredAt}`.trim();
+                })
+                .join("; ") || "",
           });
         });
         sheet.addRow({
@@ -626,6 +647,8 @@ export async function GET(request: Request) {
           decimal: employee.totalHoursDecimal,
           minutes: employee.totalMinutes,
           weeklyOtHours: Number(weekly.totalOvertimeHours.toFixed(2)),
+          photoCount: "",
+          photoPunches: "",
         });
         sheet.addRow({
           employee: `${employee.name} OT TOTAL`,
@@ -635,6 +658,8 @@ export async function GET(request: Request) {
           decimal: "",
           minutes: "",
           weeklyOtHours: Number(weekly.totalOvertimeHours.toFixed(2)),
+          photoCount: "",
+          photoPunches: "",
         });
         sheet.addRow({});
       });
@@ -675,6 +700,8 @@ export async function GET(request: Request) {
         "Decimal",
         "Minutes",
         "OT (week hrs)",
+        "Photo Count",
+        "Photo Punches",
       ],
     ];
 
@@ -690,6 +717,18 @@ export async function GET(request: Request) {
           day.hoursDecimal,
           day.minutes,
           Number((weekInfo?.overtimeHours || 0).toFixed(2)),
+          day.photoCount ?? 0,
+          day.photoPunches
+            ?.map((punch) => {
+              const occurredAt = punch.occurredAt
+                ? new Date(punch.occurredAt).toLocaleTimeString([], {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })
+                : "";
+              return `${punch.type || ""} ${occurredAt}`.trim();
+            })
+            .join("; ") || "",
         ]);
       });
       rows.push([
@@ -700,6 +739,8 @@ export async function GET(request: Request) {
         employee.totalHoursDecimal,
         employee.totalMinutes,
         Number(weekly.totalOvertimeHours.toFixed(2)),
+        "",
+        "",
       ]);
       rows.push([]);
     });

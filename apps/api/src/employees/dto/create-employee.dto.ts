@@ -85,5 +85,13 @@ export class CreateEmployeeDto {
 
   @IsOptional()
   @IsBoolean()
+  allowOpenSchedule?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresPunchPhoto?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   disabled?: boolean;
 }

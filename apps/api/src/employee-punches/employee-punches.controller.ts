@@ -1,16 +1,19 @@
 import {
   Body,
   Controller,
+  StreamableFile,
   Get,
   Param,
   Patch,
   Post,
   Req,
+  Res,
   UnauthorizedException,
   UseGuards,
   Delete,
   Query,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AuthOrDevGuard } from '../auth/auth.guard';
 import type { RequestWithUser } from '../auth/auth.types';
 import { EmployeePunchesService } from './employee-punches.service';
@@ -59,6 +62,26 @@ export class EmployeePunchesController {
       tzOffset: tzOffset ? Number(tzOffset) : undefined,
       officeId: officeId?.trim() || undefined,
     });
+  }
+
+  @Get('records/:id/photo')
+  async getRecordPhoto(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    const photo = await this.punches.getPunchPhoto(req.user, id);
+    response.setHeader('Content-Type', photo.mimeType);
+    response.setHeader(
+      'Content-Disposition',
+      `inline; filename="${sanitizeFilenameForHeader(photo.fileName)}"`,
+    );
+    response.setHeader('Cache-Control', 'no-store');
+    return new StreamableFile(photo.data);
   }
 
   @Post('records')
@@ -131,4 +154,8 @@ export class EmployeePunchesController {
 
     return this.punches.deleteRecord(req.user, id);
   }
+}
+
+function sanitizeFilenameForHeader(fileName: string) {
+  return fileName.replace(/["\r\n]/g, '').trim() || 'punch-photo';
 }

@@ -30,6 +30,8 @@ type FormState = {
   isReports: boolean;
   isServer: boolean;
   isKitchenManager: boolean;
+  allowOpenSchedule: boolean;
+  requiresPunchPhoto: boolean;
   disabled: boolean;
 };
 
@@ -49,6 +51,8 @@ const initialForm: FormState = {
   isReports: false,
   isServer: false,
   isKitchenManager: false,
+  allowOpenSchedule: false,
+  requiresPunchPhoto: false,
   disabled: false,
 };
 
@@ -144,6 +148,8 @@ export default function CreateUser() {
       isReports: form.isReports,
       isServer: form.isServer,
       isKitchenManager: form.isKitchenManager,
+      allowOpenSchedule: form.allowOpenSchedule,
+      requiresPunchPhoto: form.requiresPunchPhoto,
       disabled: form.disabled,
     };
 
@@ -413,6 +419,45 @@ export default function CreateUser() {
               className="form-select"
               value={form.isServer ? "yes" : "no"}
               onChange={(e) => update("isServer", e.target.value === "yes")}
+            >
+              <option value="yes">{tr("Yes", "Si")}</option>
+              <option value="no">{tr("No", "No")}</option>
+            </select>
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">
+              {tr("Open Schedule?", "Horario abierto?")}
+            </label>
+            <select
+              className="form-select"
+              value={form.allowOpenSchedule ? "yes" : "no"}
+              onChange={(e) =>
+                update("allowOpenSchedule", e.target.value === "yes")
+              }
+            >
+              <option value="yes">{tr("Yes", "Si")}</option>
+              <option value="no">{tr("No", "No")}</option>
+            </select>
+            <div className="form-text">
+              {tr(
+                "Allows this employee to clock in without a fixed daily schedule.",
+                "Permite que este usuario marque sin un horario fijo diario.",
+              )}
+            </div>
+          </div>
+          <div className="col-12 col-md-6">
+            <label className="form-label">
+              {tr(
+                "Require Face Photo on Punch?",
+                "Requerir foto facial al marcar?",
+              )}
+            </label>
+            <select
+              className="form-select"
+              value={form.requiresPunchPhoto ? "yes" : "no"}
+              onChange={(e) =>
+                update("requiresPunchPhoto", e.target.value === "yes")
+              }
             >
               <option value="yes">{tr("Yes", "Si")}</option>
               <option value="no">{tr("No", "No")}</option>

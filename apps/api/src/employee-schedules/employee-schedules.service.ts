@@ -206,6 +206,7 @@ export class EmployeeSchedulesService {
         employee: {
           deletedAt: null,
           disabled: false,
+          allowOpenSchedule: false,
           ...this.scopedOfficeFilter(
             officeScope.officeId,
             officeScope.restrictedToAllowedOffice,

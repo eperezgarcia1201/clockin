@@ -14,6 +14,12 @@ type DailyReportDay = {
   lastOut?: string;
   hoursFormatted?: string;
   hoursDecimal?: number;
+  photoCount?: number;
+  photoPunches?: Array<{
+    punchId?: string;
+    type?: string;
+    occurredAt?: string;
+  }>;
 };
 
 type DailyReportEmployee = {
@@ -56,6 +62,8 @@ export async function GET(request: Request) {
       { header: "Last Out", key: "lastOut", width: 14 },
       { header: "Hours (hh:mm)", key: "hours", width: 14 },
       { header: "Decimal", key: "decimal", width: 10 },
+      { header: "Photo Count", key: "photoCount", width: 12 },
+      { header: "Photo Punches", key: "photoPunches", width: 28 },
     ];
 
     data.employees?.forEach((employee) => {
@@ -71,6 +79,19 @@ export async function GET(request: Request) {
             : "",
           hours: day.hoursFormatted || "",
           decimal: day.hoursDecimal ?? "",
+          photoCount: day.photoCount ?? 0,
+          photoPunches:
+            day.photoPunches
+              ?.map((punch) => {
+                const occurredAt = punch.occurredAt
+                  ? new Date(punch.occurredAt).toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : "";
+                return `${punch.type || ""} ${occurredAt}`.trim();
+              })
+              .join("; ") || "",
         });
       });
       sheet.addRow({
@@ -80,6 +101,8 @@ export async function GET(request: Request) {
         lastOut: "",
         hours: employee.totalHoursFormatted || "",
         decimal: employee.totalHoursDecimal ?? "",
+        photoCount: "",
+        photoPunches: "",
       });
       sheet.addRow({});
     });

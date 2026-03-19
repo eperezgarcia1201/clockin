@@ -7,6 +7,7 @@ import {
   IsString,
   Length,
   Max,
+  MaxLength,
   Matches,
   Min,
 } from 'class-validator';
@@ -52,4 +53,9 @@ export class CreateEmployeePunchDto {
   @Length(4, 4)
   @Matches(/^\d{4}$/)
   pin?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(6000000)
+  photoDataUrl?: string;
 }

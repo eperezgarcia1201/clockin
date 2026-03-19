@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -17,11 +18,17 @@ import { compare } from 'bcryptjs';
 import type { ManualEmployeePunchDto } from './dto/manual-employee-punch.dto';
 import type { UpdateEmployeePunchDto } from './dto/update-employee-punch.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { parsePunchPhotoDataUrl } from './punch-photo';
 
 const ACTIVE_WORK_STATUSES = new Set<PunchType>([
   PunchType.IN,
   PunchType.BREAK,
   PunchType.LUNCH,
+]);
+const PUNCH_PHOTO_REQUIRED_TYPES = new Set<PunchType>([
+  PunchType.IN,
+  PunchType.BREAK,
+  PunchType.OUT,
 ]);
 const LOCAL_DAY_SCAN_WINDOW_MS = 36 * 60 * 60 * 1000;
 const DEFAULT_GEOFENCE_RADIUS_METERS = 120;
@@ -104,6 +111,17 @@ export class EmployeePunchesService {
       }
     }
 
+    const punchPhoto = parsePunchPhotoDataUrl(dto.photoDataUrl);
+    if (
+      employee.requiresPunchPhoto &&
+      PUNCH_PHOTO_REQUIRED_TYPES.has(dto.type) &&
+      !punchPhoto
+    ) {
+      throw new BadRequestException(
+        'A face photo is required for this punch.',
+      );
+    }
+
     if (dto.type === PunchType.IN) {
       await this.enforceNoActiveShift(tenant.id, employee.id);
       await this.enforceClockInGeofence(tenant.id, employee.officeId, dto);
@@ -120,7 +138,7 @@ export class EmployeePunchesService {
         tenant.id,
         employee.id,
       );
-      if (!ownerClockExempt) {
+      if (!ownerClockExempt && !employee.allowOpenSchedule) {
         scheduleOverrideRequestId = await this.enforceScheduleWithOverride(
           tenant.id,
           {
@@ -156,6 +174,21 @@ export class EmployeePunchesService {
         ipAddress: dto.ipAddress,
         latitude: dto.latitude,
         longitude: dto.longitude,
+        photoData: punchPhoto?.buffer,
+        photoMimeType: punchPhoto?.mimeType,
+        photoCapturedAt: punchPhoto ? new Date() : null,
+      },
+      select: {
+        id: true,
+        employeeId: true,
+        type: true,
+        occurredAt: true,
+        notes: true,
+        ipAddress: true,
+        latitude: true,
+        longitude: true,
+        createdAt: true,
+        photoMimeType: true,
       },
     });
 
@@ -189,7 +222,16 @@ export class EmployeePunchesService {
         : null;
 
     return {
-      ...punch,
+      id: punch.id,
+      employeeId: punch.employeeId,
+      type: punch.type,
+      occurredAt: punch.occurredAt,
+      notes: punch.notes,
+      ipAddress: punch.ipAddress,
+      latitude: punch.latitude,
+      longitude: punch.longitude,
+      createdAt: punch.createdAt,
+      hasPhoto: Boolean(punch.photoMimeType),
       managerMessage,
     };
   }
@@ -225,7 +267,14 @@ export class EmployeePunchesService {
       include: {
         office: { select: { name: true } },
         group: { select: { name: true } },
-        punches: { orderBy: { occurredAt: 'desc' }, take: 1 },
+        punches: {
+          orderBy: { occurredAt: 'desc' },
+          take: 1,
+          select: {
+            type: true,
+            occurredAt: true,
+          },
+        },
       },
     });
 
@@ -293,7 +342,15 @@ export class EmployeePunchesService {
       },
       orderBy: { occurredAt: 'desc' },
       take: limit,
-      include: {
+      select: {
+        id: true,
+        employeeId: true,
+        type: true,
+        occurredAt: true,
+        notes: true,
+        latitude: true,
+        longitude: true,
+        photoMimeType: true,
         employee: {
           select: {
             id: true,
@@ -318,7 +375,63 @@ export class EmployeePunchesService {
         notes: punch.notes ?? '',
         latitude: punch.latitude ?? null,
         longitude: punch.longitude ?? null,
+        hasPhoto: Boolean(punch.photoMimeType),
       })),
+    };
+  }
+
+  async getPunchPhoto(authUser: AuthUser, recordId: string) {
+    const access = await this.tenancy.requireAnyFeature(authUser, [
+      'reports',
+      'timeEdits',
+    ]);
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
+
+    const punch = await this.prisma.employeePunch.findFirst({
+      where: {
+        id: recordId,
+        tenantId: tenant.id,
+        employee: this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
+      select: {
+        id: true,
+        type: true,
+        occurredAt: true,
+        photoData: true,
+        photoMimeType: true,
+        photoCapturedAt: true,
+        employee: {
+          select: {
+            fullName: true,
+            displayName: true,
+          },
+        },
+      },
+    });
+
+    if (!punch) {
+      throw new NotFoundException('Punch record not found.');
+    }
+
+    if (!punch.photoData || !punch.photoMimeType || !punch.photoCapturedAt) {
+      throw new NotFoundException('Punch photo not found for this record.');
+    }
+
+    const employeeName =
+      punch.employee.displayName || punch.employee.fullName || 'employee';
+    const occurredAtKey = punch.occurredAt.toISOString().replace(/[:.]/g, '-');
+
+    return {
+      mimeType: punch.photoMimeType,
+      fileName: buildPunchPhotoFileName(
+        `${employeeName}-${punch.type}-${occurredAtKey}`,
+        punch.photoMimeType,
+      ),
+      data: punch.photoData,
     };
   }
 
@@ -1432,5 +1545,31 @@ export class EmployeePunchesService {
       };
     }
     return null;
+  }
+}
+
+function buildPunchPhotoFileName(baseName: string, mimeType: string) {
+  const safeBase = baseName
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+
+  return `${safeBase || 'punch-photo'}.${punchPhotoExtension(mimeType)}`;
+}
+
+function punchPhotoExtension(mimeType: string) {
+  switch (mimeType) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/png':
+      return 'png';
+    case 'image/webp':
+      return 'webp';
+    case 'image/heic':
+      return 'heic';
+    default:
+      return 'bin';
   }
 }
