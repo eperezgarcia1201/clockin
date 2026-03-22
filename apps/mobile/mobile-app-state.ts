@@ -23,6 +23,7 @@ import type {
 export function useMobileAppState() {
   const [language, setLanguage] = useState<Language>("en");
   const [tenant, setTenant] = useState<TenantContext | null>(null);
+  const [recentTenants, setRecentTenants] = useState<TenantContext[]>([]);
   const [tenantInput, setTenantInput] = useState("");
   const [tenantStatus, setTenantStatus] = useState<string | null>(null);
   const [resolvingTenant, setResolvingTenant] = useState(false);
@@ -50,12 +51,10 @@ export function useMobileAppState() {
   const [tipsStatus, setTipsStatus] = useState<string | null>(null);
   const [tipsAlert, setTipsAlert] = useState(false);
   const [serverTipsRequired, setServerTipsRequired] = useState(false);
-  const [pendingTipWorkDate, setPendingTipWorkDate] = useState<string | null>(
-    null,
-  );
-  const [tipsSubmittedByDay, setTipsSubmittedByDay] = useState<
-    Record<string, boolean>
-  >({});
+  const [pendingTipWorkDate, setPendingTipWorkDate] = useState<string | null>(null);
+  const [tipsSubmittedByDay, setTipsSubmittedByDay] = useState<Record<string, boolean>>({});
+  const [tiplessClockOutWarningsByDay, setTiplessClockOutWarningsByDay] =
+    useState<Record<string, boolean>>({});
   const [tipsReminderEmployeeId, setTipsReminderEmployeeId] = useState<
     string | null
   >(null);
@@ -68,11 +67,8 @@ export function useMobileAppState() {
     type: string;
     occurredAt: Date;
   } | null>(null);
-  const [todaySchedule, setTodaySchedule] =
-    useState<TodayScheduleResponse | null>(null);
-  const [todayScheduleStatus, setTodayScheduleStatus] = useState<string | null>(
-    null,
-  );
+  const [todaySchedule, setTodaySchedule] = useState<TodayScheduleResponse | null>(null);
+  const [todayScheduleStatus, setTodayScheduleStatus] = useState<string | null>(null);
   const [todayScheduleLoading, setTodayScheduleLoading] = useState(false);
   const [todayRoleFilter, setTodayRoleFilter] = useState(ALL_ROLE_FILTER);
   const [workingNowRows, setWorkingNowRows] = useState<WorkingNowRow[]>([]);
@@ -147,6 +143,8 @@ export function useMobileAppState() {
     setLanguage,
     tenant,
     setTenant,
+    recentTenants,
+    setRecentTenants,
     tenantInput,
     setTenantInput,
     tenantStatus,
@@ -197,6 +195,8 @@ export function useMobileAppState() {
     setPendingTipWorkDate,
     tipsSubmittedByDay,
     setTipsSubmittedByDay,
+    tiplessClockOutWarningsByDay,
+    setTiplessClockOutWarningsByDay,
     tipsReminderEmployeeId,
     setTipsReminderEmployeeId,
     activeShift,

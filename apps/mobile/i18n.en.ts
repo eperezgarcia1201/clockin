@@ -8,6 +8,9 @@ export const i18nEn =
     tenantName: "Tenant Name",
     continue: "Continue",
     checking: "Checking...",
+    recentTenants: "Recent Tenants",
+    tapSavedTenantToContinue:
+      "Tap a saved tenant to continue without typing it again.",
     tenant: "Tenant",
     clockStation: "Clock Station",
     systemOnline: "System Online",
@@ -51,12 +54,26 @@ export const i18nEn =
     tapSubmitTipsFirst:
       'Tap "Tap to Submit Tips" first, then confirm clock out.',
     punchRecorded: "Punch recorded.",
+    secondTiplessClockOutWarning:
+      "Tips are still missing. Tap clock out again to continue without tips, and we will remind you next shift.",
+    missedTipsReminder:
+      "You have missed tips from {date}. Submit them when you can.",
+    missedTipsStatus: "Missed tips from {date}.",
     activeShiftRestored: "Active shift restored on this device.",
     punchFailed: "Punch failed.",
     selectValidEmployee: "Select a valid employee first.",
     pinMustBe4Digits: "PIN must be 4 digits.",
     invalidPinResetHint:
       "Invalid PIN. Confirm your 4-digit PIN or ask admin to reset it.",
+    capturingFacePhoto: "Capturing face photo...",
+    facePhotoCameraPermissionRequired:
+      "Camera permission is required for face photo verification.",
+    facePhotoCanceled:
+      "Face photo capture was canceled. This punch was not submitted.",
+    facePhotoRequired:
+      "A face photo is required for this punch.",
+    facePhotoRequiredNotice:
+      "This punch will open the camera for face verification.",
     tipsOnlyForServers: "Tips can only be submitted for server users.",
     tipsMustBeValid: "Tips must be valid non-negative numbers.",
     tipsSaved: "Tips saved for today.",

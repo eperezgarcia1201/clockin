@@ -1,5 +1,8 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
-import { isOfficeScopeUnsupportedError } from "./app-helpers";
+import {
+  isFeatureAccessDeniedError,
+  isOfficeScopeUnsupportedError,
+} from "./app-helpers";
 import { fetchEmployeesWithOfficeFallback } from "./employee-load-runtime";
 import { normalizeTodayScheduleResponse } from "./today-schedule-helpers";
 import { fetchTodayScheduleWithFallback } from "./today-schedule-runtime";
@@ -29,6 +32,7 @@ export const useViewLoadActions = (params: {
   tenant: TenantContext | null;
   loadingLocations: boolean;
   canUseClockScreen: boolean;
+  hasTeamDashboardAccess: boolean;
   selectedOfficeId: string | null;
   fetchJson: FetchJson;
   t: ViewLoadText;
@@ -91,7 +95,12 @@ export const useViewLoadActions = (params: {
   ]);
 
   const loadTodaySchedule = useCallback(async () => {
-    if (!params.tenant || params.loadingLocations || !params.canUseClockScreen) {
+    if (
+      !params.tenant ||
+      params.loadingLocations ||
+      !params.canUseClockScreen ||
+      !params.hasTeamDashboardAccess
+    ) {
       params.setTodaySchedule(null);
       params.setTodayScheduleStatus(null);
       return;
@@ -115,9 +124,11 @@ export const useViewLoadActions = (params: {
         ),
       );
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : params.t.unableToLoadTodayTeam;
       params.setTodaySchedule(null);
       params.setTodayScheduleStatus(
-        error instanceof Error ? error.message : params.t.unableToLoadTodayTeam,
+        isFeatureAccessDeniedError(message) ? null : message,
       );
     } finally {
       params.setTodayScheduleLoading(false);
@@ -125,6 +136,7 @@ export const useViewLoadActions = (params: {
   }, [
     params.canUseClockScreen,
     params.fetchJson,
+    params.hasTeamDashboardAccess,
     params.loadingLocations,
     params.selectedOfficeId,
     params.t.unableToLoadTodayTeam,
@@ -136,7 +148,12 @@ export const useViewLoadActions = (params: {
   ]);
 
   const loadWorkingNow = useCallback(async () => {
-    if (!params.tenant || params.loadingLocations || !params.canUseClockScreen) {
+    if (
+      !params.tenant ||
+      params.loadingLocations ||
+      !params.canUseClockScreen ||
+      !params.hasTeamDashboardAccess
+    ) {
       params.setWorkingNowRows([]);
       params.setWorkingNowStatus(null);
       return;
@@ -160,9 +177,11 @@ export const useViewLoadActions = (params: {
       const normalized = normalizeWorkingNowRows(data.rows);
       params.setWorkingNowRows(normalized);
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : params.t.unableToLoadWorkingNow;
       params.setWorkingNowRows([]);
       params.setWorkingNowStatus(
-        error instanceof Error ? error.message : params.t.unableToLoadWorkingNow,
+        isFeatureAccessDeniedError(message) ? null : message,
       );
     } finally {
       params.setWorkingNowLoading(false);
@@ -170,6 +189,7 @@ export const useViewLoadActions = (params: {
   }, [
     params.canUseClockScreen,
     params.fetchJson,
+    params.hasTeamDashboardAccess,
     params.loadingLocations,
     params.selectedOfficeId,
     params.t.unableToLoadWorkingNow,

@@ -40,6 +40,7 @@ const AUTO_OUT_PENALTY_MINUTES = 90;
 const AUTO_OUT_TIPS_PENDING_NONE = 'NONE';
 const AUTO_OUT_LOOKBACK_DAYS = 14;
 const TIP_PENDING_LOOKBACK_DAYS = 7;
+const TIPS_PENDING_TOKEN_PREFIX = '[TIPS_PENDING:';
 
 type ScheduleViolation = {
   reason: ScheduleOverrideReason;
@@ -100,6 +101,8 @@ export class EmployeePunchesService {
     const requirePin = settings?.requirePin ?? true;
     const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
     let scheduleOverrideRequestId: string | null = null;
+    let pendingTipReminderWorkDate: string | null = null;
+    let missedTipsWorkDate: string | null = null;
 
     if (requirePin && employee.pinHash) {
       if (!dto.pin) {
@@ -125,7 +128,7 @@ export class EmployeePunchesService {
     if (dto.type === PunchType.IN) {
       await this.enforceNoActiveShift(tenant.id, employee.id);
       await this.enforceClockInGeofence(tenant.id, employee.officeId, dto);
-      await this.enforcePendingAutoClockOutTipsBeforeClockIn(
+      pendingTipReminderWorkDate = await this.findPendingTipsReminderWorkDate(
         tenant.id,
         {
           id: employee.id,
@@ -153,7 +156,7 @@ export class EmployeePunchesService {
     }
 
     if (dto.type === PunchType.OUT) {
-      await this.enforceServerTipBeforeClockOut(
+      missedTipsWorkDate = await this.enforceServerTipBeforeClockOut(
         tenant.id,
         {
           id: employee.id,
@@ -161,6 +164,7 @@ export class EmployeePunchesService {
         },
         occurredAt,
         settings?.timezone,
+        dto.allowMissingTips === true,
       );
     }
 
@@ -170,7 +174,7 @@ export class EmployeePunchesService {
         employeeId: employee.id,
         type: dto.type,
         occurredAt,
-        notes: dto.notes,
+        notes: this.appendTipsPendingNote(dto.notes, missedTipsWorkDate),
         ipAddress: dto.ipAddress,
         latitude: dto.latitude,
         longitude: dto.longitude,
@@ -233,6 +237,7 @@ export class EmployeePunchesService {
       createdAt: punch.createdAt,
       hasPhoto: Boolean(punch.photoMimeType),
       managerMessage,
+      pendingTipReminderWorkDate,
     };
   }
 
@@ -916,9 +921,10 @@ export class EmployeePunchesService {
     employee: { id: string; isServer: boolean },
     occurredAt: Date,
     timeZone?: string,
-  ) {
+    allowMissingTips = false,
+  ): Promise<string | null> {
     if (!employee.isServer) {
-      return;
+      return null;
     }
 
     const workDate = this.toLocalDateKey(occurredAt, timeZone);
@@ -936,10 +942,15 @@ export class EmployeePunchesService {
     });
 
     if (!tip) {
+      if (allowMissingTips) {
+        return workDate;
+      }
       throw new UnauthorizedException(
         'Server users must submit cash and credit card tips before clocking out.',
       );
     }
+
+    return null;
   }
 
   private async autoClockOutAfterSchedule(tenantId: string, timeZone?: string) {
@@ -1176,14 +1187,14 @@ export class EmployeePunchesService {
     }
   }
 
-  private async enforcePendingAutoClockOutTipsBeforeClockIn(
+  private async findPendingTipsReminderWorkDate(
     tenantId: string,
     employee: { id: string; isServer: boolean },
     occurredAt: Date,
     timeZone?: string,
-  ) {
+  ): Promise<string | null> {
     if (!employee.isServer) {
-      return;
+      return null;
     }
 
     const lookbackStart = new Date(
@@ -1199,7 +1210,7 @@ export class EmployeePunchesService {
           lte: occurredAt,
         },
         notes: {
-          contains: AUTO_SCHEDULE_OUT_TOKEN,
+          contains: TIPS_PENDING_TOKEN_PREFIX,
         },
       },
       orderBy: {
@@ -1211,7 +1222,7 @@ export class EmployeePunchesService {
     });
 
     if (!autoOutPunches.length) {
-      return;
+      return null;
     }
 
     const pendingWorkDates: string[] = [];
@@ -1226,7 +1237,7 @@ export class EmployeePunchesService {
     });
 
     if (!pendingWorkDates.length) {
-      return;
+      return null;
     }
 
     const submittedTips = await this.prisma.employeeTip.findMany({
@@ -1249,13 +1260,7 @@ export class EmployeePunchesService {
       .filter((dateKey) => dateKey <= currentDate && !submitted.has(dateKey))
       .sort()[0];
 
-    if (!missing) {
-      return;
-    }
-
-    throw new UnauthorizedException(
-      `Pending tips required for work date ${missing} before clocking in.`,
-    );
+    return missing || null;
   }
 
   private async enforceScheduleWithOverride(
@@ -1485,6 +1490,21 @@ export class EmployeePunchesService {
       return null;
     }
     return value;
+  }
+
+  private appendTipsPendingNote(
+    notes: string | undefined,
+    workDate: string | null,
+  ) {
+    const base = (notes || '').trim();
+    if (!workDate) {
+      return base || undefined;
+    }
+    if (this.parsePendingTipsWorkDate(base) === workDate) {
+      return base;
+    }
+    const suffix = `[TIPS_PENDING:${workDate}]`;
+    return base ? `${base} ${suffix}` : suffix;
   }
 
   private dateKeyToUtc(dateKey: string) {

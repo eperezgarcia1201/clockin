@@ -36,6 +36,12 @@ export const formatScheduleTimeLabel = (value: string) => {
   const hour12 = ((hours24 + 11) % 12) + 1;
   return `${String(hour12).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${meridiem}`;
 };
+export const localDateKey = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 export const getCurrentWeekStartDateKey = () => {
   const now = new Date();
   const utcDate = new Date(
@@ -46,11 +52,13 @@ export const getCurrentWeekStartDateKey = () => {
   utcDate.setUTCDate(utcDate.getUTCDate() - distanceToMonday);
   return utcDate.toISOString().slice(0, 10);
 };
-export const todayDateKey = () => new Date().toISOString().slice(0, 10);
+export const todayDateKey = () => localDateKey();
 export const getTipSubmissionKey = (employeeId: string, workDate?: string) => {
-  const normalizedDate = workDate || new Date().toISOString().slice(0, 10);
+  const normalizedDate = workDate || localDateKey();
   return `${employeeId}:${normalizedDate}`;
 };
+export const isFeatureAccessDeniedError = (message: string) =>
+  message.toLowerCase().includes("does not have access to this feature");
 
 export const normalizeEmployeeRows = (rows: unknown): Employee[] => {
   if (!Array.isArray(rows)) {
@@ -96,6 +104,8 @@ export const normalizeEmployeeRows = (rows: unknown): Employee[] => {
       isManager: Boolean(candidate.isManager),
       isServer: Boolean(candidate.isServer),
       isKitchenManager: Boolean(candidate.isKitchenManager),
+      allowOpenSchedule: candidate.allowOpenSchedule === true,
+      requiresPunchPhoto: candidate.requiresPunchPhoto === true,
       officeId:
         typeof candidate.officeId === "string" ? candidate.officeId : null,
     });

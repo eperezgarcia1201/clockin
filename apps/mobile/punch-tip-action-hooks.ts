@@ -1,5 +1,5 @@
 import { extractPendingTipsWorkDate } from "./api-runtime";
-import { normalizePinInput } from "./app-helpers";
+import { localDateKey, normalizePinInput } from "./app-helpers";
 import { buildEmployeeActiveShift } from "./active-shift-storage";
 import {
   buildPunchPayloads,
@@ -8,6 +8,7 @@ import {
   isInvalidPinPunchError,
   isServerTipsRequiredPunchError,
 } from "./punch-runtime";
+import { capturePunchFacePhoto } from "./punch-photo-workflows";
 import {
   getClockInCoordinates,
   showManagerPunchMessage,
@@ -20,6 +21,8 @@ import {
 } from "./tips-runtime";
 import type { UsePunchTipActionsParams } from "./punch-tip-action-types";
 
+const PUNCH_TYPES_REQUIRING_PHOTO = new Set(["IN", "BREAK", "OUT"]);
+
 export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
   const handlePunch = async () => {
     if (!params.tenant) {
@@ -28,6 +31,10 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
     }
 
     const targetEmployee = params.selectedEmployee;
+    const currentWorkDate = localDateKey();
+    const currentTipKey = targetEmployee
+      ? params.getTipSubmissionKey(targetEmployee.id, currentWorkDate)
+      : null;
 
     if (!targetEmployee) {
       if (params.punchType !== "IN") {
@@ -45,11 +52,19 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
       params.requiresTipsForOut &&
       !params.hasSubmittedTips
     ) {
-      params.setStatus(params.t.submitTipsBeforeOut);
-      params.setTipsStatus(params.t.tapSubmitTipsFirst);
-      params.setTipsAlert(true);
-      params.scrollToBottom();
-      return;
+      if (
+        !currentTipKey ||
+        !params.tiplessClockOutWarningsByDay[currentTipKey]
+      ) {
+        if (currentTipKey) {
+          params.markTiplessClockOutWarning(currentTipKey);
+        }
+        params.setStatus(params.t.submitTipsBeforeOut);
+        params.setTipsStatus(params.t.secondTiplessClockOutWarning);
+        params.setTipsAlert(true);
+        params.scrollToBottom();
+        return;
+      }
     }
     if (params.punchType === "IN" && targetEmployee.isServer && params.pendingTipDate) {
       params.setStatus(
@@ -72,6 +87,9 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
       params.punchType === "IN"
         ? typedPin || undefined
         : typedPin || params.activeShift?.pin || undefined;
+    const requiresPunchPhoto =
+      targetEmployee.requiresPunchPhoto === true &&
+      PUNCH_TYPES_REQUIRING_PHOTO.has(params.punchType);
 
     params.setLoading(true);
     params.setStatus(null);
@@ -87,13 +105,38 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
             unableToReadLocation: params.t.unableToReadLocation,
           })
         : null;
+      let photoDataUrl: string | undefined;
+      if (requiresPunchPhoto) {
+        params.setStatus(params.t.capturingFacePhoto);
+        const captureResult = await capturePunchFacePhoto();
+        if (captureResult.state === "camera_permission_required") {
+          params.setStatus(params.t.facePhotoCameraPermissionRequired);
+          return;
+        }
+        if (captureResult.state === "canceled") {
+          params.setStatus(params.t.facePhotoCanceled);
+          return;
+        }
+        photoDataUrl = captureResult.photoDataUrl;
+      }
 
       const { basePayload: basePunchPayload, payloadWithGeo: geoPunchPayload } =
         buildPunchPayloads({
           type: params.punchType,
           pin: requestPin,
+          photoDataUrl,
           coordinates,
         });
+      if (
+        params.punchType === "OUT" &&
+        params.requiresTipsForOut &&
+        !params.hasSubmittedTips &&
+        currentTipKey &&
+        params.tiplessClockOutWarningsByDay[currentTipKey]
+      ) {
+        basePunchPayload.allowMissingTips = true;
+        geoPunchPayload.allowMissingTips = true;
+      }
       const punchResponse = await submitPunchWithOptionalRetry({
         fetchJson: params.fetchJson,
         employeeId: targetEmployee.id,
@@ -116,8 +159,28 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
         params.setActiveShift(shift);
         await params.persistActiveShift(shift);
         params.setEmployeeName(targetEmployee.name);
-        params.setTipsAlert(false);
-        params.setPendingTipWorkDate(null);
+        if (punchResponse?.pendingTipReminderWorkDate) {
+          params.setPendingTipWorkDate(punchResponse.pendingTipReminderWorkDate);
+          params.setTipsReminderEmployeeId(targetEmployee.id);
+          params.setServerTipsRequired(true);
+          params.setTipsStatus(
+            params.t.missedTipsStatus.replace(
+              "{date}",
+              punchResponse.pendingTipReminderWorkDate,
+            ),
+          );
+          params.setStatus(
+            params.t.missedTipsReminder.replace(
+              "{date}",
+              punchResponse.pendingTipReminderWorkDate,
+            ),
+          );
+          params.setTipsAlert(true);
+          params.scrollToBottom();
+        } else {
+          params.setTipsAlert(false);
+          params.setPendingTipWorkDate(null);
+        }
       }
       if (
         params.punchType !== "IN" &&
@@ -140,6 +203,9 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
       params.setPin("");
       await params.loadWorkingNow();
       if (params.punchType === "OUT") {
+        if (currentTipKey) {
+          params.clearTiplessClockOutWarning(currentTipKey);
+        }
         if (params.requiresTipsForOut) {
           params.setCashTips("0");
           params.setCreditCardTips("0");
@@ -179,6 +245,8 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
         void params.loadWorkingNow();
       } else if (isInvalidPinPunchError(message)) {
         params.setStatus(params.t.invalidPinResetHint);
+      } else if (message.toLowerCase().includes("face photo is required")) {
+        params.setStatus(params.t.facePhotoRequired);
       } else {
         params.setStatus(message);
       }
@@ -228,6 +296,7 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
       });
       params.setServerTipsRequired(false);
       params.markTipsSubmitted(targetTipKey);
+      params.clearTiplessClockOutWarning(targetTipKey);
       if (params.pendingTipDate) {
         params.setPendingTipWorkDate(null);
       }
@@ -239,6 +308,7 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
       if (isAlreadySubmittedTipsError(message)) {
         params.markTipsSubmitted(targetTipKey);
         params.setServerTipsRequired(false);
+        params.clearTiplessClockOutWarning(targetTipKey);
         if (params.pendingTipDate) {
           params.setPendingTipWorkDate(null);
         }

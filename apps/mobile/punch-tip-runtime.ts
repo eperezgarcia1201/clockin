@@ -11,6 +11,7 @@ export type PunchResponse = {
     message?: string;
     fromName?: string | null;
   } | null;
+  pendingTipReminderWorkDate?: string | null;
 } | null;
 
 export const getClockInCoordinates = async (params: {

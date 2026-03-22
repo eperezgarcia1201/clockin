@@ -12,9 +12,16 @@ export type PunchTipsText = {
   tapSubmitTipsFirst: string;
   pendingTipsBeforeClockIn: string;
   pendingTipsStatus: string;
+  secondTiplessClockOutWarning: string;
+  missedTipsReminder: string;
+  missedTipsStatus: string;
   pinMustBe4Digits: string;
   locationPermissionRequired: string;
   unableToReadLocation: string;
+  capturingFacePhoto: string;
+  facePhotoCameraPermissionRequired: string;
+  facePhotoCanceled: string;
+  facePhotoRequired: string;
   punchRecorded: string;
   managerMessageFallbackSubject: string;
   managerMessageFrom: string;
@@ -67,7 +74,10 @@ export type UsePunchTipActionsParams = {
   cashTips: string;
   creditCardTips: string;
   tipsSubmittedByDay: Record<string, boolean>;
+  tiplessClockOutWarningsByDay: Record<string, boolean>;
   getTipSubmissionKey: (employeeId: string, workDate?: string) => string;
   markTipsSubmitted: (tipKey: string) => void;
+  markTiplessClockOutWarning: (tipKey: string) => void;
+  clearTiplessClockOutWarning: (tipKey: string) => void;
   setSavingTips: Dispatch<SetStateAction<boolean>>;
 };

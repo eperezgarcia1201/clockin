@@ -11,6 +11,9 @@ import { TIPS_SUBMITTED_STORAGE_KEY } from "./app-config";
 export const useUiSessionActions = (params: {
   scrollRef: MutableRefObject<ScrollView | null>;
   setTipsSubmittedByDay: Dispatch<SetStateAction<Record<string, boolean>>>;
+  setTiplessClockOutWarningsByDay: Dispatch<
+    SetStateAction<Record<string, boolean>>
+  >;
 }) => {
   const scrollToBottom = useCallback(() => {
     setTimeout(() => {
@@ -38,9 +41,37 @@ export const useUiSessionActions = (params: {
     [params.setTipsSubmittedByDay],
   );
 
+  const markTiplessClockOutWarning = useCallback(
+    (tipKey: string) => {
+      params.setTiplessClockOutWarningsByDay((prev) => {
+        if (prev[tipKey]) {
+          return prev;
+        }
+        return { ...prev, [tipKey]: true };
+      });
+    },
+    [params.setTiplessClockOutWarningsByDay],
+  );
+
+  const clearTiplessClockOutWarning = useCallback(
+    (tipKey: string) => {
+      params.setTiplessClockOutWarningsByDay((prev) => {
+        if (!prev[tipKey]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[tipKey];
+        return next;
+      });
+    },
+    [params.setTiplessClockOutWarningsByDay],
+  );
+
   return {
     scrollToBottom,
     scrollToBottomSoon,
     markTipsSubmitted,
+    markTiplessClockOutWarning,
+    clearTiplessClockOutWarning,
   };
 };

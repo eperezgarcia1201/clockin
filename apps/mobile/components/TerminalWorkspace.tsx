@@ -30,6 +30,7 @@ type TerminalWorkspaceProps = {
   locationStatus: string | null;
   hasCompanyOrdersAccess: boolean;
   hasWeekScheduleAccess: boolean;
+  hasTeamDashboardAccess: boolean;
   activeViewTab: EmployeeViewTab;
   onViewTabChange: (tab: EmployeeViewTab) => void;
   clockStationProps: ComponentProps<typeof ClockStationCard>;
@@ -56,6 +57,7 @@ export function TerminalWorkspace({
   locationStatus,
   hasCompanyOrdersAccess,
   hasWeekScheduleAccess,
+  hasTeamDashboardAccess,
   activeViewTab,
   onViewTabChange,
   clockStationProps,
@@ -133,8 +135,12 @@ export function TerminalWorkspace({
         </View>
       )}
 
-      {visibleViewTab === "clock" ? <WorkingNowCard {...workingNowProps} /> : null}
-      {visibleViewTab === "clock" ? <TodayTeamCard {...todayTeamProps} /> : null}
+      {visibleViewTab === "clock" && hasTeamDashboardAccess ? (
+        <WorkingNowCard {...workingNowProps} />
+      ) : null}
+      {visibleViewTab === "clock" && hasTeamDashboardAccess ? (
+        <TodayTeamCard {...todayTeamProps} />
+      ) : null}
       {visibleViewTab === "clock" && lastPunchProps ? (
         <LastPunchCard {...lastPunchProps} />
       ) : null}

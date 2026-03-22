@@ -178,6 +178,7 @@ export const useWorkspaceSessionViewState = (params: {
   const hasLiquorPremiumAccess = Boolean(
     hasLiquorAccess && params.tenantLiquorPremiumEnabled,
   );
+  const hasTeamDashboardAccess = Boolean(companyOrdersActor);
 
   return {
     sessionEmployee,
@@ -198,5 +199,6 @@ export const useWorkspaceSessionViewState = (params: {
     canUseClockScreen,
     hasLiquorAccess,
     hasLiquorPremiumAccess,
+    hasTeamDashboardAccess,
   };
 };

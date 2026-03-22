@@ -1,5 +1,6 @@
 import { PunchType } from '@prisma/client';
 import {
+  IsBoolean,
   IsEnum,
   IsISO8601,
   IsNumber,
@@ -58,4 +59,8 @@ export class CreateEmployeePunchDto {
   @IsString()
   @MaxLength(6000000)
   photoDataUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  allowMissingTips?: boolean;
 }

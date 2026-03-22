@@ -9,6 +9,9 @@ export const i18nEs =
     tenantName: "Nombre del tenant",
     continue: "Continuar",
     checking: "Verificando...",
+    recentTenants: "Tenants recientes",
+    tapSavedTenantToContinue:
+      "Toca un tenant guardado para continuar sin escribirlo de nuevo.",
     tenant: "Tenant",
     clockStation: "Estacion de reloj",
     systemOnline: "Sistema en linea",
@@ -53,12 +56,25 @@ export const i18nEs =
     tapSubmitTipsFirst:
       'Toca "Toca para enviar propinas" y luego confirma salida.',
     punchRecorded: "Marcacion registrada.",
+    secondTiplessClockOutWarning:
+      "Siguen faltando propinas. Toca salida otra vez para continuar sin propinas y te lo recordaremos en el siguiente turno.",
+    missedTipsReminder:
+      "Tienes propinas pendientes del {date}. Envialas cuando puedas.",
+    missedTipsStatus: "Propinas pendientes del {date}.",
     activeShiftRestored: "Turno activo restaurado en este dispositivo.",
     punchFailed: "Fallo la marcacion.",
     selectValidEmployee: "Selecciona un empleado valido primero.",
     pinMustBe4Digits: "El PIN debe tener 4 digitos.",
     invalidPinResetHint:
       "PIN invalido. Confirma tu PIN de 4 digitos o pide al admin reiniciarlo.",
+    capturingFacePhoto: "Capturando foto facial...",
+    facePhotoCameraPermissionRequired:
+      "Se requiere permiso de cámara para la verificación facial.",
+    facePhotoCanceled:
+      "Se canceló la captura de la foto facial. Esta marcación no se envió.",
+    facePhotoRequired: "Se requiere una foto facial para esta marcación.",
+    facePhotoRequiredNotice:
+      "Esta marcación abrirá la cámara para verificación facial.",
     tipsOnlyForServers: "Solo usuarios meseros pueden enviar propinas.",
     tipsMustBeValid: "Las propinas deben ser numeros validos no negativos.",
     tipsSaved: "Propinas guardadas para hoy.",
