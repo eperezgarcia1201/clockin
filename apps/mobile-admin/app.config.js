@@ -1,17 +1,26 @@
-const appJson = require('./app.json');
+const fs = require('fs');
+const path = require('path');
+const config = require('./app.json');
 
-const baseConfig = appJson.expo;
+function resolveGoogleServicesFile() {
+  const secretPath = process.env.GOOGLE_SERVICES_JSON;
+  if (secretPath) {
+    return secretPath;
+  }
 
-module.exports = () => {
-  const googleServicesFile =
-    process.env.EXPO_ANDROID_GOOGLE_SERVICES_JSON ||
-    baseConfig.android?.googleServicesFile;
+  const localPath = path.join(__dirname, 'google-services.json');
+  if (fs.existsSync(localPath)) {
+    return './google-services.json';
+  }
 
-  return {
-    ...baseConfig,
-    android: {
-      ...baseConfig.android,
-      googleServicesFile,
-    },
-  };
-};
+  return undefined;
+}
+
+const googleServicesFile = resolveGoogleServicesFile();
+if (googleServicesFile) {
+  config.expo.android.googleServicesFile = googleServicesFile;
+} else {
+  delete config.expo.android.googleServicesFile;
+}
+
+module.exports = config;
