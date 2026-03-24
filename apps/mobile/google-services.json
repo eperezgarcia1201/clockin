@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "577292762401",
+    "project_id": "websysclockin",
+    "storage_bucket": "websysclockin.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:577292762401:android:bc122b55680dc7b4091260",
+        "android_client_info": {
+          "package_name": "com.websys.clockinemployee"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMK0gvbR6jx7RceLqVho_YWSG6gO4u-dc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
