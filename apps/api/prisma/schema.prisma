@@ -86,6 +86,7 @@ model Tenant {
   timeEntries              TimeEntry[]
   notifications            Notification[]
   adminDevices             AdminDevice[]
+  employeeDevices          EmployeeDevice[]
   employeeSchedules        EmployeeSchedule[]
   scheduleOverrideRequests ScheduleOverrideRequest[]
   employeeTips             EmployeeTip[]
@@ -223,6 +224,7 @@ model Employee {
   tips                     EmployeeTip[]
   companyOrdersCreated     CompanyOrder[]            @relation("CompanyOrderCreatedBy")
   notifications            Notification[]
+  devices                  EmployeeDevice[]
   schedules                EmployeeSchedule[]
   scheduleOverrideRequests ScheduleOverrideRequest[]
   liquorInventoryMovementsCreated LiquorInventoryMovement[] @relation("LiquorInventoryMovementCreatedBy")
@@ -313,6 +315,25 @@ model AdminDevice {
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId])
+}
+
+model EmployeeDevice {
+  id                         String   @id @default(cuid())
+  tenantId                   String
+  employeeId                 String
+  expoPushToken              String   @unique
+  label                      String?
+  platform                   String?
+  timeZone                   String?
+  notifyLateClockInReminders Boolean  @default(true)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@index([tenantId])
+  @@index([tenantId, employeeId])
 }
 
 model EmployeePunch {
@@ -439,6 +460,7 @@ model TenantSettings {
   defaultNotifyPunchActivity Boolean  @default(true)
   defaultNotifyNoBreakAlerts Boolean  @default(true)
   defaultNotifyLateClockInReminders Boolean @default(true)
+  employeeLateClockInPushEnabled Boolean @default(true)
   defaultNotifyScheduleOverrides Boolean @default(true)
   defaultNotifyTipSummaries  Boolean  @default(true)
   defaultNotifyDailySalesReminders Boolean @default(true)

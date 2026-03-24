@@ -25,6 +25,7 @@ import { useViewLoadActions } from "./view-load-action-hooks";
 import { useTenantLocationEffects } from "./tenant-location-effects";
 import { useSessionHydrationEffects } from "./session-hydration-effects";
 import { useActiveShiftEffects } from "./active-shift-effects";
+import { useEmployeePushEffects } from "./employee-push-effects";
 import { useWorkspaceRefreshEffects } from "./workspace-refresh-effects";
 import { useWorkspaceDataLoadActions } from "./workspace-data-load-action-hooks";
 import { useTodayScheduleViewModel } from "./today-schedule-view-hooks";
@@ -128,6 +129,12 @@ export default function App() {
   useWorkspaceRefreshEffects({ tenantHydrated, hasCompanyOrdersAccess, hasLiquorAccess, loadEmployees, loadTodaySchedule, loadWorkingNow, loadCompanyOrderCatalog, loadCompanyOrders, loadLiquorControlData, setActiveViewTab, setCompanyOrderCatalog, setCompanyOrderSupplier, setCompanyOrderSearch, setCompanyOrderNotes, setCompanyOrderDrafts, setCompanyOrderRows, setCompanyOrderStatus, setLiquorCatalog, setLiquorCounts, setLiquorBottleScans, setLiquorSheetDrafts, setLiquorInvoiceRows, setLiquorInvoiceImageDataUrl, setLiquorInvoiceImageName, setLiquorStatus, });
 
   useActiveShiftEffects({ tenant, activeShift, employeeName, persistActiveShift, setActiveShift, setEmployeeName, setTipsReminderEmployeeId, setPunchType, });
+
+  useEmployeePushEffects({
+    tenantAuthOrgId: tenant?.authOrgId || null,
+    selectedEmployeeId: selectedEmployee?.id || null,
+    fetchJson,
+  });
 
   useEffect(() => {
     const currentSessionEmployeeId = sessionEmployee?.id || null;

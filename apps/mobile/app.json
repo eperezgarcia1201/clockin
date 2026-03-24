@@ -2,7 +2,7 @@
   "expo": {
     "name": "ClockIn Employee",
     "slug": "clockin",
-    "version": "2.1",
+    "version": "2.3.1",
     "entryPoint": "./index.ts",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -19,7 +19,8 @@
       "buildNumber": "3",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "ClockIn uses your location to verify you are at the restaurant when clocking in."
+        "NSLocationWhenInUseUsageDescription": "ClockIn uses your location to verify you are at the restaurant when clocking in.",
+        "NSCameraUsageDescription": "ClockIn uses the camera to capture a face photo when your employer requires punch verification."
       }
     },
     "android": {
@@ -28,6 +29,7 @@
       "googleServicesFile": "./google-services.json",
       "versionCode": 3,
       "permissions": [
+        "CAMERA",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ],
@@ -41,6 +43,18 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "notification": {
+      "color": "#3a7bd5"
+    },
+    "plugins": [
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "ClockIn uses the camera to capture a face photo when your employer requires punch verification."
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "209e8a2c-2339-46e4-9e58-90325a80c852"

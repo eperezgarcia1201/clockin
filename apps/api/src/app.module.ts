@@ -16,6 +16,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
 import { SettingsModule } from './settings/settings.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AdminDevicesModule } from './admin-devices/admin-devices.module';
+import { EmployeeDevicesModule } from './employee-devices/employee-devices.module';
 import { EmployeeSchedulesModule } from './employee-schedules/employee-schedules.module';
 import { TenantAccountsModule } from './tenant-accounts/tenant-accounts.module';
 import { TenantDirectoryModule } from './tenant-directory/tenant-directory.module';
@@ -41,6 +42,7 @@ import { RestaurantPosIntegrationModule } from './restaurant-pos-integration/res
     SettingsModule,
     NotificationsModule,
     AdminDevicesModule,
+    EmployeeDevicesModule,
     EmployeeSchedulesModule,
     TenantAccountsModule,
     TenantDirectoryModule,

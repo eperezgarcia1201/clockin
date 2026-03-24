@@ -7,7 +7,12 @@ export type AdminDeviceNotificationDefaults = {
   defaultNotifyDailySalesReminders: boolean;
 };
 
-export type NotificationPolicy = AdminDeviceNotificationDefaults & {
+export type EmployeeDeviceNotificationDefaults = {
+  employeeLateClockInPushEnabled: boolean;
+};
+
+export type NotificationPolicy = AdminDeviceNotificationDefaults &
+  EmployeeDeviceNotificationDefaults & {
   timeZone: string;
   lateClockInWorkflowEnabled: boolean;
   punchActivityNotificationsEnabled: boolean;
@@ -203,6 +208,10 @@ export const buildNotificationPolicy = (
       typeof settings?.defaultNotifyLateClockInReminders === 'boolean'
         ? settings.defaultNotifyLateClockInReminders
         : true,
+    employeeLateClockInPushEnabled:
+      typeof settings?.employeeLateClockInPushEnabled === 'boolean'
+        ? settings.employeeLateClockInPushEnabled
+        : true,
     defaultNotifyScheduleOverrides:
       typeof settings?.defaultNotifyScheduleOverrides === 'boolean'
         ? settings.defaultNotifyScheduleOverrides
@@ -244,5 +253,14 @@ export const resolveDefaultAdminDeviceNotifications = (
   notifyDailySalesReminders:
     typeof settings?.defaultNotifyDailySalesReminders === 'boolean'
       ? settings.defaultNotifyDailySalesReminders
+      : true,
+});
+
+export const resolveDefaultEmployeeDeviceNotifications = (
+  settings: NotificationPolicySource,
+) => ({
+  notifyLateClockInReminders:
+    typeof settings?.employeeLateClockInPushEnabled === 'boolean'
+      ? settings.employeeLateClockInPushEnabled
       : true,
 });

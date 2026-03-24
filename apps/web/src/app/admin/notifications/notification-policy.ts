@@ -25,6 +25,7 @@ export const defaultNotificationPolicy: NotificationPolicySettings = {
   lateClockInReminderMax: 3,
   autoClockInAfterLateReminders: true,
   autoClockInOnGeofence: true,
+  employeeLateClockInPushEnabled: true,
   noBreakAlertsEnabled: true,
   noBreakAlertHours: 6,
   noBreakReminderIntervalMinutes: 60,
@@ -153,6 +154,10 @@ export const pickNotificationPolicy = (
       typeof source.autoClockInOnGeofence === "boolean"
         ? source.autoClockInOnGeofence
         : defaultNotificationPolicy.autoClockInOnGeofence,
+    employeeLateClockInPushEnabled:
+      typeof source.employeeLateClockInPushEnabled === "boolean"
+        ? source.employeeLateClockInPushEnabled
+        : defaultNotificationPolicy.employeeLateClockInPushEnabled,
     noBreakAlertsEnabled:
       typeof source.noBreakAlertsEnabled === "boolean"
         ? source.noBreakAlertsEnabled
@@ -248,6 +253,7 @@ export const buildNotificationPolicyPayload = (
   lateClockInReminderMax: policy.lateClockInReminderMax,
   autoClockInAfterLateReminders: policy.autoClockInAfterLateReminders,
   autoClockInOnGeofence: policy.autoClockInOnGeofence,
+  employeeLateClockInPushEnabled: policy.employeeLateClockInPushEnabled,
   noBreakAlertsEnabled: policy.noBreakAlertsEnabled,
   noBreakAlertHours: policy.noBreakAlertHours,
   noBreakReminderIntervalMinutes: policy.noBreakReminderIntervalMinutes,

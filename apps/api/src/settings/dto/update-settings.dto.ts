@@ -220,6 +220,10 @@ export class UpdateSettingsDto {
 
   @IsOptional()
   @IsBoolean()
+  employeeLateClockInPushEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   defaultNotifyScheduleOverrides?: boolean;
 
   @IsOptional()

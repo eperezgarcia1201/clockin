@@ -21,6 +21,7 @@ export type NotificationPolicySettings = {
   lateClockInReminderMax: number;
   autoClockInAfterLateReminders: boolean;
   autoClockInOnGeofence: boolean;
+  employeeLateClockInPushEnabled: boolean;
   noBreakAlertsEnabled: boolean;
   noBreakAlertHours: number;
   noBreakReminderIntervalMinutes: number;

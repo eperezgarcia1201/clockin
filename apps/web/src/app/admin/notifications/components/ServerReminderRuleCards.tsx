@@ -133,6 +133,35 @@ export function ServerReminderRuleCards({
               </label>
             </div>
           </div>
+          <div className="col-12">
+            <div className="form-check form-switch">
+              <input
+                className="form-check-input"
+                type="checkbox"
+                role="switch"
+                checked={policy.employeeLateClockInPushEnabled}
+                disabled={settingsBusy || !policy.lateClockInWorkflowEnabled}
+                onChange={(event) =>
+                  onPolicyChange(
+                    "employeeLateClockInPushEnabled",
+                    event.target.checked,
+                  )
+                }
+              />
+              <label className="form-check-label">
+                {tr(
+                  "Send late clock-in push reminders to employees on their registered devices",
+                  "Enviar recordatorios push de clock in tardio a empleados en sus dispositivos registrados",
+                )}
+              </label>
+            </div>
+            <div className="text-muted small mt-2">
+              {tr(
+                "This affects employee phones only and does not change admin delivery settings.",
+                "Esto afecta solo a los telefonos de empleados y no cambia las entregas para admins.",
+              )}
+            </div>
+          </div>
         </div>
       </div>
 

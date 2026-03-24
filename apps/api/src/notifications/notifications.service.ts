@@ -149,6 +149,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         lateClockInReminderMax: true,
         autoClockInAfterLateReminders: true,
         autoClockInOnGeofence: true,
+        employeeLateClockInPushEnabled: true,
         noBreakAlertsEnabled: true,
         noBreakAlertHours: true,
         noBreakReminderIntervalMinutes: true,
@@ -763,12 +764,17 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       const parts = formatter.formatToParts(date);
       const weekdayToken =
         parts.find((part) => part.type === 'weekday')?.value || 'Sun';
-      const hour = Number(
+      let hour = Number(
         parts.find((part) => part.type === 'hour')?.value || '0',
       );
       const minute = Number(
         parts.find((part) => part.type === 'minute')?.value || '0',
       );
+      // Some Intl hour cycles can represent midnight as 24:xx. Treat that as 00:xx
+      // so scheduled-start math does not consider every shift overdue just after midnight.
+      if (hour === 24) {
+        hour = 0;
+      }
       const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(
         weekdayToken,
       );
@@ -966,10 +972,18 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const dueReminders = schedules
       .map((schedule) => {
         const startMinutes = this.parseTime(schedule.startTime);
+        const reminderWindowCloseMinutes =
+          startMinutes === null
+            ? null
+            : startMinutes +
+              policy.lateClockInGraceMinutes +
+              policy.lateClockInReminderIntervalMinutes *
+                policy.lateClockInReminderMax;
         return {
           employeeId: schedule.employeeId,
           startTime: schedule.startTime || '',
           startMinutes,
+          reminderWindowCloseMinutes,
           employeeName:
             schedule.employee.displayName || schedule.employee.fullName,
         };
@@ -977,8 +991,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       .filter(
         (schedule) =>
           schedule.startMinutes !== null &&
+          schedule.reminderWindowCloseMinutes !== null &&
           current.minutes >=
-            schedule.startMinutes + policy.lateClockInGraceMinutes,
+            schedule.startMinutes + policy.lateClockInGraceMinutes &&
+          current.minutes <= schedule.reminderWindowCloseMinutes,
       );
 
     if (!dueReminders.length) {
@@ -1256,6 +1272,17 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         notification.type,
         this.toMetadataRecord(notification.metadata),
       );
+      if (policy.employeeLateClockInPushEnabled) {
+        await this.sendEmployeeLateReminderPush(
+          tenantId,
+          reminder.employeeId,
+          reminder.employeeName,
+          reminder.startTime || 'N/A',
+          policy.timeZone,
+          reminderNumber,
+          policy.lateClockInReminderMax,
+        );
+      }
       reminderCountByEmployee.set(reminder.employeeId, reminderNumber);
 
       if (
@@ -2096,6 +2123,57 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       data: {
         type,
         ...(metadataKind ? { kind: metadataKind } : {}),
+      },
+    }));
+
+    try {
+      await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      // ignore push failures
+    }
+  }
+
+  private async sendEmployeeLateReminderPush(
+    tenantId: string,
+    employeeId: string,
+    employeeName: string,
+    startTime: string,
+    timeZone: string,
+    reminderNumber: number,
+    reminderMax: number,
+  ) {
+    const devices = await this.prisma.employeeDevice.findMany({
+      where: {
+        tenantId,
+        employeeId,
+        notifyLateClockInReminders: true,
+      },
+      select: { expoPushToken: true },
+    });
+    if (!devices.length) {
+      return;
+    }
+
+    const message =
+      `${employeeName}, you have not clocked in for your scheduled shift ` +
+      `(${startTime} ${timeZone}). Please open ClockIn and clock in now.`;
+    const body = devices.map((device) => ({
+      to: device.expoPushToken,
+      sound: 'default',
+      title: 'ClockIn',
+      body: message,
+      data: {
+        type: NotificationType.LATE_CLOCK_IN_5M,
+        kind: LATE_CLOCK_IN_REMINDER_KIND,
+        reminderNumber,
+        reminderMax,
+        employeeId,
       },
     }));
 

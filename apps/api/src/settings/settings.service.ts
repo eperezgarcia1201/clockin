@@ -49,6 +49,7 @@ const defaultSettings = () => ({
   defaultNotifyPunchActivity: true,
   defaultNotifyNoBreakAlerts: true,
   defaultNotifyLateClockInReminders: true,
+  employeeLateClockInPushEnabled: true,
   defaultNotifyScheduleOverrides: true,
   defaultNotifyTipSummaries: true,
   defaultNotifyDailySalesReminders: true,
@@ -171,6 +172,8 @@ export class SettingsService {
           dto.defaultNotifyNoBreakAlerts ?? undefined,
         defaultNotifyLateClockInReminders:
           dto.defaultNotifyLateClockInReminders ?? undefined,
+        employeeLateClockInPushEnabled:
+          dto.employeeLateClockInPushEnabled ?? undefined,
         defaultNotifyScheduleOverrides:
           dto.defaultNotifyScheduleOverrides ?? undefined,
         defaultNotifyTipSummaries: dto.defaultNotifyTipSummaries ?? undefined,
@@ -264,6 +267,9 @@ export class SettingsService {
         defaultNotifyLateClockInReminders:
           dto.defaultNotifyLateClockInReminders ??
           defaults.defaultNotifyLateClockInReminders,
+        employeeLateClockInPushEnabled:
+          dto.employeeLateClockInPushEnabled ??
+          defaults.employeeLateClockInPushEnabled,
         defaultNotifyScheduleOverrides:
           dto.defaultNotifyScheduleOverrides ??
           defaults.defaultNotifyScheduleOverrides,
