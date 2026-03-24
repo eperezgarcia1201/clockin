@@ -79,5 +79,6 @@ export type UsePunchTipActionsParams = {
   markTipsSubmitted: (tipKey: string) => void;
   markTiplessClockOutWarning: (tipKey: string) => void;
   clearTiplessClockOutWarning: (tipKey: string) => void;
+  rememberEmployeePushOwner: (employeeId: string) => Promise<void>;
   setSavingTips: Dispatch<SetStateAction<boolean>>;
 };

@@ -26,6 +26,7 @@ import { useTenantLocationEffects } from "./tenant-location-effects";
 import { useSessionHydrationEffects } from "./session-hydration-effects";
 import { useActiveShiftEffects } from "./active-shift-effects";
 import { useEmployeePushEffects } from "./employee-push-effects";
+import { useEmployeePushOwnerEffects } from "./employee-push-owner-effects";
 import { useWorkspaceRefreshEffects } from "./workspace-refresh-effects";
 import { useWorkspaceDataLoadActions } from "./workspace-data-load-action-hooks";
 import { useTodayScheduleViewModel } from "./today-schedule-view-hooks";
@@ -38,6 +39,7 @@ import { useTenantLogoutAction } from "./tenant-logout-action-hooks";
 import { useLiquorSheetViewState } from "./liquor-sheet-view-state";
 import { useWorkspaceSessionViewState } from "./workspace-session-view-state";
 import { useMobileAppState } from "./mobile-app-state";
+import { saveEmployeePushOwnerId } from "./employee-push-owner-runtime";
 import { TerminalEntryScreens } from "./components/TerminalEntryScreens";
 import { TerminalWorkspace } from "./components/TerminalWorkspace";
 import type { EmployeeWeekScheduleResponse } from "./types";
@@ -45,7 +47,7 @@ import type { EmployeeWeekScheduleResponse } from "./types";
 export default function App() {
   const scrollRef = useRef<ScrollView | null>(null);
   const previousSessionEmployeeIdRef = useRef<string | null>(null);
-  const { language, setLanguage, tenant, setTenant, recentTenants, setRecentTenants, tenantInput, setTenantInput, tenantStatus, setTenantStatus, resolvingTenant, setResolvingTenant, tenantHydrated, setTenantHydrated, tenantOffices, setTenantOffices, selectedOfficeId, setSelectedOfficeId, tenantCompanyOrdersEnabled, setTenantCompanyOrdersEnabled, tenantLiquorInventoryEnabled, setTenantLiquorInventoryEnabled, tenantLiquorPremiumEnabled, setTenantLiquorPremiumEnabled, loadingLocations, setLoadingLocations, locationStatus, setLocationStatus, locationPickerOpen, setLocationPickerOpen, employees, setEmployees, directoryEmployees, setDirectoryEmployees, employeeName, setEmployeeName, pin, setPin, cashTips, setCashTips, creditCardTips, setCreditCardTips, punchType, setPunchType, status, setStatus, tipsStatus, setTipsStatus, tipsAlert, setTipsAlert, serverTipsRequired, setServerTipsRequired, pendingTipWorkDate, setPendingTipWorkDate, tipsSubmittedByDay, setTipsSubmittedByDay, tiplessClockOutWarningsByDay, setTiplessClockOutWarningsByDay, tipsReminderEmployeeId, setTipsReminderEmployeeId, activeShift, setActiveShift, loading, setLoading, savingTips, setSavingTips, resolvedApiBase, setResolvedApiBase, lastPunch, setLastPunch, todaySchedule, setTodaySchedule, todayScheduleStatus, setTodayScheduleStatus, todayScheduleLoading, setTodayScheduleLoading, todayRoleFilter, setTodayRoleFilter, workingNowRows, setWorkingNowRows, workingNowStatus, setWorkingNowStatus, workingNowLoading, setWorkingNowLoading, activeViewTab, setActiveViewTab, companyOrderCatalog, setCompanyOrderCatalog, companyOrderSupplier, setCompanyOrderSupplier, companyOrderSearch, setCompanyOrderSearch, companyOrderShowOnlyAdded, setCompanyOrderShowOnlyAdded, companyOrderVisibleCount, setCompanyOrderVisibleCount, companyOrderNotes, setCompanyOrderNotes, companyOrderDrafts, setCompanyOrderDrafts, companyOrderRows, setCompanyOrderRows, companyOrderLoading, setCompanyOrderLoading, companyOrderSaving, setCompanyOrderSaving, companyOrderExportingFormat, setCompanyOrderExportingFormat, lastSubmittedCompanyOrderWeekStart, setLastSubmittedCompanyOrderWeekStart, companyOrderStatus, setCompanyOrderStatus, liquorCatalog, setLiquorCatalog, liquorCounts, setLiquorCounts, liquorBottleScans, setLiquorBottleScans, liquorSheetDrafts, setLiquorSheetDrafts, liquorCountDate, setLiquorCountDate, liquorScanContainerKey, setLiquorScanContainerKey, liquorInvoiceDate, setLiquorInvoiceDate, liquorInvoiceNumber, setLiquorInvoiceNumber, liquorInvoiceSupplier, setLiquorInvoiceSupplier, liquorInvoiceNotes, setLiquorInvoiceNotes, liquorInvoiceIncludePurchases, setLiquorInvoiceIncludePurchases, liquorInvoiceImageDataUrl, setLiquorInvoiceImageDataUrl, liquorInvoiceImageName, setLiquorInvoiceImageName, liquorInvoiceRows, setLiquorInvoiceRows, liquorInvoiceAnalyzing, setLiquorInvoiceAnalyzing, liquorInvoiceApplying, setLiquorInvoiceApplying, liquorStatus, setLiquorStatus, liquorLoading, setLiquorLoading, liquorSavingItemId, setLiquorSavingItemId, liquorSavingCountItemId, setLiquorSavingCountItemId, liquorAnalyzingItemId, setLiquorAnalyzingItemId, keyboardInset, setKeyboardInset, } = useMobileAppState();
+  const { language, setLanguage, tenant, setTenant, recentTenants, setRecentTenants, tenantInput, setTenantInput, tenantStatus, setTenantStatus, resolvingTenant, setResolvingTenant, tenantHydrated, setTenantHydrated, tenantOffices, setTenantOffices, selectedOfficeId, setSelectedOfficeId, tenantCompanyOrdersEnabled, setTenantCompanyOrdersEnabled, tenantLiquorInventoryEnabled, setTenantLiquorInventoryEnabled, tenantLiquorPremiumEnabled, setTenantLiquorPremiumEnabled, loadingLocations, setLoadingLocations, locationStatus, setLocationStatus, locationPickerOpen, setLocationPickerOpen, employees, setEmployees, directoryEmployees, setDirectoryEmployees, employeeName, setEmployeeName, pin, setPin, cashTips, setCashTips, creditCardTips, setCreditCardTips, punchType, setPunchType, status, setStatus, tipsStatus, setTipsStatus, tipsAlert, setTipsAlert, serverTipsRequired, setServerTipsRequired, pendingTipWorkDate, setPendingTipWorkDate, tipsSubmittedByDay, setTipsSubmittedByDay, tiplessClockOutWarningsByDay, setTiplessClockOutWarningsByDay, tipsReminderEmployeeId, setTipsReminderEmployeeId, employeePushOwnerId, setEmployeePushOwnerId, activeShift, setActiveShift, loading, setLoading, savingTips, setSavingTips, resolvedApiBase, setResolvedApiBase, lastPunch, setLastPunch, todaySchedule, setTodaySchedule, todayScheduleStatus, setTodayScheduleStatus, todayScheduleLoading, setTodayScheduleLoading, todayRoleFilter, setTodayRoleFilter, workingNowRows, setWorkingNowRows, workingNowStatus, setWorkingNowStatus, workingNowLoading, setWorkingNowLoading, activeViewTab, setActiveViewTab, companyOrderCatalog, setCompanyOrderCatalog, companyOrderSupplier, setCompanyOrderSupplier, companyOrderSearch, setCompanyOrderSearch, companyOrderShowOnlyAdded, setCompanyOrderShowOnlyAdded, companyOrderVisibleCount, setCompanyOrderVisibleCount, companyOrderNotes, setCompanyOrderNotes, companyOrderDrafts, setCompanyOrderDrafts, companyOrderRows, setCompanyOrderRows, companyOrderLoading, setCompanyOrderLoading, companyOrderSaving, setCompanyOrderSaving, companyOrderExportingFormat, setCompanyOrderExportingFormat, lastSubmittedCompanyOrderWeekStart, setLastSubmittedCompanyOrderWeekStart, companyOrderStatus, setCompanyOrderStatus, liquorCatalog, setLiquorCatalog, liquorCounts, setLiquorCounts, liquorBottleScans, setLiquorBottleScans, liquorSheetDrafts, setLiquorSheetDrafts, liquorCountDate, setLiquorCountDate, liquorScanContainerKey, setLiquorScanContainerKey, liquorInvoiceDate, setLiquorInvoiceDate, liquorInvoiceNumber, setLiquorInvoiceNumber, liquorInvoiceSupplier, setLiquorInvoiceSupplier, liquorInvoiceNotes, setLiquorInvoiceNotes, liquorInvoiceIncludePurchases, setLiquorInvoiceIncludePurchases, liquorInvoiceImageDataUrl, setLiquorInvoiceImageDataUrl, liquorInvoiceImageName, setLiquorInvoiceImageName, liquorInvoiceRows, setLiquorInvoiceRows, liquorInvoiceAnalyzing, setLiquorInvoiceAnalyzing, liquorInvoiceApplying, setLiquorInvoiceApplying, liquorStatus, setLiquorStatus, liquorLoading, setLiquorLoading, liquorSavingItemId, setLiquorSavingItemId, liquorSavingCountItemId, setLiquorSavingCountItemId, liquorAnalyzingItemId, setLiquorAnalyzingItemId, keyboardInset, setKeyboardInset, } = useMobileAppState();
   const [employeeWeekSchedule, setEmployeeWeekSchedule] =
     useState<EmployeeWeekScheduleResponse | null>(null);
   const [employeeWeekScheduleStatus, setEmployeeWeekScheduleStatus] =
@@ -130,11 +132,33 @@ export default function App() {
 
   useActiveShiftEffects({ tenant, activeShift, employeeName, persistActiveShift, setActiveShift, setEmployeeName, setTipsReminderEmployeeId, setPunchType, });
 
+  useEmployeePushOwnerEffects({
+    tenantAuthOrgId: tenant?.authOrgId || null,
+    setEmployeePushOwnerId,
+  });
+
   useEmployeePushEffects({
     tenantAuthOrgId: tenant?.authOrgId || null,
-    selectedEmployeeId: selectedEmployee?.id || null,
+    employeePushOwnerId,
     fetchJson,
   });
+
+  const rememberEmployeePushOwner = useCallback(
+    async (employeeId: string) => {
+      const tenantAuthOrgId = tenant?.authOrgId?.trim() || "";
+      const normalizedEmployeeId = employeeId.trim();
+      if (!tenantAuthOrgId || !normalizedEmployeeId) {
+        return;
+      }
+      setEmployeePushOwnerId(normalizedEmployeeId);
+      try {
+        await saveEmployeePushOwnerId(tenantAuthOrgId, normalizedEmployeeId);
+      } catch {
+        // keep in-memory owner if persistence fails
+      }
+    },
+    [tenant?.authOrgId, setEmployeePushOwnerId],
+  );
 
   useEffect(() => {
     const currentSessionEmployeeId = sessionEmployee?.id || null;
@@ -192,7 +216,7 @@ export default function App() {
     applyLiquorInvoiceRows,
   } = useLiquorActions({ hasLiquorAccess, hasLiquorPremiumAccess, selectedOfficeId, liquorHeaders, liquorSheetDrafts, liquorCountDate, liquorScanContainerKey, liquorInvoiceDate, liquorInvoiceNumber, liquorInvoiceSupplier, liquorInvoiceNotes, liquorInvoiceIncludePurchases, liquorInvoiceImageDataUrl, liquorInvoiceRows, t, fetchJson, loadLiquorControlData, setLiquorStatus, setLiquorSheetDrafts, setLiquorSavingItemId, setLiquorSavingCountItemId, setLiquorAnalyzingItemId, setLiquorInvoiceImageDataUrl, setLiquorInvoiceImageName, setLiquorInvoiceRows, setLiquorInvoiceAnalyzing, setLiquorInvoiceApplying, });
 
-  const { handlePunch, handleSubmitTips } = usePunchTipActions({ t, tenant, selectedEmployee, selectedOffice, punchType, requiresTipsForOut, hasSubmittedTips, pendingTipDate, employeeName, pin, activeShift, fetchJson, loadWorkingNow, persistActiveShift, clearActiveShiftSession, scrollToBottom, setStatus, setTipsStatus, setTipsAlert, setLoading, setServerTipsRequired, setLastPunch, setActiveShift, setEmployeeName, setPendingTipWorkDate, setTipsReminderEmployeeId, setPin, setCashTips, setCreditCardTips, cashTips, creditCardTips, tipsSubmittedByDay, tiplessClockOutWarningsByDay, getTipSubmissionKey, markTipsSubmitted, markTiplessClockOutWarning, clearTiplessClockOutWarning, setSavingTips, });
+  const { handlePunch, handleSubmitTips } = usePunchTipActions({ t, tenant, selectedEmployee, selectedOffice, punchType, requiresTipsForOut, hasSubmittedTips, pendingTipDate, employeeName, pin, activeShift, fetchJson, loadWorkingNow, persistActiveShift, clearActiveShiftSession, scrollToBottom, setStatus, setTipsStatus, setTipsAlert, setLoading, setServerTipsRequired, setLastPunch, setActiveShift, setEmployeeName, setPendingTipWorkDate, setTipsReminderEmployeeId, setPin, setCashTips, setCreditCardTips, cashTips, creditCardTips, tipsSubmittedByDay, tiplessClockOutWarningsByDay, getTipSubmissionKey, markTipsSubmitted, markTiplessClockOutWarning, clearTiplessClockOutWarning, rememberEmployeePushOwner, setSavingTips, });
 
   const { handleLogoutTenant } = useTenantLogoutAction({ tenantAuthOrgId: tenant?.authOrgId || null, recentTenants, clearActiveShiftSession, setTenant, setTenantInput, setTenantStatus, setResolvingTenant, setTenantOffices, setSelectedOfficeId, setTenantCompanyOrdersEnabled, setTenantLiquorInventoryEnabled, setTenantLiquorPremiumEnabled, setLoadingLocations, setLocationStatus, setLocationPickerOpen, setEmployees, setDirectoryEmployees, setTodaySchedule, setTodayScheduleStatus, setWorkingNowRows, setWorkingNowStatus, setCompanyOrderCatalog, setCompanyOrderSupplier, setCompanyOrderSearch, setCompanyOrderShowOnlyAdded, setCompanyOrderVisibleCount, setCompanyOrderNotes, setCompanyOrderDrafts, setCompanyOrderRows, setCompanyOrderStatus, setLiquorCatalog, setLiquorCounts, setLiquorBottleScans, setLiquorSheetDrafts, setLiquorStatus, setLiquorInvoiceRows, setLiquorInvoiceImageDataUrl, setLiquorInvoiceImageName, setTipsSubmittedByDay, setActiveViewTab, setLastPunch, setStatus, setTipsStatus, setResolvedApiBase, });
 

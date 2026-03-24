@@ -139,6 +139,7 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
         basePayload: basePunchPayload,
         payloadWithGeo: geoPunchPayload,
       });
+      await params.rememberEmployeePushOwner(targetEmployee.id);
       params.setStatus(params.t.punchRecorded);
       params.setServerTipsRequired(false);
       params.setLastPunch({
@@ -233,6 +234,7 @@ export const usePunchTipActions = (params: UsePunchTipActionsParams) => {
           employee: targetEmployee,
           pin: typedPin,
         });
+        await params.rememberEmployeePushOwner(targetEmployee.id);
         params.setActiveShift(recoveredShift);
         await params.persistActiveShift(recoveredShift);
         params.setEmployeeName(targetEmployee.name);

@@ -12,7 +12,7 @@ type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
 
 export const useEmployeePushEffects = (params: {
   tenantAuthOrgId: string | null;
-  selectedEmployeeId: string | null;
+  employeePushOwnerId: string | null;
   fetchJson: FetchJson;
 }) => {
   const lastRegisteredKeyRef = useRef("");
@@ -37,7 +37,7 @@ export const useEmployeePushEffects = (params: {
 
   const registerForPush = useCallback(async () => {
     const tenantKey = params.tenantAuthOrgId?.trim() || "";
-    const employeeId = params.selectedEmployeeId?.trim() || "";
+    const employeeId = params.employeePushOwnerId?.trim() || "";
     const registrationKey = `${tenantKey}:${employeeId}`;
     const result = await registerEmployeePushDevice({
       tenantKey,
@@ -62,12 +62,12 @@ export const useEmployeePushEffects = (params: {
     } else if (result.kind === "error") {
       console.warn(result.message);
     }
-  }, [params.fetchJson, params.selectedEmployeeId, params.tenantAuthOrgId]);
+  }, [params.employeePushOwnerId, params.fetchJson, params.tenantAuthOrgId]);
 
   useEffect(() => {
-    if (!params.tenantAuthOrgId || !params.selectedEmployeeId) {
+    if (!params.tenantAuthOrgId || !params.employeePushOwnerId) {
       return;
     }
     void registerForPush();
-  }, [params.selectedEmployeeId, params.tenantAuthOrgId, registerForPush]);
+  }, [params.employeePushOwnerId, params.tenantAuthOrgId, registerForPush]);
 };

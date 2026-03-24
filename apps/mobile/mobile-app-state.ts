@@ -53,11 +53,9 @@ export function useMobileAppState() {
   const [serverTipsRequired, setServerTipsRequired] = useState(false);
   const [pendingTipWorkDate, setPendingTipWorkDate] = useState<string | null>(null);
   const [tipsSubmittedByDay, setTipsSubmittedByDay] = useState<Record<string, boolean>>({});
-  const [tiplessClockOutWarningsByDay, setTiplessClockOutWarningsByDay] =
-    useState<Record<string, boolean>>({});
-  const [tipsReminderEmployeeId, setTipsReminderEmployeeId] = useState<
-    string | null
-  >(null);
+  const [tiplessClockOutWarningsByDay, setTiplessClockOutWarningsByDay] = useState<Record<string, boolean>>({});
+  const [tipsReminderEmployeeId, setTipsReminderEmployeeId] = useState<string | null>(null);
+  const [employeePushOwnerId, setEmployeePushOwnerId] = useState<string | null>(null);
   const [activeShift, setActiveShift] = useState<ActiveShift | null>(null);
   const [loading, setLoading] = useState(false);
   const [savingTips, setSavingTips] = useState(false);
@@ -199,6 +197,8 @@ export function useMobileAppState() {
     setTiplessClockOutWarningsByDay,
     tipsReminderEmployeeId,
     setTipsReminderEmployeeId,
+    employeePushOwnerId,
+    setEmployeePushOwnerId,
     activeShift,
     setActiveShift,
     loading,
