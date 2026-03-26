@@ -38,6 +38,19 @@ type SalesReportResponse = {
 };
 
 const formatOfficeName = (officeName: string | null) => officeName || "Unassigned";
+const filterRowsByLocation = (
+  rows: SalesReportRow[],
+  officeId: string,
+  unassignedOnly: boolean,
+) => {
+  if (unassignedOnly) {
+    return rows.filter((row) => !row.officeId);
+  }
+  if (!officeId) {
+    return rows;
+  }
+  return rows.filter((row) => row.officeId === officeId);
+};
 
 const formatMoney = (value: number) => `$${Number(value || 0).toFixed(2)}`;
 
@@ -301,6 +314,7 @@ export async function GET(request: Request) {
   const format = (scopedQuery.get("format") || "excel").toLowerCase();
   const from = (scopedQuery.get("from") || "").trim();
   const to = (scopedQuery.get("to") || "").trim();
+  const unassignedOnly = scopedQuery.get("unassignedOnly") === "1";
 
   if (!["excel", "csv", "pdf"].includes(format)) {
     return NextResponse.json(
@@ -329,7 +343,7 @@ export async function GET(request: Request) {
 
   const query = new URLSearchParams({ from, to });
   const officeId = (scopedQuery.get("officeId") || "").trim();
-  if (officeId) {
+  if (officeId && !unassignedOnly) {
     query.set("officeId", officeId);
   }
   const response = await clockinFetch(withQuery("/reports/sales", query));
@@ -339,10 +353,13 @@ export async function GET(request: Request) {
   }
 
   const data = (await response.json()) as SalesReportResponse;
-  const rows = data.reports || [];
+  const rows = filterRowsByLocation(data.reports || [], officeId, unassignedOnly);
   const fileLabel = `${from}-to-${to}`;
   const company = await getCompanyExportProfile();
   const companyRows = companyMetaRows(company);
+  const locationScopeLabel = unassignedOnly
+    ? "Unassigned"
+    : data.scope?.label || "All Locations";
 
   if (format === "excel") {
     return excelResponse(
@@ -352,7 +369,7 @@ export async function GET(request: Request) {
         sheet.addRow([company.displayName]);
         sheet.addRow(["Report", "Daily Sales Entries"]);
         sheet.addRow(["Range", `${from} - ${to}`]);
-        sheet.addRow(["Location Scope", data.scope?.label || "All Locations"]);
+        sheet.addRow(["Location Scope", locationScopeLabel]);
         companyRows.slice(1).forEach(([label, value]) => {
           sheet.addRow([label, value]);
         });
@@ -393,7 +410,7 @@ export async function GET(request: Request) {
       [company.displayName],
       ["Daily Sales Entries Report"],
       [`Range: ${from} to ${to}`],
-      [`Location Scope: ${data.scope?.label || "All Locations"}`],
+      [`Location Scope: ${locationScopeLabel}`],
       ...companyRows.slice(1).map(([label, value]) => [`${label}:`, value]),
       [],
       [

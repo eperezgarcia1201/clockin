@@ -29,6 +29,14 @@ type AccessResponse = {
 
 type ExpensePaymentMethod = "CHECK" | "DEBIT_CARD" | "CASH";
 type Lang = "en" | "es";
+type EntryLocationFilterOption = {
+  value: string;
+  label: string;
+  officeId: string | null;
+};
+
+const ALL_ENTRY_LOCATIONS_VALUE = "__all_locations__";
+const UNASSIGNED_ENTRY_LOCATION_VALUE = "__unassigned_location__";
 
 const translations: Record<
   Lang,
@@ -153,6 +161,8 @@ const translations: Record<
     salesReportsCount: string;
     expenseEntriesCount: string;
     totalExpenses: string;
+    entryLocationFilter: string;
+    entryLocationFilterHelp: string;
   }
 > = {
   en: {
@@ -292,6 +302,9 @@ const translations: Record<
     salesReportsCount: "Sales Reports",
     expenseEntriesCount: "Expense Entries",
     totalExpenses: "Total Expenses",
+    entryLocationFilter: "Entry Location Filter",
+    entryLocationFilterHelp:
+      "Filters the Daily Sales Entries and Daily Expense Entries tables below. Combined totals above stay the same.",
   },
   es: {
     dailySalesReport: "Reporte Diario de Ventas",
@@ -437,6 +450,9 @@ const translations: Record<
     salesReportsCount: "Reportes de Ventas",
     expenseEntriesCount: "Registros de Gastos",
     totalExpenses: "Gastos Totales",
+    entryLocationFilter: "Filtro de Ubicacion de Registros",
+    entryLocationFilterHelp:
+      "Filtra las tablas de Registros de Ventas Diarias y Registros de Gastos Diarios de abajo. Los totales combinados de arriba se mantienen igual.",
   },
 };
 
@@ -589,6 +605,33 @@ const expenseAmountLabel = (
   return t.cashTotal;
 };
 
+const matchesEntryLocationFilter = (
+  officeId: string | null,
+  filterValue: string,
+) => {
+  if (filterValue === ALL_ENTRY_LOCATIONS_VALUE) {
+    return true;
+  }
+  if (filterValue === UNASSIGNED_ENTRY_LOCATION_VALUE) {
+    return !officeId;
+  }
+  return officeId === filterValue;
+};
+
+const applyEntryLocationFilter = (
+  query: URLSearchParams,
+  filterValue: string,
+) => {
+  if (filterValue === UNASSIGNED_ENTRY_LOCATION_VALUE) {
+    query.set("unassignedOnly", "1");
+    return query;
+  }
+  if (filterValue && filterValue !== ALL_ENTRY_LOCATIONS_VALUE) {
+    query.set("officeId", filterValue);
+  }
+  return query;
+};
+
 export default function SalesReportPage() {
   const today = useMemo(() => new Date(), []);
   const sevenDaysAgo = useMemo(() => {
@@ -632,6 +675,9 @@ export default function SalesReportPage() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [report, setReport] = useState<SalesReportResponse | null>(null);
+  const [entriesLocationFilter, setEntriesLocationFilter] = useState(
+    ALL_ENTRY_LOCATIONS_VALUE,
+  );
   const t = useMemo(() => translations[lang] ?? translations.en, [lang]);
   const locationBreakdown = useMemo(
     () => buildSalesLocationBreakdown(report),
@@ -639,6 +685,75 @@ export default function SalesReportPage() {
   );
   const showLocationBreakdown = Boolean(
     report && !report.scope?.officeId && locationBreakdown.length > 0,
+  );
+  const entryLocationOptions = useMemo(() => {
+    if (!report) {
+      return [
+        {
+          value: ALL_ENTRY_LOCATIONS_VALUE,
+          label: t.allLocations,
+          officeId: null,
+        },
+      ] satisfies EntryLocationFilterOption[];
+    }
+
+    const scopedOfficeId = report.scope?.officeId?.trim();
+    if (scopedOfficeId) {
+      return [
+        {
+          value: scopedOfficeId,
+          label: report.scope.officeName || t.unassignedLocation,
+          officeId: scopedOfficeId,
+        },
+      ] satisfies EntryLocationFilterOption[];
+    }
+
+    const options = new Map<string, EntryLocationFilterOption>();
+    const addOption = (
+      officeId: string | null,
+      officeName: string | null | undefined,
+    ) => {
+      const value = officeId || UNASSIGNED_ENTRY_LOCATION_VALUE;
+      if (options.has(value)) {
+        return;
+      }
+      options.set(value, {
+        value,
+        label: officeName || t.unassignedLocation,
+        officeId,
+      });
+    };
+
+    report.reports.forEach((row) => addOption(row.officeId, row.officeName));
+    report.expenses.forEach((row) => addOption(row.officeId, row.officeName));
+
+    return [
+      {
+        value: ALL_ENTRY_LOCATIONS_VALUE,
+        label: t.allLocations,
+        officeId: null,
+      },
+      ...Array.from(options.values()).sort((left, right) =>
+        left.label.localeCompare(right.label),
+      ),
+    ] satisfies EntryLocationFilterOption[];
+  }, [report, t.allLocations, t.unassignedLocation]);
+  const showEntriesLocationFilter = Boolean(
+    report && !report.scope?.officeId && entryLocationOptions.length > 2,
+  );
+  const filteredSalesEntries = useMemo(
+    () =>
+      (report?.reports || []).filter((row) =>
+        matchesEntryLocationFilter(row.officeId, entriesLocationFilter),
+      ),
+    [entriesLocationFilter, report],
+  );
+  const filteredExpenseEntries = useMemo(
+    () =>
+      (report?.expenses || []).filter((row) =>
+        matchesEntryLocationFilter(row.officeId, entriesLocationFilter),
+      ),
+    [entriesLocationFilter, report],
   );
 
   const computedTotals = useMemo(() => {
@@ -740,18 +855,24 @@ export default function SalesReportPage() {
     }).toString()}`;
 
   const buildSalesEntriesExportHref = (format: "excel" | "csv" | "pdf") =>
-    `/api/reports/sales/entries/export?${new URLSearchParams({
-      format,
-      from,
-      to,
-    }).toString()}`;
+    `/api/reports/sales/entries/export?${applyEntryLocationFilter(
+      new URLSearchParams({
+        format,
+        from,
+        to,
+      }),
+      entriesLocationFilter,
+    ).toString()}`;
 
   const buildExpenseEntriesExportHref = (format: "excel" | "csv" | "pdf") =>
-    `/api/reports/sales/expense-entries/export?${new URLSearchParams({
-      format,
-      from,
-      to,
-    }).toString()}`;
+    `/api/reports/sales/expense-entries/export?${applyEntryLocationFilter(
+      new URLSearchParams({
+        format,
+        from,
+        to,
+      }),
+      entriesLocationFilter,
+    ).toString()}`;
 
   useEffect(() => {
     const syncLang = () => {
@@ -819,6 +940,25 @@ export default function SalesReportPage() {
       setExpenseDate(todayDateKey);
     }
   }, [editingExpenseId, todayDateKey]);
+
+  useEffect(() => {
+    if (!report) {
+      setEntriesLocationFilter(ALL_ENTRY_LOCATIONS_VALUE);
+      return;
+    }
+
+    const scopedOfficeId = report.scope?.officeId?.trim();
+    if (scopedOfficeId) {
+      setEntriesLocationFilter(scopedOfficeId);
+      return;
+    }
+
+    setEntriesLocationFilter((current) =>
+      entryLocationOptions.some((option) => option.value === current)
+        ? current
+        : ALL_ENTRY_LOCATIONS_VALUE,
+    );
+  }, [entryLocationOptions, report]);
 
   const resetExpenseForm = () => {
     setEditingExpenseId(null);
@@ -1554,6 +1694,35 @@ export default function SalesReportPage() {
             />
           ) : null}
 
+          {showEntriesLocationFilter ? (
+            <section className="admin-card sales-card">
+              <div className="sales-card-head">
+                <div>
+                  <h3>{t.entryLocationFilter}</h3>
+                  <p className="mb-0">{t.entryLocationFilterHelp}</p>
+                </div>
+              </div>
+              <div className="sales-range-grid">
+                <div className="sales-cell">
+                  <label className="form-label">{t.location}</label>
+                  <select
+                    className="form-select"
+                    value={entriesLocationFilter}
+                    onChange={(event) =>
+                      setEntriesLocationFilter(event.target.value)
+                    }
+                  >
+                    {entryLocationOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <section className="admin-card sales-card">
             <div className="sales-card-head">
               <h3>{t.dailySalesEntries}</h3>
@@ -1595,12 +1764,12 @@ export default function SalesReportPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {report.reports.length === 0 ? (
+                  {filteredSalesEntries.length === 0 ? (
                     <tr>
                       <td colSpan={10}>{t.noDailySalesReportsFound}</td>
                     </tr>
                   ) : (
-                    report.reports.map((row) => (
+                    filteredSalesEntries.map((row) => (
                       <tr key={row.id}>
                         <td>{formatDateForDisplay(row.date)}</td>
                         <td>{row.officeName || t.unassignedLocation}</td>
@@ -1628,7 +1797,7 @@ export default function SalesReportPage() {
             excelHref={buildExpenseEntriesExportHref("excel")}
             csvHref={buildExpenseEntriesExportHref("csv")}
             pdfHref={buildExpenseEntriesExportHref("pdf")}
-            expenses={report.expenses}
+            expenses={filteredExpenseEntries}
             dateLabel={t.date}
             locationLabel={t.location}
             companyNameLabel={t.companyName}
