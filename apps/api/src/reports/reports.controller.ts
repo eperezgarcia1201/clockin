@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -20,6 +22,69 @@ import type { Response } from 'express';
 import { AuthOrDevGuard } from '../auth/auth.guard';
 import type { RequestWithUser } from '../auth/auth.types';
 import { ReportsService } from './reports.service';
+
+function parseDailyExpenseBody(body: Record<string, unknown>) {
+  const date = typeof body.date === 'string' ? body.date.trim() : '';
+  if (!date) {
+    throw new BadRequestException('date is required (YYYY-MM-DD)');
+  }
+
+  const companyName =
+    typeof body.companyName === 'string' ? body.companyName.trim() : '';
+  if (!companyName) {
+    throw new BadRequestException('companyName is required.');
+  }
+
+  const invoiceNumber =
+    typeof body.invoiceNumber === 'string' ? body.invoiceNumber.trim() : '';
+
+  const paymentRaw =
+    typeof body.paymentMethod === 'string'
+      ? body.paymentMethod.trim().toUpperCase()
+      : '';
+  if (
+    !Object.values(ExpensePaymentMethod).includes(
+      paymentRaw as ExpensePaymentMethod,
+    )
+  ) {
+    throw new BadRequestException(
+      'paymentMethod must be CHECK, DEBIT_CARD, or CASH.',
+    );
+  }
+  const paymentMethod = paymentRaw as ExpensePaymentMethod;
+  if (paymentMethod === ExpensePaymentMethod.CHECK && !invoiceNumber) {
+    throw new BadRequestException(
+      'invoiceNumber is required when payment method is CHECK.',
+    );
+  }
+
+  const amountRaw = body.amount;
+  const amount =
+    typeof amountRaw === 'number' ? amountRaw : Number(amountRaw);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new BadRequestException('amount must be a non-negative number.');
+  }
+
+  const checkNumber =
+    typeof body.checkNumber === 'string' ? body.checkNumber.trim() : undefined;
+  const payToCompany =
+    typeof body.payToCompany === 'string'
+      ? body.payToCompany.trim()
+      : undefined;
+  const notes =
+    typeof body.notes === 'string' ? body.notes.trim() : undefined;
+
+  return {
+    date,
+    companyName,
+    paymentMethod,
+    amount: Number(amount.toFixed(2)),
+    invoiceNumber,
+    checkNumber,
+    payToCompany,
+    notes,
+  };
+}
 
 @Controller('reports')
 @UseGuards(AuthOrDevGuard)
@@ -315,69 +380,36 @@ export class ReportsController {
     if (!req.user) {
       throw new UnauthorizedException();
     }
+    return this.reports.createDailyExpense(req.user, parseDailyExpenseBody(body));
+  }
 
-    const date = typeof body.date === 'string' ? body.date.trim() : '';
-    if (!date) {
-      throw new BadRequestException('date is required (YYYY-MM-DD)');
+  @Patch('sales/expenses/:expenseId')
+  async updateDailyExpense(
+    @Req() req: RequestWithUser,
+    @Param('expenseId') expenseId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
     }
 
-    const companyName =
-      typeof body.companyName === 'string' ? body.companyName.trim() : '';
-    if (!companyName) {
-      throw new BadRequestException('companyName is required.');
+    return this.reports.updateDailyExpense(
+      req.user,
+      expenseId,
+      parseDailyExpenseBody(body),
+    );
+  }
+
+  @Delete('sales/expenses/:expenseId')
+  async deleteDailyExpense(
+    @Req() req: RequestWithUser,
+    @Param('expenseId') expenseId: string,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
     }
 
-    const invoiceNumber =
-      typeof body.invoiceNumber === 'string' ? body.invoiceNumber.trim() : '';
-
-    const paymentRaw =
-      typeof body.paymentMethod === 'string'
-        ? body.paymentMethod.trim().toUpperCase()
-        : '';
-    if (
-      !Object.values(ExpensePaymentMethod).includes(
-        paymentRaw as ExpensePaymentMethod,
-      )
-    ) {
-      throw new BadRequestException(
-        'paymentMethod must be CHECK, DEBIT_CARD, or CASH.',
-      );
-    }
-    const paymentMethod = paymentRaw as ExpensePaymentMethod;
-    if (paymentMethod === ExpensePaymentMethod.CHECK && !invoiceNumber) {
-      throw new BadRequestException(
-        'invoiceNumber is required when payment method is CHECK.',
-      );
-    }
-
-    const amountRaw = body.amount;
-    const amount =
-      typeof amountRaw === 'number' ? amountRaw : Number(amountRaw);
-    if (!Number.isFinite(amount) || amount < 0) {
-      throw new BadRequestException('amount must be a non-negative number.');
-    }
-
-    const checkNumber =
-      typeof body.checkNumber === 'string'
-        ? body.checkNumber.trim()
-        : undefined;
-    const payToCompany =
-      typeof body.payToCompany === 'string'
-        ? body.payToCompany.trim()
-        : undefined;
-    const notes =
-      typeof body.notes === 'string' ? body.notes.trim() : undefined;
-
-    return this.reports.createDailyExpense(req.user, {
-      date,
-      companyName,
-      paymentMethod,
-      amount: Number(amount.toFixed(2)),
-      invoiceNumber,
-      checkNumber,
-      payToCompany,
-      notes,
-    });
+    return this.reports.deleteDailyExpense(req.user, expenseId);
   }
 
   @Post('sales/expenses/:expenseId/receipt')

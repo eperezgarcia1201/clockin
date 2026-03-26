@@ -112,6 +112,17 @@ type DailyExpenseRow = {
   updatedAt: string;
 };
 
+type DailyExpenseInput = {
+  date: string;
+  companyName: string;
+  paymentMethod: ExpensePaymentMethod;
+  amount: number;
+  invoiceNumber: string;
+  checkNumber?: string;
+  payToCompany?: string;
+  notes?: string;
+};
+
 type ComparisonPeriod = 'week' | 'month' | 'year';
 
 type ComparisonReportInput = {
@@ -1673,99 +1684,113 @@ export class ReportsService {
 
   async createDailyExpense(
     authUser: AuthUser,
-    input: {
-      date: string;
-      companyName: string;
-      paymentMethod: ExpensePaymentMethod;
-      amount: number;
-      invoiceNumber: string;
-      checkNumber?: string;
-      payToCompany?: string;
-      notes?: string;
-    },
+    input: DailyExpenseInput,
   ) {
     await this.tenancy.requireFeature(authUser, 'salesCapture');
     const { tenant, user } = await this.requireDailySalesReporting(authUser);
-    const expenseDate = parseIsoDateOnly(input.date, 'date');
-
-    const companyName = input.companyName.trim();
-    if (!companyName) {
-      throw new BadRequestException('companyName is required.');
-    }
-
-    const invoiceNumber = input.invoiceNumber.trim();
-
-    if (!Number.isFinite(input.amount) || input.amount < 0) {
-      throw new BadRequestException('amount must be a non-negative number.');
-    }
-
-    const checkNumber = input.checkNumber?.trim() || '';
-    const payToCompany = input.payToCompany?.trim() || '';
-
-    if (input.paymentMethod === ExpensePaymentMethod.CHECK) {
-      if (!invoiceNumber) {
-        throw new BadRequestException(
-          'invoiceNumber is required when payment method is CHECK.',
-        );
-      }
-      if (!checkNumber) {
-        throw new BadRequestException(
-          'checkNumber is required when payment method is CHECK.',
-        );
-      }
-      if (!payToCompany) {
-        throw new BadRequestException(
-          'payToCompany is required when payment method is CHECK.',
-        );
-      }
-    }
+    const normalized = this.normalizeDailyExpenseInput(input);
 
     const row = await this.prisma.dailyExpense.create({
       data: {
         tenantId: tenant.id,
-        expenseDate,
-        companyName: companyName.slice(0, 160),
-        paymentMethod: input.paymentMethod,
-        amount: toMoney(input.amount),
-        invoiceNumber:
-          (invoiceNumber || 'N/A').slice(0, 80),
+        expenseDate: normalized.expenseDate,
+        companyName: normalized.companyName.slice(0, 160),
+        paymentMethod: normalized.paymentMethod,
+        amount: normalized.amount,
+        invoiceNumber: (normalized.invoiceNumber || 'N/A').slice(0, 80),
         checkNumber:
-          input.paymentMethod === ExpensePaymentMethod.CHECK
-            ? checkNumber.slice(0, 40)
+          normalized.paymentMethod === ExpensePaymentMethod.CHECK
+            ? normalized.checkNumber.slice(0, 40)
             : null,
         payToCompany:
-          input.paymentMethod === ExpensePaymentMethod.CHECK
-            ? payToCompany.slice(0, 160)
+          normalized.paymentMethod === ExpensePaymentMethod.CHECK
+            ? normalized.payToCompany.slice(0, 160)
             : null,
-        notes: input.notes?.trim().slice(0, 500) || null,
+        notes: normalized.notes,
         submittedByUserId: user.id,
       },
-      select: {
-        id: true,
-        expenseDate: true,
-        companyName: true,
-        paymentMethod: true,
-        invoiceNumber: true,
-        amount: true,
-        checkNumber: true,
-        payToCompany: true,
-        notes: true,
-        receiptUploadedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        submittedBy: {
-          select: {
-            name: true,
-            email: true,
-          },
-        },
-      },
+      select: this.dailyExpenseRowSelect(),
     });
 
     return {
       ok: true,
       expense: this.toDailyExpenseRow(row),
     };
+  }
+
+  async updateDailyExpense(
+    authUser: AuthUser,
+    expenseId: string,
+    input: DailyExpenseInput,
+  ) {
+    await this.tenancy.requireFeature(authUser, 'salesCapture');
+    const { tenant } = await this.requireDailySalesReporting(authUser);
+    const trimmedExpenseId = expenseId.trim();
+    if (!trimmedExpenseId) {
+      throw new BadRequestException('expenseId is required.');
+    }
+
+    const existing = await this.prisma.dailyExpense.findFirst({
+      where: {
+        id: trimmedExpenseId,
+        tenantId: tenant.id,
+      },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Expense not found.');
+    }
+
+    const normalized = this.normalizeDailyExpenseInput(input);
+
+    const row = await this.prisma.dailyExpense.update({
+      where: { id: existing.id },
+      data: {
+        expenseDate: normalized.expenseDate,
+        companyName: normalized.companyName.slice(0, 160),
+        paymentMethod: normalized.paymentMethod,
+        amount: normalized.amount,
+        invoiceNumber: (normalized.invoiceNumber || 'N/A').slice(0, 80),
+        checkNumber:
+          normalized.paymentMethod === ExpensePaymentMethod.CHECK
+            ? normalized.checkNumber.slice(0, 40)
+            : null,
+        payToCompany:
+          normalized.paymentMethod === ExpensePaymentMethod.CHECK
+            ? normalized.payToCompany.slice(0, 160)
+            : null,
+        notes: normalized.notes,
+      },
+      select: this.dailyExpenseRowSelect(),
+    });
+
+    return {
+      ok: true,
+      expense: this.toDailyExpenseRow(row),
+    };
+  }
+
+  async deleteDailyExpense(authUser: AuthUser, expenseId: string) {
+    await this.tenancy.requireFeature(authUser, 'salesCapture');
+    const { tenant } = await this.requireDailySalesReporting(authUser);
+    const trimmedExpenseId = expenseId.trim();
+    if (!trimmedExpenseId) {
+      throw new BadRequestException('expenseId is required.');
+    }
+
+    const result = await this.prisma.dailyExpense.deleteMany({
+      where: {
+        id: trimmedExpenseId,
+        tenantId: tenant.id,
+      },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException('Expense not found.');
+    }
+
+    return { ok: true };
   }
 
   async uploadDailyExpenseReceipt(
@@ -1822,26 +1847,7 @@ export class ReportsService {
         receiptFileName: (input.fileName || 'receipt').trim().slice(0, 180),
         receiptUploadedAt: new Date(),
       },
-      select: {
-        id: true,
-        expenseDate: true,
-        companyName: true,
-        paymentMethod: true,
-        invoiceNumber: true,
-        amount: true,
-        checkNumber: true,
-        payToCompany: true,
-        notes: true,
-        receiptUploadedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        submittedBy: {
-          select: {
-            name: true,
-            email: true,
-          },
-        },
-      },
+      select: this.dailyExpenseRowSelect(),
     });
 
     return {
@@ -1925,6 +1931,74 @@ export class ReportsService {
 
   private canOverrideDailySalesDateLock(role: Role) {
     return role === Role.OWNER || role === Role.ADMIN;
+  }
+
+  private dailyExpenseRowSelect() {
+    return {
+      id: true,
+      expenseDate: true,
+      companyName: true,
+      paymentMethod: true,
+      invoiceNumber: true,
+      amount: true,
+      checkNumber: true,
+      payToCompany: true,
+      notes: true,
+      receiptUploadedAt: true,
+      createdAt: true,
+      updatedAt: true,
+      submittedBy: {
+        select: {
+          name: true,
+          email: true,
+        },
+      },
+    };
+  }
+
+  private normalizeDailyExpenseInput(input: DailyExpenseInput) {
+    const expenseDate = parseIsoDateOnly(input.date, 'date');
+    const companyName = input.companyName.trim();
+    if (!companyName) {
+      throw new BadRequestException('companyName is required.');
+    }
+
+    const invoiceNumber = input.invoiceNumber.trim();
+    if (!Number.isFinite(input.amount) || input.amount < 0) {
+      throw new BadRequestException('amount must be a non-negative number.');
+    }
+
+    const checkNumber = input.checkNumber?.trim() || '';
+    const payToCompany = input.payToCompany?.trim() || '';
+
+    if (input.paymentMethod === ExpensePaymentMethod.CHECK) {
+      if (!invoiceNumber) {
+        throw new BadRequestException(
+          'invoiceNumber is required when payment method is CHECK.',
+        );
+      }
+      if (!checkNumber) {
+        throw new BadRequestException(
+          'checkNumber is required when payment method is CHECK.',
+        );
+      }
+      if (!payToCompany) {
+        throw new BadRequestException(
+          'payToCompany is required when payment method is CHECK.',
+        );
+      }
+    }
+
+    return {
+      expenseDate,
+      companyName,
+      paymentMethod: input.paymentMethod,
+      amount: toMoney(input.amount),
+      invoiceNumber,
+      checkNumber,
+      payToCompany,
+      notes: input.notes?.trim().slice(0, 500) || null,
+    };
   }
 
   private toDailySalesReportRow(report: {

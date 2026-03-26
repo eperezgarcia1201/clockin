@@ -4,11 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   createSalesExpenseRequest,
   createSalesReportRequest,
+  deleteSalesExpenseRequest,
   fetchSalesAccessRequest,
   fetchSalesReportRequest,
   fetchSalesSettingsRequest,
+  updateSalesExpenseRequest,
   uploadSalesExpenseReceiptRequest,
 } from "../../../lib/api/reports-sales";
+import { DailyExpenseEntriesTable } from "./components/DailyExpenseEntriesTable";
 
 type SettingsResponse = {
   reportsEnabled?: boolean;
@@ -45,7 +48,10 @@ const translations: Record<
     lockedToTodayMessage: string;
     saveDailyReport: string;
     saveExpense: string;
+    updateExpense: string;
+    cancelEdit: string;
     saving: string;
+    editingExpense: string;
     sales: string;
     payments: string;
     balance: string;
@@ -108,6 +114,9 @@ const translations: Record<
     method: string;
     amount: string;
     receipt: string;
+    actions: string;
+    edit: string;
+    delete: string;
     statusFromBeforeTo: string;
     statusUnableLoadSalesReports: string;
     statusAmountsMustBeNonNegative: string;
@@ -125,6 +134,12 @@ const translations: Record<
     statusUnableSaveExpense: string;
     statusExpenseAndReceiptSaved: string;
     statusExpenseSaved: string;
+    statusExpenseUpdated: string;
+    statusExpenseAndReceiptUpdated: string;
+    statusUnableDeleteExpense: string;
+    statusExpenseDeleted: string;
+    confirmDeleteExpense: string;
+    expenseDateHelpText: string;
   }
 > = {
   en: {
@@ -149,7 +164,10 @@ const translations: Record<
       "Locked to today's date. Admin authorization is required to modify another date.",
     saveDailyReport: "Save Daily Report",
     saveExpense: "Save Expense",
+    updateExpense: "Update Expense",
+    cancelEdit: "Cancel Edit",
     saving: "Saving...",
+    editingExpense: "Editing expense entry",
     sales: "Sales",
     payments: "Payments",
     balance: "Balance",
@@ -214,6 +232,9 @@ const translations: Record<
     method: "Method",
     amount: "Amount",
     receipt: "Receipt",
+    actions: "Actions",
+    edit: "Edit",
+    delete: "Delete",
     statusFromBeforeTo: '"From" date must be before or equal to "To" date.',
     statusUnableLoadSalesReports: "Unable to load sales reports.",
     statusAmountsMustBeNonNegative:
@@ -235,6 +256,12 @@ const translations: Record<
     statusUnableSaveExpense: "Unable to save daily expense.",
     statusExpenseAndReceiptSaved: "Expense and receipt saved.",
     statusExpenseSaved: "Expense saved.",
+    statusExpenseUpdated: "Expense updated.",
+    statusExpenseAndReceiptUpdated: "Expense and receipt updated.",
+    statusUnableDeleteExpense: "Unable to delete daily expense.",
+    statusExpenseDeleted: "Expense deleted.",
+    confirmDeleteExpense: "Delete this daily expense entry?",
+    expenseDateHelpText: "Defaults to today. Adjust if this expense belongs to another date.",
   },
   es: {
     dailySalesReport: "Reporte Diario de Ventas",
@@ -258,7 +285,10 @@ const translations: Record<
       "Bloqueado a la fecha de hoy. Se requiere autorización de admin para modificar otra fecha.",
     saveDailyReport: "Guardar Reporte Diario",
     saveExpense: "Guardar Gasto",
+    updateExpense: "Actualizar Gasto",
+    cancelEdit: "Cancelar Edición",
     saving: "Guardando...",
+    editingExpense: "Editando registro de gasto",
     sales: "Ventas",
     payments: "Pagos",
     balance: "Balance",
@@ -325,6 +355,9 @@ const translations: Record<
     method: "Método",
     amount: "Monto",
     receipt: "Recibo",
+    actions: "Acciones",
+    edit: "Editar",
+    delete: "Eliminar",
     statusFromBeforeTo:
       'La fecha "Desde" debe ser menor o igual a la fecha "Hasta".',
     statusUnableLoadSalesReports:
@@ -351,6 +384,12 @@ const translations: Record<
     statusUnableSaveExpense: "No se pudo guardar el gasto diario.",
     statusExpenseAndReceiptSaved: "Gasto y recibo guardados.",
     statusExpenseSaved: "Gasto guardado.",
+    statusExpenseUpdated: "Gasto actualizado.",
+    statusExpenseAndReceiptUpdated: "Gasto y recibo actualizados.",
+    statusUnableDeleteExpense: "No se pudo eliminar el gasto diario.",
+    statusExpenseDeleted: "Gasto eliminado.",
+    confirmDeleteExpense: "¿Eliminar este registro de gasto diario?",
+    expenseDateHelpText: "Se asigna a hoy por defecto. Cámbialo si este gasto pertenece a otra fecha.",
   },
 };
 
@@ -526,6 +565,7 @@ export default function SalesReportPage() {
   const [expenseCompanyName, setExpenseCompanyName] = useState("");
   const [expensePaymentMethod, setExpensePaymentMethod] =
     useState<ExpensePaymentMethod>("CHECK");
+  const [expenseDate, setExpenseDate] = useState(todayDateKey);
   const [expenseAmount, setExpenseAmount] = useState("0");
   const [expenseInvoiceNumber, setExpenseInvoiceNumber] = useState("");
   const [expenseCheckNumber, setExpenseCheckNumber] = useState("");
@@ -536,6 +576,7 @@ export default function SalesReportPage() {
   );
   const [expenseReceiptPickerKey, setExpenseReceiptPickerKey] = useState(0);
   const [expenseSaving, setExpenseSaving] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   const [from, setFrom] = useState(formatDate(sevenDaysAgo));
   const [to, setTo] = useState(formatDate(today));
@@ -543,7 +584,6 @@ export default function SalesReportPage() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [report, setReport] = useState<SalesReportResponse | null>(null);
-  const expenseDate = todayDateKey;
   const t = useMemo(() => translations[lang] ?? translations.en, [lang]);
 
   const computedTotals = useMemo(() => {
@@ -719,6 +759,75 @@ export default function SalesReportPage() {
     }
   }, [expensePaymentMethod]);
 
+  useEffect(() => {
+    if (!editingExpenseId) {
+      setExpenseDate(todayDateKey);
+    }
+  }, [editingExpenseId, todayDateKey]);
+
+  const resetExpenseForm = () => {
+    setEditingExpenseId(null);
+    setExpenseDate(todayDateKey);
+    setExpenseCompanyName("");
+    setExpenseAmount("0");
+    setExpenseInvoiceNumber("");
+    setExpenseCheckNumber("");
+    setExpensePayToCompany("");
+    setExpenseNotes("");
+    setExpenseReceiptFile(null);
+    setExpenseReceiptPickerKey((value) => value + 1);
+    setExpensePaymentMethod("CHECK");
+  };
+
+  const startExpenseEdit = (row: DailyExpenseRow) => {
+    setEditingExpenseId(row.id);
+    setExpenseDate(row.date);
+    setExpenseCompanyName(row.companyName);
+    setExpensePaymentMethod(row.paymentMethod);
+    setExpenseAmount(row.amount.toFixed(2));
+    setExpenseInvoiceNumber(row.invoiceNumber);
+    setExpenseCheckNumber(row.checkNumber || "");
+    setExpensePayToCompany(row.payToCompany || "");
+    setExpenseNotes(row.notes || "");
+    setExpenseReceiptFile(null);
+    setExpenseReceiptPickerKey((value) => value + 1);
+    setStatus(null);
+    if (typeof window !== "undefined") {
+      window.location.hash = "expenses-section";
+    }
+  };
+
+  const deleteExpense = async (row: DailyExpenseRow) => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(t.confirmDeleteExpense)
+    ) {
+      return;
+    }
+
+    setStatus(null);
+    setExpenseSaving(true);
+    try {
+      const response = await deleteSalesExpenseRequest(row.id);
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || t.statusUnableDeleteExpense);
+      }
+
+      if (editingExpenseId === row.id) {
+        resetExpenseForm();
+      }
+      setStatus(t.statusExpenseDeleted);
+      await runReport();
+    } catch (error) {
+      setStatus(
+        error instanceof Error ? error.message : t.statusUnableDeleteExpense,
+      );
+    } finally {
+      setExpenseSaving(false);
+    }
+  };
+
   const saveDailyReport = async (event: React.FormEvent) => {
     event.preventDefault();
     setStatus(null);
@@ -767,6 +876,7 @@ export default function SalesReportPage() {
   const saveExpense = async (event: React.FormEvent) => {
     event.preventDefault();
     setStatus(null);
+    const isEditing = Boolean(editingExpenseId);
 
     const parsedAmount = parseMoney(expenseAmount);
     if (parsedAmount === null) {
@@ -808,7 +918,7 @@ export default function SalesReportPage() {
 
     setExpenseSaving(true);
     try {
-      const response = await createSalesExpenseRequest({
+      const payload = {
         date: expenseDate,
         companyName: expenseCompanyName.trim(),
         paymentMethod: expensePaymentMethod,
@@ -823,7 +933,10 @@ export default function SalesReportPage() {
             ? expensePayToCompany.trim()
             : undefined,
         notes: expenseNotes.trim() || undefined,
-      });
+      };
+      const response = isEditing
+        ? await updateSalesExpenseRequest(editingExpenseId!, payload)
+        : await createSalesExpenseRequest(payload);
 
       const data = (await response.json()) as {
         error?: string;
@@ -835,7 +948,7 @@ export default function SalesReportPage() {
 
       if (expenseReceiptFile) {
         if (!data.expense?.id) {
-          throw new Error(t.statusExpenseSavedUploadCannotStart);
+          throw new Error(t.statusUnableUploadReceipt);
         }
 
         const formData = new FormData();
@@ -852,19 +965,15 @@ export default function SalesReportPage() {
         }
       }
 
-      setExpenseCompanyName("");
-      setExpenseAmount("0");
-      setExpenseInvoiceNumber("");
-      setExpenseCheckNumber("");
-      setExpensePayToCompany("");
-      setExpenseNotes("");
-      setExpenseReceiptFile(null);
-      setExpenseReceiptPickerKey((value) => value + 1);
-      setExpensePaymentMethod("CHECK");
+      resetExpenseForm();
       setStatus(
         expenseReceiptFile
-          ? t.statusExpenseAndReceiptSaved
-          : t.statusExpenseSaved,
+          ? isEditing
+            ? t.statusExpenseAndReceiptUpdated
+            : t.statusExpenseAndReceiptSaved
+          : isEditing
+            ? t.statusExpenseUpdated
+            : t.statusExpenseSaved,
       );
       await runReport();
     } catch (error) {
@@ -995,7 +1104,10 @@ export default function SalesReportPage() {
       <div className="sales-middle-grid">
         <section id="expenses-section" className="admin-card sales-card">
           <div className="sales-card-head">
-            <h3>{t.expensesOfTheDay}</h3>
+            <div>
+              <h3>{t.expensesOfTheDay}</h3>
+              {editingExpenseId ? <p className="mb-0">{t.editingExpense}</p> : null}
+            </div>
           </div>
           <form onSubmit={saveExpense} className="sales-expense-grid">
             <div className="sales-cell">
@@ -1004,10 +1116,10 @@ export default function SalesReportPage() {
                 className="form-control"
                 type="date"
                 value={expenseDate}
-                readOnly
-                disabled
+                onChange={(event) => setExpenseDate(event.target.value)}
+                required
               />
-              <small className="text-muted">{t.autoSetToday}</small>
+              <small className="text-muted">{t.expenseDateHelpText}</small>
             </div>
             <div className="sales-cell">
               <label className="form-label">{t.invoiceNumber}</label>
@@ -1168,8 +1280,22 @@ export default function SalesReportPage() {
                   className="btn btn-primary"
                   disabled={expenseSaving}
                 >
-                  {expenseSaving ? t.saving : t.saveExpense}
+                  {expenseSaving
+                    ? t.saving
+                    : editingExpenseId
+                      ? t.updateExpense
+                      : t.saveExpense}
                 </button>
+                {editingExpenseId ? (
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={resetExpenseForm}
+                    disabled={expenseSaving}
+                  >
+                    {t.cancelEdit}
+                  </button>
+                ) : null}
               </div>
             </div>
             <div className="sales-cell sales-cell--full">
@@ -1405,84 +1531,37 @@ export default function SalesReportPage() {
             </div>
           </section>
 
-          <section className="admin-card sales-card">
-            <div className="sales-card-head">
-              <h3>{t.dailyExpenseEntries}</h3>
-              <div className="sales-export-actions">
-                <a
-                  className="btn btn-outline-secondary"
-                  href={buildExpenseEntriesExportHref("excel")}
-                >
-                  {t.exportExcel}
-                </a>
-                <a
-                  className="btn btn-outline-secondary"
-                  href={buildExpenseEntriesExportHref("csv")}
-                >
-                  {t.exportCsv}
-                </a>
-                <a
-                  className="btn btn-outline-secondary"
-                  href={buildExpenseEntriesExportHref("pdf")}
-                >
-                  {t.exportPdf}
-                </a>
-              </div>
-            </div>
-            <div className="table-responsive sales-table-wrap">
-              <table className="report-table">
-                <thead>
-                  <tr>
-                    <th>{t.date}</th>
-                    <th>{t.companyName}</th>
-                    <th>{t.method}</th>
-                    <th>{t.amount}</th>
-                    <th>{t.invoiceNumber}</th>
-                    <th>{t.checkNumber}</th>
-                    <th>{t.companyCheckGoingTo}</th>
-                    <th>{t.submittedBy}</th>
-                    <th>{t.receipt}</th>
-                    <th>{t.notesOptional}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.expenses.length === 0 ? (
-                    <tr>
-                      <td colSpan={10}>{t.noDailyExpensesFound}</td>
-                    </tr>
-                  ) : (
-                    report.expenses.map((row) => (
-                      <tr key={row.id}>
-                        <td>{formatDateForDisplay(row.date)}</td>
-                        <td>{row.companyName}</td>
-                        <td>{paymentMethodLabel(row.paymentMethod, t)}</td>
-                        <td>{formatMoney(row.amount)}</td>
-                        <td>{row.invoiceNumber}</td>
-                        <td>{row.checkNumber || "-"}</td>
-                        <td>{row.payToCompany || "-"}</td>
-                        <td>{row.submittedBy || "-"}</td>
-                        <td>
-                          {row.hasReceipt ? (
-                            <a
-                              className="btn btn-sm btn-outline-secondary"
-                              href={`/api/reports/sales/expenses/${encodeURIComponent(row.id)}/receipt`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {t.view}
-                            </a>
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                        <td>{row.notes || "-"}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <DailyExpenseEntriesTable
+            title={t.dailyExpenseEntries}
+            exportExcelLabel={t.exportExcel}
+            exportCsvLabel={t.exportCsv}
+            exportPdfLabel={t.exportPdf}
+            excelHref={buildExpenseEntriesExportHref("excel")}
+            csvHref={buildExpenseEntriesExportHref("csv")}
+            pdfHref={buildExpenseEntriesExportHref("pdf")}
+            expenses={report.expenses}
+            dateLabel={t.date}
+            companyNameLabel={t.companyName}
+            methodLabel={t.method}
+            amountLabel={t.amount}
+            invoiceNumberLabel={t.invoiceNumber}
+            checkNumberLabel={t.checkNumber}
+            payToCompanyLabel={t.companyCheckGoingTo}
+            submittedByLabel={t.submittedBy}
+            receiptLabel={t.receipt}
+            notesLabel={t.notesOptional}
+            actionsLabel={t.actions}
+            noDataLabel={t.noDailyExpensesFound}
+            viewLabel={t.view}
+            editLabel={t.edit}
+            deleteLabel={t.delete}
+            expenseSaving={expenseSaving}
+            formatDateForDisplay={formatDateForDisplay}
+            formatMoney={formatMoney}
+            paymentMethodLabel={(method) => paymentMethodLabel(method, t)}
+            onEdit={startExpenseEdit}
+            onDelete={(row) => void deleteExpense(row)}
+          />
         </>
       )}
     </div>

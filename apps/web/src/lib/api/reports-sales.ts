@@ -41,6 +41,23 @@ export function createSalesExpenseRequest(
   });
 }
 
+export function updateSalesExpenseRequest(
+  expenseId: string,
+  payload: SalesExpensePayload,
+): Promise<Response> {
+  return fetch(`/api/reports/sales/expenses/${encodeURIComponent(expenseId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteSalesExpenseRequest(expenseId: string): Promise<Response> {
+  return fetch(`/api/reports/sales/expenses/${encodeURIComponent(expenseId)}`, {
+    method: "DELETE",
+  });
+}
+
 export function uploadSalesExpenseReceiptRequest(
   expenseId: string,
   formData: FormData,
