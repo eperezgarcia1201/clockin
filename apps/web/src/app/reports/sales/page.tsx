@@ -12,6 +12,8 @@ import {
   uploadSalesExpenseReceiptRequest,
 } from "../../../lib/api/reports-sales";
 import { DailyExpenseEntriesTable } from "./components/DailyExpenseEntriesTable";
+import { SalesLocationBreakdownTable } from "./components/SalesLocationBreakdownTable";
+import { buildSalesLocationBreakdown } from "./location-breakdown";
 
 type SettingsResponse = {
   reportsEnabled?: boolean;
@@ -145,6 +147,12 @@ const translations: Record<
     allLocations: string;
     unassignedLocation: string;
     locationScopeHelp: string;
+    locationBreakdown: string;
+    locationBreakdownHelp: string;
+    locationsWithActivity: (count: number) => string;
+    salesReportsCount: string;
+    expenseEntriesCount: string;
+    totalExpenses: string;
   }
 > = {
   en: {
@@ -266,12 +274,24 @@ const translations: Record<
     statusUnableDeleteExpense: "Unable to delete daily expense.",
     statusExpenseDeleted: "Expense deleted.",
     confirmDeleteExpense: "Delete this daily expense entry?",
-    expenseDateHelpText: "Defaults to today. Adjust if this expense belongs to another date.",
+    expenseDateHelpText:
+      "Defaults to today. Adjust if this expense belongs to another date.",
     location: "Location",
     locationScope: "Location Scope",
     allLocations: "All Locations",
     unassignedLocation: "Unassigned",
-    locationScopeHelp: "Uses the location selected in the top bar. Choose a specific location there before saving daily sales or expenses.",
+    locationScopeHelp:
+      "Uses the location selected in the top bar. Choose a specific location there before saving daily sales or expenses.",
+    locationBreakdown: "Location Breakdown",
+    locationBreakdownHelp:
+      "Combined totals stay above. This table breaks the selected range out by location.",
+    locationsWithActivity: (count) =>
+      count === 1
+        ? "1 location with activity in this range."
+        : `${count} locations with activity in this range.`,
+    salesReportsCount: "Sales Reports",
+    expenseEntriesCount: "Expense Entries",
+    totalExpenses: "Total Expenses",
   },
   es: {
     dailySalesReport: "Reporte Diario de Ventas",
@@ -399,12 +419,24 @@ const translations: Record<
     statusUnableDeleteExpense: "No se pudo eliminar el gasto diario.",
     statusExpenseDeleted: "Gasto eliminado.",
     confirmDeleteExpense: "¿Eliminar este registro de gasto diario?",
-    expenseDateHelpText: "Se asigna a hoy por defecto. Cámbialo si este gasto pertenece a otra fecha.",
+    expenseDateHelpText:
+      "Se asigna a hoy por defecto. Cámbialo si este gasto pertenece a otra fecha.",
     location: "Ubicación",
     locationScope: "Alcance de Ubicación",
     allLocations: "Todas las ubicaciones",
     unassignedLocation: "Sin asignar",
-    locationScopeHelp: "Usa la ubicación seleccionada en la barra superior. Elige una ubicación específica allí antes de guardar ventas o gastos diarios.",
+    locationScopeHelp:
+      "Usa la ubicación seleccionada en la barra superior. Elige una ubicación específica allí antes de guardar ventas o gastos diarios.",
+    locationBreakdown: "Desglose por Ubicación",
+    locationBreakdownHelp:
+      "Los totales combinados se mantienen arriba. Esta tabla separa el rango seleccionado por ubicación.",
+    locationsWithActivity: (count) =>
+      count === 1
+        ? "1 ubicación con actividad en este rango."
+        : `${count} ubicaciones con actividad en este rango.`,
+    salesReportsCount: "Reportes de Ventas",
+    expenseEntriesCount: "Registros de Gastos",
+    totalExpenses: "Gastos Totales",
   },
 };
 
@@ -601,6 +633,13 @@ export default function SalesReportPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [report, setReport] = useState<SalesReportResponse | null>(null);
   const t = useMemo(() => translations[lang] ?? translations.en, [lang]);
+  const locationBreakdown = useMemo(
+    () => buildSalesLocationBreakdown(report),
+    [report],
+  );
+  const showLocationBreakdown = Boolean(
+    report && !report.scope.officeId && locationBreakdown.length > 0,
+  );
 
   const computedTotals = useMemo(() => {
     const food = parseMoney(foodSales) ?? 0;
@@ -1123,7 +1162,9 @@ export default function SalesReportPage() {
           <div className="sales-card-head">
             <div>
               <h3>{t.expensesOfTheDay}</h3>
-              {editingExpenseId ? <p className="mb-0">{t.editingExpense}</p> : null}
+              {editingExpenseId ? (
+                <p className="mb-0">{t.editingExpense}</p>
+              ) : null}
             </div>
           </div>
           <form onSubmit={saveExpense} className="sales-expense-grid">
@@ -1493,6 +1534,26 @@ export default function SalesReportPage() {
 
       {report && (
         <>
+          {showLocationBreakdown ? (
+            <SalesLocationBreakdownTable
+              title={t.locationBreakdown}
+              description={t.locationBreakdownHelp}
+              summaryLabel={t.locationsWithActivity(locationBreakdown.length)}
+              rows={locationBreakdown}
+              locationLabel={t.location}
+              salesReportsLabel={t.salesReportsCount}
+              expenseEntriesLabel={t.expenseEntriesCount}
+              totalSalesLabel={t.totalSales}
+              paymentsLabel={t.payments}
+              balanceLabel={t.balance}
+              totalExpensesLabel={t.totalExpenses}
+              formatOfficeName={(officeName) =>
+                officeName || t.unassignedLocation
+              }
+              formatMoney={formatMoney}
+            />
+          ) : null}
+
           <section className="admin-card sales-card">
             <div className="sales-card-head">
               <h3>{t.dailySalesEntries}</h3>
@@ -1586,7 +1647,9 @@ export default function SalesReportPage() {
             deleteLabel={t.delete}
             expenseSaving={expenseSaving}
             formatDateForDisplay={formatDateForDisplay}
-            formatOfficeName={(officeName) => officeName || t.unassignedLocation}
+            formatOfficeName={(officeName) =>
+              officeName || t.unassignedLocation
+            }
             formatMoney={formatMoney}
             paymentMethodLabel={(method) => paymentMethodLabel(method, t)}
             onEdit={startExpenseEdit}

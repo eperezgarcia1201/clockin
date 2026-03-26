@@ -2482,6 +2482,16 @@ body {
   color: #58698d;
 }
 
+.sales-location-breakdown-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.sales-location-breakdown-count {
+  font-weight: 600;
+  color: #41506f;
+}
+
 .sales-daily-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3401,6 +3411,10 @@ html[data-theme="dark"] .sales-card-head h3 {
 
 html[data-theme="dark"] .sales-card-head p {
   color: #a7badf;
+}
+
+html[data-theme="dark"] .sales-location-breakdown-count {
+  color: #d5def8;
 }
 
 html[data-theme="dark"] .sales-action-totals {
