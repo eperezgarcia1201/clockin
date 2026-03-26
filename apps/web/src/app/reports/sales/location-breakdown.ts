@@ -18,8 +18,8 @@ type DailyExpenseRowInput = {
 };
 
 type SalesReportResponseInput = {
-  reports: SalesReportRowInput[];
-  expenses: DailyExpenseRowInput[];
+  reports?: SalesReportRowInput[];
+  expenses?: DailyExpenseRowInput[];
 };
 
 export type SalesLocationBreakdownRow = {
@@ -87,7 +87,7 @@ export const buildSalesLocationBreakdown = (
 
   const rows = new Map<string, SalesLocationBreakdownRow>();
 
-  report.reports.forEach((entry) => {
+  (report.reports || []).forEach((entry) => {
     const row = getOrCreateRow(rows, entry.officeId, entry.officeName);
     row.reportCount += 1;
     row.foodSales += entry.foodSales;
@@ -97,7 +97,7 @@ export const buildSalesLocationBreakdown = (
     row.balance += entry.balance;
   });
 
-  report.expenses.forEach((entry) => {
+  (report.expenses || []).forEach((entry) => {
     const row = getOrCreateRow(rows, entry.officeId, entry.officeName);
     row.expenseCount += 1;
     row.totalExpenses += entry.amount;

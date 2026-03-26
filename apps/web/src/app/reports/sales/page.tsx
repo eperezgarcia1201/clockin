@@ -638,7 +638,7 @@ export default function SalesReportPage() {
     [report],
   );
   const showLocationBreakdown = Boolean(
-    report && !report.scope.officeId && locationBreakdown.length > 0,
+    report && !report.scope?.officeId && locationBreakdown.length > 0,
   );
 
   const computedTotals = useMemo(() => {
@@ -1437,7 +1437,7 @@ export default function SalesReportPage() {
                 <input
                   className="form-control"
                   type="text"
-                  value={report?.scope.label || t.allLocations}
+                  value={report?.scope?.label || t.allLocations}
                   readOnly
                 />
               </div>
