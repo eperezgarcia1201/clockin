@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { clockinFetch } from "../../../../lib/clockin-api";
 import {
+  scopedJsonBodyFromRequest,
   scopedQueryFromRequest,
   withQuery,
 } from "../../../../lib/location-scope";
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = await scopedJsonBodyFromRequest(request);
     const response = await clockinFetch("/reports/sales", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

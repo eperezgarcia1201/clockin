@@ -17,6 +17,8 @@ type ExpensePaymentMethod = "CHECK" | "DEBIT_CARD" | "CASH";
 type SalesReportRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   foodSales: number;
   liquorSales: number;
   totalSales: number;
@@ -37,6 +39,8 @@ type SalesReportRow = {
 type DailyExpenseRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   companyName: string;
   paymentMethod: ExpensePaymentMethod;
   invoiceNumber: string;
@@ -53,6 +57,11 @@ type DailyExpenseRow = {
 
 type SalesReportResponse = {
   range: { from: string; to: string };
+  scope?: {
+    officeId: string | null;
+    officeName: string | null;
+    label: string;
+  };
   totals: {
     foodSales: number;
     liquorSales: number;
@@ -75,6 +84,7 @@ type SalesReportResponse = {
 };
 
 const formatMoney = (value: number) => `$${Number(value || 0).toFixed(2)}`;
+const formatOfficeName = (officeName: string | null) => officeName || "Unassigned";
 
 const escapeCsvCell = (value: unknown) => {
   const raw = String(value ?? "");
@@ -353,6 +363,7 @@ const buildSalesPdf = (
     9,
     12,
   );
+  addLine(`Location Scope: ${data.scope?.label || "All Locations"}`, false, 9, 12);
   addLine(`Generated On: ${formatLongDate(new Date())}`, true, 9, 13);
   y -= 10;
 
@@ -370,11 +381,12 @@ const buildSalesPdf = (
   addLine("Daily Sales Activity", true, 16, 22);
   const salesColumns: TableColumn[] = [
     { label: "Date", width: 68 },
+    { label: "Location", width: 86 },
     { label: "Food", width: 72 },
     { label: "Liquor", width: 72 },
-    { label: "Batch", width: 110 },
-    { label: "Total", width: 90 },
-    { label: "Balance", width: 93 },
+    { label: "Batch", width: 92 },
+    { label: "Total", width: 70 },
+    { label: "Balance", width: 45 },
   ];
 
   if (!data.reports.length) {
@@ -396,6 +408,7 @@ const buildSalesPdf = (
       }
       drawTableRow(salesColumns, [
         formatUsDate(row.date),
+        formatOfficeName(row.officeName),
         formatMoney(row.foodSales),
         formatMoney(row.liquorSales),
         row.bankDepositBatch || "-",
@@ -409,10 +422,11 @@ const buildSalesPdf = (
   addLine("Expense Activity", true, 16, 22);
   const expenseColumns: TableColumn[] = [
     { label: "Date", width: 74 },
-    { label: "Company", width: 145 },
-    { label: "Method", width: 78 },
-    { label: "Invoice #", width: 84 },
-    { label: "Amount", width: 72 },
+    { label: "Location", width: 86 },
+    { label: "Company", width: 103 },
+    { label: "Method", width: 68 },
+    { label: "Invoice #", width: 70 },
+    { label: "Amount", width: 52 },
     { label: "Receipt", width: 52 },
   ];
 
@@ -435,6 +449,7 @@ const buildSalesPdf = (
       }
       drawTableRow(expenseColumns, [
         formatUsDate(row.date),
+        formatOfficeName(row.officeName),
         row.companyName,
         row.paymentMethod.replace("_", " "),
         row.invoiceNumber,
@@ -478,6 +493,7 @@ export async function GET(request: Request) {
       summary.addRow([company.displayName]);
       summary.addRow(["Report", "Monthly Sales & Expense Report"]);
       summary.addRow(["Range", `${data.range.from} - ${data.range.to}`]);
+      summary.addRow(["Location Scope", data.scope?.label || "All Locations"]);
       companyRows.slice(1).forEach(([label, value]) => {
         summary.addRow([label, value]);
       });
@@ -503,6 +519,7 @@ export async function GET(request: Request) {
       const sales = workbook.addWorksheet("Sales Entries");
       sales.columns = [
         { header: "Date", key: "date", width: 14 },
+        { header: "Location", key: "officeName", width: 20 },
         { header: "Food Sales", key: "foodSales", width: 14 },
         { header: "Liquor Sales", key: "liquorSales", width: 14 },
         { header: "Total Sales", key: "totalSales", width: 14 },
@@ -512,7 +529,12 @@ export async function GET(request: Request) {
         { header: "Submitted By", key: "submittedBy", width: 24 },
         { header: "Notes", key: "notes", width: 42 },
       ];
-      data.reports.forEach((row) => sales.addRow(row));
+      data.reports.forEach((row) =>
+        sales.addRow({
+          ...row,
+          officeName: formatOfficeName(row.officeName),
+        }),
+      );
       [
         "foodSales",
         "liquorSales",
@@ -526,6 +548,7 @@ export async function GET(request: Request) {
       const expenses = workbook.addWorksheet("Expense Entries");
       expenses.columns = [
         { header: "Date", key: "date", width: 14 },
+        { header: "Location", key: "officeName", width: 20 },
         { header: "Company", key: "companyName", width: 28 },
         { header: "Method", key: "paymentMethod", width: 14 },
         { header: "Amount", key: "amount", width: 14 },
@@ -539,6 +562,7 @@ export async function GET(request: Request) {
       data.expenses.forEach((row) =>
         expenses.addRow({
           ...row,
+          officeName: formatOfficeName(row.officeName),
           hasReceipt: row.hasReceipt ? "Yes" : "No",
         }),
       );
@@ -551,6 +575,7 @@ export async function GET(request: Request) {
       [company.displayName],
       ["Daily Sales Report"],
       [`Range: ${data.range.from} to ${data.range.to}`],
+      [`Location Scope: ${data.scope?.label || "All Locations"}`],
       ...companyRows.slice(1).map(([label, value]) => [`${label}:`, value]),
       [],
       ["Summary"],
@@ -566,6 +591,7 @@ export async function GET(request: Request) {
       ["Sales Entries"],
       [
         "Date",
+        "Location",
         "Food Sales",
         "Liquor Sales",
         "Total Sales",
@@ -577,6 +603,7 @@ export async function GET(request: Request) {
       ],
       ...data.reports.map((row) => [
         row.date,
+        formatOfficeName(row.officeName),
         row.foodSales,
         row.liquorSales,
         row.totalSales,
@@ -590,6 +617,7 @@ export async function GET(request: Request) {
       ["Expense Entries"],
       [
         "Date",
+        "Location",
         "Company",
         "Method",
         "Amount",
@@ -602,6 +630,7 @@ export async function GET(request: Request) {
       ],
       ...data.expenses.map((row) => [
         row.date,
+        formatOfficeName(row.officeName),
         row.companyName,
         row.paymentMethod,
         row.amount,

@@ -168,6 +168,8 @@ model Office {
   groups        Group[]
   employees     Employee[]
   companyOrders CompanyOrder[]
+  dailySalesReports       DailySalesReport[]
+  dailyExpenses           DailyExpense[]
   liquorInventoryMovements LiquorInventoryMovement[]
   liquorInventoryCounts    LiquorInventoryCount[]
   liquorBottleScans        LiquorBottleScan[]
@@ -533,6 +535,7 @@ model CompanyOrderCatalogOverride {
 model DailySalesReport {
   id                 String   @id @default(cuid())
   tenantId           String
+  officeId           String?
   reportDate         DateTime
   foodSales          Float    @default(0)
   liquorSales        Float    @default(0)
@@ -547,16 +550,18 @@ model DailySalesReport {
   updatedAt          DateTime @updatedAt
 
   tenant      Tenant @relation(fields: [tenantId], references: [id])
+  office      Office? @relation(fields: [officeId], references: [id])
   submittedBy User?  @relation(fields: [submittedByUserId], references: [id])
 
-  @@unique([tenantId, reportDate])
-  @@index([tenantId, reportDate])
+  @@unique([tenantId, officeId, reportDate])
+  @@index([tenantId, officeId, reportDate])
   @@index([tenantId, submittedByUserId])
 }
 
 model DailyExpense {
   id                String               @id @default(cuid())
   tenantId          String
+  officeId          String?
   expenseDate       DateTime
   companyName       String
   paymentMethod     ExpensePaymentMethod
@@ -574,9 +579,10 @@ model DailyExpense {
   updatedAt         DateTime             @updatedAt
 
   tenant      Tenant @relation(fields: [tenantId], references: [id])
+  office      Office? @relation(fields: [officeId], references: [id])
   submittedBy User?  @relation(fields: [submittedByUserId], references: [id])
 
-  @@index([tenantId, expenseDate])
+  @@index([tenantId, officeId, expenseDate])
   @@index([tenantId, paymentMethod])
   @@index([tenantId, submittedByUserId])
 }

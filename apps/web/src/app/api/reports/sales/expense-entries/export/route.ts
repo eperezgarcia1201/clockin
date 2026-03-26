@@ -5,6 +5,10 @@ import {
   companyMetaRows,
   getCompanyExportProfile,
 } from "../../../../../../lib/company-export";
+import {
+  scopedQueryFromRequest,
+  withQuery,
+} from "../../../../../../lib/location-scope";
 
 export const runtime = "nodejs";
 
@@ -13,6 +17,8 @@ type ExpensePaymentMethod = "CHECK" | "DEBIT_CARD" | "CASH";
 type DailyExpenseRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   companyName: string;
   paymentMethod: ExpensePaymentMethod;
   invoiceNumber: string;
@@ -26,8 +32,15 @@ type DailyExpenseRow = {
 
 type SalesReportResponse = {
   range: { from: string; to: string };
+  scope?: {
+    officeId: string | null;
+    officeName: string | null;
+    label: string;
+  };
   expenses: DailyExpenseRow[];
 };
+
+const formatOfficeName = (officeName: string | null) => officeName || "Unassigned";
 
 const formatMoney = (value: number) => `$${Number(value || 0).toFixed(2)}`;
 
@@ -223,12 +236,13 @@ const buildPdf = (
     width: number;
     align?: "left" | "right";
   }> = [
-    { label: "Date", width: 50 },
-    { label: "Vendor", width: 123 },
-    { label: "Payment", width: 70 },
-    { label: "Invoice", width: 95 },
-    { label: "Check #", width: 57 },
-    { label: "Amount", width: 60, align: "right" },
+    { label: "Date", width: 48 },
+    { label: "Location", width: 64 },
+    { label: "Vendor", width: 93 },
+    { label: "Payment", width: 60 },
+    { label: "Invoice", width: 77 },
+    { label: "Check #", width: 43 },
+    { label: "Amount", width: 70, align: "right" },
   ];
 
   const headerLabels = ["Total Expenses", "Cash", "Debit Card", "Check"];
@@ -439,6 +453,7 @@ const buildPdf = (
 
       const cells = [
         formatUsShortDate(row.date),
+        formatOfficeName(row.officeName),
         row.companyName,
         methodLabel(row.paymentMethod),
         row.invoiceNumber,
@@ -484,10 +499,10 @@ const buildPdf = (
 };
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const format = (searchParams.get("format") || "excel").toLowerCase();
-  const from = (searchParams.get("from") || "").trim();
-  const to = (searchParams.get("to") || "").trim();
+  const scopedQuery = await scopedQueryFromRequest(request);
+  const format = (scopedQuery.get("format") || "excel").toLowerCase();
+  const from = (scopedQuery.get("from") || "").trim();
+  const to = (scopedQuery.get("to") || "").trim();
 
   if (!["excel", "csv", "pdf"].includes(format)) {
     return NextResponse.json(
@@ -515,7 +530,11 @@ export async function GET(request: Request) {
   }
 
   const query = new URLSearchParams({ from, to });
-  const response = await clockinFetch(`/reports/sales?${query.toString()}`);
+  const officeId = (scopedQuery.get("officeId") || "").trim();
+  if (officeId) {
+    query.set("officeId", officeId);
+  }
+  const response = await clockinFetch(withQuery("/reports/sales", query));
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     return new NextResponse(JSON.stringify(error), { status: response.status });
@@ -535,12 +554,14 @@ export async function GET(request: Request) {
         sheet.addRow([company.displayName]);
         sheet.addRow(["Report", "Daily Expense Entries"]);
         sheet.addRow(["Range", `${from} - ${to}`]);
+        sheet.addRow(["Location Scope", data.scope?.label || "All Locations"]);
         companyRows.slice(1).forEach(([label, value]) => {
           sheet.addRow([label, value]);
         });
         sheet.addRow([]);
         sheet.columns = [
           { header: "Date", key: "date", width: 14 },
+          { header: "Location", key: "officeName", width: 20 },
           { header: "Company Name", key: "companyName", width: 28 },
           { header: "Method", key: "paymentMethod", width: 14 },
           { header: "Amount", key: "amount", width: 14 },
@@ -558,6 +579,7 @@ export async function GET(request: Request) {
         rows.forEach((row) =>
           sheet.addRow({
             ...row,
+            officeName: formatOfficeName(row.officeName),
             paymentMethod: methodLabel(row.paymentMethod),
             hasReceipt: row.hasReceipt ? "Yes" : "No",
           }),
@@ -572,10 +594,12 @@ export async function GET(request: Request) {
       [company.displayName],
       ["Daily Expense Entries Report"],
       [`Range: ${from} to ${to}`],
+      [`Location Scope: ${data.scope?.label || "All Locations"}`],
       ...companyRows.slice(1).map(([label, value]) => [`${label}:`, value]),
       [],
       [
         "Date",
+        "Location",
         "Company Name",
         "Method",
         "Amount",
@@ -588,6 +612,7 @@ export async function GET(request: Request) {
       ],
       ...rows.map((row) => [
         row.date,
+        formatOfficeName(row.officeName),
         row.companyName,
         methodLabel(row.paymentMethod),
         row.amount,

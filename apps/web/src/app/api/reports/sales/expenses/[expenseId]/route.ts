@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { clockinFetch } from "../../../../../../lib/clockin-api";
+import { scopedJsonBodyFromRequest } from "../../../../../../lib/location-scope";
 
 type RouteParams = {
   params: Promise<{ expenseId: string }>;
@@ -8,7 +9,7 @@ type RouteParams = {
 export async function PATCH(request: Request, context: RouteParams) {
   try {
     const { expenseId } = await context.params;
-    const body = await request.json();
+    const body = await scopedJsonBodyFromRequest(request);
     const response = await clockinFetch(
       `/reports/sales/expenses/${encodeURIComponent(expenseId)}`,
       {

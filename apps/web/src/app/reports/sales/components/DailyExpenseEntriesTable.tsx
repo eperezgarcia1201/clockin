@@ -5,6 +5,8 @@ type ExpensePaymentMethod = "CHECK" | "DEBIT_CARD" | "CASH";
 type DailyExpenseRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   companyName: string;
   paymentMethod: ExpensePaymentMethod;
   invoiceNumber: string;
@@ -29,6 +31,7 @@ type DailyExpenseEntriesTableProps = {
   pdfHref: string;
   expenses: DailyExpenseRow[];
   dateLabel: string;
+  locationLabel: string;
   companyNameLabel: string;
   methodLabel: string;
   amountLabel: string;
@@ -45,6 +48,7 @@ type DailyExpenseEntriesTableProps = {
   deleteLabel: string;
   expenseSaving: boolean;
   formatDateForDisplay: (date: string) => string;
+  formatOfficeName: (officeName: string | null) => string;
   formatMoney: (value: number) => string;
   paymentMethodLabel: (method: ExpensePaymentMethod) => string;
   onEdit: (row: DailyExpenseRow) => void;
@@ -61,6 +65,7 @@ export function DailyExpenseEntriesTable({
   pdfHref,
   expenses,
   dateLabel,
+  locationLabel,
   companyNameLabel,
   methodLabel,
   amountLabel,
@@ -77,6 +82,7 @@ export function DailyExpenseEntriesTable({
   deleteLabel,
   expenseSaving,
   formatDateForDisplay,
+  formatOfficeName,
   formatMoney,
   paymentMethodLabel,
   onEdit,
@@ -103,6 +109,7 @@ export function DailyExpenseEntriesTable({
           <thead>
             <tr>
               <th>{dateLabel}</th>
+              <th>{locationLabel}</th>
               <th>{companyNameLabel}</th>
               <th>{methodLabel}</th>
               <th>{amountLabel}</th>
@@ -118,12 +125,13 @@ export function DailyExpenseEntriesTable({
           <tbody>
             {expenses.length === 0 ? (
               <tr>
-                <td colSpan={11}>{noDataLabel}</td>
+                <td colSpan={12}>{noDataLabel}</td>
               </tr>
             ) : (
               expenses.map((row) => (
                 <tr key={row.id}>
                   <td>{formatDateForDisplay(row.date)}</td>
+                  <td>{formatOfficeName(row.officeName)}</td>
                   <td>{row.companyName}</td>
                   <td>{paymentMethodLabel(row.paymentMethod)}</td>
                   <td>{formatMoney(row.amount)}</td>

@@ -5,12 +5,18 @@ import {
   companyMetaRows,
   getCompanyExportProfile,
 } from "../../../../../../lib/company-export";
+import {
+  scopedQueryFromRequest,
+  withQuery,
+} from "../../../../../../lib/location-scope";
 
 export const runtime = "nodejs";
 
 type SalesReportRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   foodSales: number;
   liquorSales: number;
   totalSales: number;
@@ -23,8 +29,15 @@ type SalesReportRow = {
 
 type SalesReportResponse = {
   range: { from: string; to: string };
+  scope?: {
+    officeId: string | null;
+    officeName: string | null;
+    label: string;
+  };
   reports: SalesReportRow[];
 };
+
+const formatOfficeName = (officeName: string | null) => officeName || "Unassigned";
 
 const formatMoney = (value: number) => `$${Number(value || 0).toFixed(2)}`;
 
@@ -172,14 +185,15 @@ const buildPdf = (
   const rowHeight = 16;
   const columns: Array<{ label: string; width: number }> = [
     { label: "Date", width: 52 },
+    { label: "Location", width: 70 },
     { label: "Food", width: 46 },
     { label: "Liquor", width: 46 },
     { label: "Total", width: 56 },
-    { label: "Batch", width: 56 },
+    { label: "Batch", width: 48 },
     { label: "Payments", width: 56 },
     { label: "Balance", width: 46 },
-    { label: "Submitted By", width: 68 },
-    { label: "Notes", width: 79 },
+    { label: "Submitted By", width: 58 },
+    { label: "Notes", width: 27 },
   ];
 
   const drawHeader = (continued = false) => {
@@ -250,6 +264,7 @@ const buildPdf = (
       drawRect(commands, tableX, y - rowHeight, tableWidth, rowHeight);
       const cells = [
         formatUsDate(row.date),
+        formatOfficeName(row.officeName),
         formatMoney(row.foodSales),
         formatMoney(row.liquorSales),
         formatMoney(row.totalSales),
@@ -282,10 +297,10 @@ const buildPdf = (
 };
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const format = (searchParams.get("format") || "excel").toLowerCase();
-  const from = (searchParams.get("from") || "").trim();
-  const to = (searchParams.get("to") || "").trim();
+  const scopedQuery = await scopedQueryFromRequest(request);
+  const format = (scopedQuery.get("format") || "excel").toLowerCase();
+  const from = (scopedQuery.get("from") || "").trim();
+  const to = (scopedQuery.get("to") || "").trim();
 
   if (!["excel", "csv", "pdf"].includes(format)) {
     return NextResponse.json(
@@ -313,7 +328,11 @@ export async function GET(request: Request) {
   }
 
   const query = new URLSearchParams({ from, to });
-  const response = await clockinFetch(`/reports/sales?${query.toString()}`);
+  const officeId = (scopedQuery.get("officeId") || "").trim();
+  if (officeId) {
+    query.set("officeId", officeId);
+  }
+  const response = await clockinFetch(withQuery("/reports/sales", query));
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     return new NextResponse(JSON.stringify(error), { status: response.status });
@@ -333,12 +352,14 @@ export async function GET(request: Request) {
         sheet.addRow([company.displayName]);
         sheet.addRow(["Report", "Daily Sales Entries"]);
         sheet.addRow(["Range", `${from} - ${to}`]);
+        sheet.addRow(["Location Scope", data.scope?.label || "All Locations"]);
         companyRows.slice(1).forEach(([label, value]) => {
           sheet.addRow([label, value]);
         });
         sheet.addRow([]);
         sheet.columns = [
           { header: "Date", key: "date", width: 14 },
+          { header: "Location", key: "officeName", width: 22 },
           { header: "Food Sales", key: "foodSales", width: 14 },
           { header: "Liquor Sales", key: "liquorSales", width: 14 },
           { header: "Total Sales", key: "totalSales", width: 14 },
@@ -348,7 +369,12 @@ export async function GET(request: Request) {
           { header: "Submitted By", key: "submittedBy", width: 24 },
           { header: "Notes", key: "notes", width: 40 },
         ];
-        rows.forEach((row) => sheet.addRow(row));
+        rows.forEach((row) =>
+          sheet.addRow({
+            ...row,
+            officeName: formatOfficeName(row.officeName),
+          }),
+        );
         [
           "foodSales",
           "liquorSales",
@@ -367,10 +393,12 @@ export async function GET(request: Request) {
       [company.displayName],
       ["Daily Sales Entries Report"],
       [`Range: ${from} to ${to}`],
+      [`Location Scope: ${data.scope?.label || "All Locations"}`],
       ...companyRows.slice(1).map(([label, value]) => [`${label}:`, value]),
       [],
       [
         "Date",
+        "Location",
         "Food Sales",
         "Liquor Sales",
         "Total Sales",
@@ -382,6 +410,7 @@ export async function GET(request: Request) {
       ],
       ...rows.map((row) => [
         row.date,
+        formatOfficeName(row.officeName),
         row.foodSales,
         row.liquorSales,
         row.totalSales,

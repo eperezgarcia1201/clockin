@@ -19,6 +19,8 @@ type ExpenseExportPeriod = "day" | "week" | "month";
 type DailyExpenseRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   companyName: string;
   paymentMethod: ExpensePaymentMethod;
   invoiceNumber: string;
@@ -35,10 +37,16 @@ type DailyExpenseRow = {
 
 type SalesReportResponse = {
   range: { from: string; to: string };
+  scope?: {
+    officeId: string | null;
+    officeName: string | null;
+    label: string;
+  };
   expenses: DailyExpenseRow[];
 };
 
 const formatMoney = (value: number) => `$${Number(value || 0).toFixed(2)}`;
+const formatOfficeName = (officeName: string | null) => officeName || "Unassigned";
 
 const escapeCsvCell = (value: unknown) => {
   const raw = String(value ?? "");
@@ -280,10 +288,11 @@ const buildPdf = (
     align?: "left" | "right";
   }> = [
     { label: "Date", width: 50 },
-    { label: "Vendor", width: 123 },
+    { label: "Location", width: 74 },
+    { label: "Vendor", width: 101 },
     { label: "Payment", width: 70 },
-    { label: "Invoice", width: 95 },
-    { label: "Check #", width: 57 },
+    { label: "Invoice", width: 83 },
+    { label: "Check #", width: 47 },
     { label: "Amount", width: 60, align: "right" },
   ];
 
@@ -479,6 +488,7 @@ const buildPdf = (
 
       const cells = [
         formatUsShortDate(row.date),
+        formatOfficeName(row.officeName),
         row.companyName,
         methodLabel(row.paymentMethod),
         row.invoiceNumber,
@@ -648,6 +658,7 @@ export async function GET(request: Request) {
         { metric: "Period", amount: periodLabel },
         { metric: "From", amount: resolved.from },
         { metric: "To", amount: resolved.to },
+        { metric: "Location Scope", amount: data.scope?.label || "All Locations" },
         { metric: "Total Expenses", amount: totals.totalExpenses },
         { metric: "Cash Expenses", amount: totals.cashExpenses },
         { metric: "Debit Card Expenses", amount: totals.debitCardExpenses },
@@ -657,6 +668,7 @@ export async function GET(request: Request) {
       const sheet = workbook.addWorksheet("Expenses");
       sheet.columns = [
         { header: "Date", key: "date", width: 14 },
+        { header: "Location", key: "officeName", width: 20 },
         { header: "Company", key: "companyName", width: 28 },
         { header: "Method", key: "paymentMethod", width: 14 },
         { header: "Amount", key: "amount", width: 14 },
@@ -670,6 +682,7 @@ export async function GET(request: Request) {
       expenses.forEach((row) =>
         sheet.addRow({
           ...row,
+          officeName: formatOfficeName(row.officeName),
           hasReceipt: row.hasReceipt ? "Yes" : "No",
         }),
       );
@@ -683,6 +696,7 @@ export async function GET(request: Request) {
       ["Daily Expenses Report"],
       [`Period: ${periodLabel}`],
       [`Range: ${resolved.from} to ${resolved.to}`],
+      [`Location Scope: ${data.scope?.label || "All Locations"}`],
       ...companyRows.slice(1).map(([label, value]) => [`${label}:`, value]),
       [],
       ["Summary"],
@@ -695,6 +709,7 @@ export async function GET(request: Request) {
       ["Expense Entries"],
       [
         "Date",
+        "Location",
         "Company",
         "Method",
         "Amount",
@@ -707,6 +722,7 @@ export async function GET(request: Request) {
       ],
       ...expenses.map((row) => [
         row.date,
+        formatOfficeName(row.officeName),
         row.companyName,
         row.paymentMethod,
         row.amount,

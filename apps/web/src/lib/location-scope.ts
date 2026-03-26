@@ -7,6 +7,37 @@ const cleanOfficeId = (value?: string | null) => {
   return trimmed ? trimmed : undefined;
 };
 
+export const scopedOfficeIdFromRequest = async (request: Request) => {
+  const url = new URL(request.url);
+  const explicitOfficeId = cleanOfficeId(url.searchParams.get("officeId"));
+  if (explicitOfficeId) {
+    return explicitOfficeId;
+  }
+
+  const cookieStore = await cookies();
+  return cleanOfficeId(cookieStore.get(ACTIVE_LOCATION_COOKIE)?.value);
+};
+
+export const scopedJsonBodyFromRequest = async (request: Request) => {
+  const body = (await request.json()) as Record<string, unknown>;
+  const explicitBodyOfficeId = cleanOfficeId(
+    typeof body.officeId === "string" ? body.officeId : undefined,
+  );
+  if (explicitBodyOfficeId) {
+    return { ...body, officeId: explicitBodyOfficeId };
+  }
+
+  const officeId = await scopedOfficeIdFromRequest(request);
+  if (!officeId) {
+    return body;
+  }
+
+  return {
+    ...body,
+    officeId,
+  };
+};
+
 export const scopedQueryFromRequest = async (request: Request) => {
   const url = new URL(request.url);
   const query = new URLSearchParams(url.searchParams);
@@ -17,10 +48,7 @@ export const scopedQueryFromRequest = async (request: Request) => {
     return query;
   }
 
-  const cookieStore = await cookies();
-  const cookieOfficeId = cleanOfficeId(
-    cookieStore.get(ACTIVE_LOCATION_COOKIE)?.value,
-  );
+  const cookieOfficeId = await scopedOfficeIdFromRequest(request);
   if (cookieOfficeId) {
     query.set("officeId", cookieOfficeId);
   }
@@ -32,4 +60,3 @@ export const withQuery = (path: string, query: URLSearchParams) => {
   const queryString = query.toString();
   return queryString ? `${path}?${queryString}` : path;
 };
-

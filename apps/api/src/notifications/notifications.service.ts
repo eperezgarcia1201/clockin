@@ -13,6 +13,10 @@ import {
   type NotificationPolicy,
 } from '../settings/notification-policy';
 import {
+  countLateClockInRemindersForShift,
+  getLateClockInReminderWindow,
+} from './late-clock-in-reminders';
+import {
   MembershipStatus,
   NotificationType,
   PunchType,
@@ -87,6 +91,7 @@ type OwnerReportSummary = {
 export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   private operationalAlertsTimer: ReturnType<typeof setInterval> | null = null;
   private operationalAlertsTickRunning = false;
+  private readonly operationalAlertsTenantsInProgress = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -183,12 +188,20 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async ensureOperationalAlerts(tenantId: string, timeZone?: string) {
-    const policy = await this.getNotificationPolicy(tenantId, timeZone);
+    if (this.operationalAlertsTenantsInProgress.has(tenantId)) {
+      return;
+    }
+    this.operationalAlertsTenantsInProgress.add(tenantId);
+    try {
+      const policy = await this.getNotificationPolicy(tenantId, timeZone);
 
-    await this.ensureBreakAlerts(tenantId, policy);
-    await this.ensureLateClockInReminders(tenantId, policy);
-    await this.ensureOwnerDailyReportEmails(tenantId, policy);
-    await this.ensureDailySalesInputReminders(tenantId, policy);
+      await this.ensureBreakAlerts(tenantId, policy);
+      await this.ensureLateClockInReminders(tenantId, policy);
+      await this.ensureOwnerDailyReportEmails(tenantId, policy);
+      await this.ensureDailySalesInputReminders(tenantId, policy);
+    } finally {
+      this.operationalAlertsTenantsInProgress.delete(tenantId);
+    }
   }
 
   async list(
@@ -972,18 +985,21 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const dueReminders = schedules
       .map((schedule) => {
         const startMinutes = this.parseTime(schedule.startTime);
-        const reminderWindowCloseMinutes =
+        const reminderWindow =
           startMinutes === null
             ? null
-            : startMinutes +
-              policy.lateClockInGraceMinutes +
-              policy.lateClockInReminderIntervalMinutes *
-                policy.lateClockInReminderMax;
+            : getLateClockInReminderWindow(
+                startMinutes,
+                policy.lateClockInGraceMinutes,
+                policy.lateClockInReminderIntervalMinutes,
+                policy.lateClockInReminderMax,
+              );
         return {
           employeeId: schedule.employeeId,
           startTime: schedule.startTime || '',
           startMinutes,
-          reminderWindowCloseMinutes,
+          reminderWindowOpenMinutes: reminderWindow?.openMinutes ?? null,
+          reminderWindowCloseMinutes: reminderWindow?.closeMinutes ?? null,
           employeeName:
             schedule.employee.displayName || schedule.employee.fullName,
         };
@@ -991,9 +1007,9 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       .filter(
         (schedule) =>
           schedule.startMinutes !== null &&
+          schedule.reminderWindowOpenMinutes !== null &&
           schedule.reminderWindowCloseMinutes !== null &&
-          current.minutes >=
-            schedule.startMinutes + policy.lateClockInGraceMinutes &&
+          current.minutes >= schedule.reminderWindowOpenMinutes &&
           current.minutes <= schedule.reminderWindowCloseMinutes,
       );
 
@@ -1104,46 +1120,19 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     const officeByEmployee = new Map(
       employees.map((employee) => [employee.id, employee.office || null]),
     );
-    const reminderCountByEmployee = new Map<string, number>();
-    reminders.forEach((notice) => {
-      if (!notice.employeeId) {
-        return;
-      }
-      if (this.toLocalDateKey(notice.createdAt, policy.timeZone) !== workDate) {
-        return;
-      }
-
-      const metadata = this.toMetadataRecord(notice.metadata);
-      const kind =
-        metadata && typeof metadata.kind === 'string' ? metadata.kind : '';
-
-      if (kind === MANAGER_MESSAGE_KIND || kind === AUTO_CLOCK_IN_KIND) {
-        return;
-      }
-
-      if (kind && kind !== LATE_CLOCK_IN_REMINDER_KIND) {
-        return;
-      }
-
-      if (!kind) {
-        const message = notice.message.toLowerCase();
-        if (!message.includes('has not clocked in')) {
-          return;
-        }
-      }
-
-      reminderCountByEmployee.set(
-        notice.employeeId,
-        (reminderCountByEmployee.get(notice.employeeId) || 0) + 1,
-      );
-    });
 
     for (const reminder of remindersToSend) {
       if (clockedInToday.has(reminder.employeeId)) {
         continue;
       }
-      const reminderCount =
-        reminderCountByEmployee.get(reminder.employeeId) || 0;
+      const reminderCount = countLateClockInRemindersForShift(reminders, {
+        employeeId: reminder.employeeId,
+        startTime: reminder.startTime,
+        workDate,
+        timeZone: policy.timeZone,
+        reminderWindowOpenMinutes: reminder.reminderWindowOpenMinutes || 0,
+        reminderWindowCloseMinutes: reminder.reminderWindowCloseMinutes || 0,
+      });
       const latestPunch = latestPunchByEmployee.get(reminder.employeeId);
       const isAlreadyActive = latestPunch
         ? ACTIVE_WORK_STATUSES.has(latestPunch.type)
@@ -1283,7 +1272,6 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
           policy.lateClockInReminderMax,
         );
       }
-      reminderCountByEmployee.set(reminder.employeeId, reminderNumber);
 
       if (
         reminderNumber >= policy.lateClockInReminderMax &&
@@ -1446,12 +1434,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const hasSalesReport = await this.prisma.dailySalesReport.findUnique({
+    const hasSalesReport = await this.prisma.dailySalesReport.findFirst({
       where: {
-        tenantId_reportDate: {
-          tenantId,
-          reportDate,
-        },
+        tenantId,
+        reportDate,
       },
       select: { id: true },
     });
@@ -1563,12 +1549,11 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     );
 
     const [sales, expenses, orders] = await Promise.all([
-      this.prisma.dailySalesReport.findUnique({
+      this.prisma.dailySalesReport.findFirst({
         where: {
-          tenantId_reportDate: {
-            tenantId: input.tenantId,
-            reportDate: reportDateUtc,
-          },
+          tenantId: input.tenantId,
+          reportDate: reportDateUtc,
+          ...(input.officeId ? { officeId: input.officeId } : { officeId: null }),
         },
         select: {
           foodSales: true,
@@ -1583,6 +1568,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
         where: {
           tenantId: input.tenantId,
           expenseDate: reportDateUtc,
+          ...(input.officeId ? { officeId: input.officeId } : { officeId: null }),
         },
         select: {
           amount: true,

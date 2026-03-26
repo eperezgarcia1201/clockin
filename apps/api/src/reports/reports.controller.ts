@@ -73,10 +73,13 @@ function parseDailyExpenseBody(body: Record<string, unknown>) {
       : undefined;
   const notes =
     typeof body.notes === 'string' ? body.notes.trim() : undefined;
+  const officeId =
+    typeof body.officeId === 'string' ? body.officeId.trim() : undefined;
 
   return {
     date,
     companyName,
+    officeId,
     paymentMethod,
     amount: Number(amount.toFixed(2)),
     invoiceNumber,
@@ -272,6 +275,7 @@ export class ReportsController {
     return this.reports.getSalesReport(req.user, {
       from,
       to,
+      officeId: query.officeId || undefined,
     });
   }
 
@@ -316,6 +320,7 @@ export class ReportsController {
   @Post('sales')
   async saveSalesReport(
     @Req() req: RequestWithUser,
+    @Query() query: Record<string, string>,
     @Body() body: Record<string, unknown>,
   ) {
     if (!req.user) {
@@ -361,6 +366,10 @@ export class ReportsController {
 
     return this.reports.upsertDailySalesReport(req.user, {
       date,
+      officeId:
+        query.officeId ||
+        (typeof body.officeId === 'string' ? body.officeId.trim() : '') ||
+        undefined,
       foodSales: parseAmount('foodSales'),
       liquorSales: parseAmount('liquorSales'),
       cashPayments: parseAmount('cashPayments'),
@@ -375,18 +384,26 @@ export class ReportsController {
   @Post('sales/expenses')
   async saveDailyExpense(
     @Req() req: RequestWithUser,
+    @Query() query: Record<string, string>,
     @Body() body: Record<string, unknown>,
   ) {
     if (!req.user) {
       throw new UnauthorizedException();
     }
-    return this.reports.createDailyExpense(req.user, parseDailyExpenseBody(body));
+    return this.reports.createDailyExpense(req.user, {
+      ...parseDailyExpenseBody(body),
+      officeId:
+        query.officeId ||
+        (typeof body.officeId === 'string' ? body.officeId.trim() : '') ||
+        undefined,
+    });
   }
 
   @Patch('sales/expenses/:expenseId')
   async updateDailyExpense(
     @Req() req: RequestWithUser,
     @Param('expenseId') expenseId: string,
+    @Query() query: Record<string, string>,
     @Body() body: Record<string, unknown>,
   ) {
     if (!req.user) {
@@ -396,7 +413,13 @@ export class ReportsController {
     return this.reports.updateDailyExpense(
       req.user,
       expenseId,
-      parseDailyExpenseBody(body),
+      {
+        ...parseDailyExpenseBody(body),
+        officeId:
+          query.officeId ||
+          (typeof body.officeId === 'string' ? body.officeId.trim() : '') ||
+          undefined,
+      },
     );
   }
 

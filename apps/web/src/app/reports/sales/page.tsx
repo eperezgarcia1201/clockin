@@ -140,6 +140,11 @@ const translations: Record<
     statusExpenseDeleted: string;
     confirmDeleteExpense: string;
     expenseDateHelpText: string;
+    location: string;
+    locationScope: string;
+    allLocations: string;
+    unassignedLocation: string;
+    locationScopeHelp: string;
   }
 > = {
   en: {
@@ -262,6 +267,11 @@ const translations: Record<
     statusExpenseDeleted: "Expense deleted.",
     confirmDeleteExpense: "Delete this daily expense entry?",
     expenseDateHelpText: "Defaults to today. Adjust if this expense belongs to another date.",
+    location: "Location",
+    locationScope: "Location Scope",
+    allLocations: "All Locations",
+    unassignedLocation: "Unassigned",
+    locationScopeHelp: "Uses the location selected in the top bar. Choose a specific location there before saving daily sales or expenses.",
   },
   es: {
     dailySalesReport: "Reporte Diario de Ventas",
@@ -390,12 +400,19 @@ const translations: Record<
     statusExpenseDeleted: "Gasto eliminado.",
     confirmDeleteExpense: "¿Eliminar este registro de gasto diario?",
     expenseDateHelpText: "Se asigna a hoy por defecto. Cámbialo si este gasto pertenece a otra fecha.",
+    location: "Ubicación",
+    locationScope: "Alcance de Ubicación",
+    allLocations: "Todas las ubicaciones",
+    unassignedLocation: "Sin asignar",
+    locationScopeHelp: "Usa la ubicación seleccionada en la barra superior. Elige una ubicación específica allí antes de guardar ventas o gastos diarios.",
   },
 };
 
 type SalesReportRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   foodSales: number;
   liquorSales: number;
   totalSales: number;
@@ -416,6 +433,8 @@ type SalesReportRow = {
 type DailyExpenseRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   companyName: string;
   paymentMethod: ExpensePaymentMethod;
   invoiceNumber: string;
@@ -432,6 +451,7 @@ type DailyExpenseRow = {
 
 type SalesReportResponse = {
   range: { from: string; to: string };
+  scope: { officeId: string | null; officeName: string | null; label: string };
   totals: {
     foodSales: number;
     liquorSales: number;
@@ -486,9 +506,7 @@ const formatDateInTimeZone = (date: Date, timeZone?: string) => {
 
 const formatDateForDisplay = (value: string) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (!match) {
-    return value;
-  }
+  if (!match) return value;
   return `${match[2]}/${match[3]}/${match[1]}`;
 };
 
@@ -496,9 +514,7 @@ const formatMoney = (value: number) => `$${value.toFixed(2)}`;
 
 const parseMoney = (value: string) => {
   const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) {
-    return null;
-  }
+  if (!Number.isFinite(number) || number < 0) return null;
   return Number(number.toFixed(2));
 };
 
@@ -1025,6 +1041,7 @@ export default function SalesReportPage() {
         <div className="sales-card-head">
           <h2>{t.dailySalesReport}</h2>
         </div>
+        <p className="text-muted mb-3">{t.locationScopeHelp}</p>
         <form onSubmit={saveDailyReport} className="sales-daily-grid">
           <div className="sales-cell">
             <label className="form-label">{t.reportDate}</label>
@@ -1374,6 +1391,15 @@ export default function SalesReportPage() {
                   onChange={(event) => setTo(event.target.value)}
                 />
               </div>
+              <div className="sales-cell">
+                <label className="form-label">{t.locationScope}</label>
+                <input
+                  className="form-control"
+                  type="text"
+                  value={report?.scope.label || t.allLocations}
+                  readOnly
+                />
+              </div>
               <div className="sales-cell sales-cell--full">
                 <div className="sales-range-actions">
                   <button
@@ -1496,6 +1522,7 @@ export default function SalesReportPage() {
                 <thead>
                   <tr>
                     <th>{t.date}</th>
+                    <th>{t.location}</th>
                     <th>{t.foodSales}</th>
                     <th>{t.liquorSales}</th>
                     <th>{t.totalSales}</th>
@@ -1509,12 +1536,13 @@ export default function SalesReportPage() {
                 <tbody>
                   {report.reports.length === 0 ? (
                     <tr>
-                      <td colSpan={9}>{t.noDailySalesReportsFound}</td>
+                      <td colSpan={10}>{t.noDailySalesReportsFound}</td>
                     </tr>
                   ) : (
                     report.reports.map((row) => (
                       <tr key={row.id}>
                         <td>{formatDateForDisplay(row.date)}</td>
+                        <td>{row.officeName || t.unassignedLocation}</td>
                         <td>{formatMoney(row.foodSales)}</td>
                         <td>{formatMoney(row.liquorSales)}</td>
                         <td>{formatMoney(row.totalSales)}</td>
@@ -1541,6 +1569,7 @@ export default function SalesReportPage() {
             pdfHref={buildExpenseEntriesExportHref("pdf")}
             expenses={report.expenses}
             dateLabel={t.date}
+            locationLabel={t.location}
             companyNameLabel={t.companyName}
             methodLabel={t.method}
             amountLabel={t.amount}
@@ -1557,6 +1586,7 @@ export default function SalesReportPage() {
             deleteLabel={t.delete}
             expenseSaving={expenseSaving}
             formatDateForDisplay={formatDateForDisplay}
+            formatOfficeName={(officeName) => officeName || t.unassignedLocation}
             formatMoney={formatMoney}
             paymentMethodLabel={(method) => paymentMethodLabel(method, t)}
             onEdit={startExpenseEdit}

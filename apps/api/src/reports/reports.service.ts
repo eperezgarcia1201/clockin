@@ -78,6 +78,8 @@ type DayTips = {
 type DailySalesReportRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   foodSales: number;
   liquorSales: number;
   totalSales: number;
@@ -98,6 +100,8 @@ type DailySalesReportRow = {
 type DailyExpenseRow = {
   id: string;
   date: string;
+  officeId: string | null;
+  officeName: string | null;
   companyName: string;
   paymentMethod: ExpensePaymentMethod;
   invoiceNumber: string;
@@ -114,6 +118,7 @@ type DailyExpenseRow = {
 
 type DailyExpenseInput = {
   date: string;
+  officeId?: string;
   companyName: string;
   paymentMethod: ExpensePaymentMethod;
   amount: number;
@@ -121,6 +126,23 @@ type DailyExpenseInput = {
   checkNumber?: string;
   payToCompany?: string;
   notes?: string;
+};
+
+type DailySalesReportingContext = {
+  tenant: { id: string };
+  user: { id: string };
+  membership: { role: Role };
+  settings: {
+    reportsEnabled: boolean;
+    dailySalesReportingEnabled: boolean;
+    timezone: string;
+  };
+};
+
+type DailySalesOfficeScope = DailySalesReportingContext & {
+  allowedOfficeId: string | null;
+  resolvedOfficeId: string | null;
+  resolvedOfficeName: string | null;
 };
 
 type ComparisonPeriod = 'week' | 'month' | 'year';
@@ -567,10 +589,14 @@ export class ReportsService {
     input: {
       from: string;
       to: string;
+      officeId?: string;
     },
   ) {
     await this.tenancy.requireAnyFeature(authUser, ['reports', 'salesCapture']);
-    const { tenant } = await this.requireDailySalesReporting(authUser);
+    const scope = await this.resolveDailySalesOfficeScope(
+      authUser,
+      input.officeId,
+    );
     const fromUtc = parseIsoDateOnly(input.from, 'from');
     const toUtc = parseIsoDateOnly(input.to, 'to');
     if (fromUtc.getTime() > toUtc.getTime()) {
@@ -581,14 +607,23 @@ export class ReportsService {
 
     const reports = await this.prisma.dailySalesReport.findMany({
       where: {
-        tenantId: tenant.id,
+        tenantId: scope.tenant.id,
+        ...(scope.resolvedOfficeId
+          ? { officeId: scope.resolvedOfficeId }
+          : {}),
         reportDate: {
           gte: fromUtc,
           lt: toExclusiveUtc,
         },
       },
-      orderBy: { reportDate: 'desc' },
+      orderBy: [{ reportDate: 'desc' }, { createdAt: 'desc' }],
       include: {
+        office: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         submittedBy: {
           select: {
             name: true,
@@ -600,7 +635,10 @@ export class ReportsService {
 
     const expenses = await this.prisma.dailyExpense.findMany({
       where: {
-        tenantId: tenant.id,
+        tenantId: scope.tenant.id,
+        ...(scope.resolvedOfficeId
+          ? { officeId: scope.resolvedOfficeId }
+          : {}),
         expenseDate: {
           gte: fromUtc,
           lt: toExclusiveUtc,
@@ -610,6 +648,12 @@ export class ReportsService {
       select: {
         id: true,
         expenseDate: true,
+        office: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         companyName: true,
         paymentMethod: true,
         invoiceNumber: true,
@@ -629,10 +673,12 @@ export class ReportsService {
       },
     });
 
-    const rows = reports.map((report) => this.toDailySalesReportRow(report));
-    const expenseRows = expenses.map((expense) =>
-      this.toDailyExpenseRow(expense),
-    );
+    const rows = reports
+      .map((report) => this.toDailySalesReportRow(report))
+      .sort(compareDailySalesRowsByOfficeAndDate);
+    const expenseRows = expenses
+      .map((expense) => this.toDailyExpenseRow(expense))
+      .sort(compareDailyExpenseRowsByOfficeAndDate);
     const totals = rows.reduce(
       (acc, row) => {
         acc.foodSales += row.foodSales;
@@ -682,6 +728,11 @@ export class ReportsService {
 
     return {
       range: { from: input.from, to: input.to },
+      scope: {
+        officeId: scope.resolvedOfficeId,
+        officeName: scope.resolvedOfficeName,
+        label: scope.resolvedOfficeName || 'All Locations',
+      },
       totals: {
         foodSales: toMoney(totals.foodSales),
         liquorSales: toMoney(totals.liquorSales),
@@ -1565,8 +1616,8 @@ export class ReportsService {
       highlights,
       notes: [
         input.officeId
-          ? 'Labor and tips are scoped by selected location. Sales and daily expenses are tenant-wide. Liquor is scoped by selected location.'
-          : 'Labor and tips reflect all matched employees. Sales and daily expenses are tenant-wide.',
+          ? 'Labor, tips, sales, expenses, and liquor data are scoped by the selected location.'
+          : 'Labor, tips, sales, expenses, and liquor data reflect all matched locations.',
       ],
     };
   }
@@ -1607,6 +1658,7 @@ export class ReportsService {
     authUser: AuthUser,
     input: {
       date: string;
+      officeId?: string;
       foodSales: number;
       liquorSales: number;
       cashPayments: number;
@@ -1618,13 +1670,16 @@ export class ReportsService {
     },
   ) {
     await this.tenancy.requireFeature(authUser, 'salesCapture');
-    const { tenant, user, membership, settings } =
-      await this.requireDailySalesReporting(authUser);
+    const scope = await this.resolveDailySalesOfficeScope(
+      authUser,
+      input.officeId,
+      true,
+    );
     const reportDate = parseIsoDateOnly(input.date, 'date');
     const reportDateKey = reportDate.toISOString().slice(0, 10);
-    const todayKey = getDateKeyInTimeZone(new Date(), settings.timezone);
+    const todayKey = getDateKeyInTimeZone(new Date(), scope.settings.timezone);
     const hasOverridePermission = this.canOverrideDailySalesDateLock(
-      membership.role,
+      scope.membership.role,
     );
 
     if (reportDateKey !== todayKey && !hasOverridePermission) {
@@ -1633,46 +1688,69 @@ export class ReportsService {
       );
     }
 
-    const row = await this.prisma.dailySalesReport.upsert({
+    const existing = await this.prisma.dailySalesReport.findFirst({
       where: {
-        tenantId_reportDate: {
-          tenantId: tenant.id,
-          reportDate,
-        },
-      },
-      update: {
-        foodSales: input.foodSales,
-        liquorSales: input.liquorSales,
-        cashPayments: input.cashPayments,
-        bankDepositBatch: input.bankDepositBatch?.trim().slice(0, 80) || null,
-        checkPayments: input.checkPayments,
-        creditCardPayments: input.creditCardPayments,
-        otherPayments: input.otherPayments,
-        notes: input.notes || null,
-        submittedByUserId: user.id,
-      },
-      create: {
-        tenantId: tenant.id,
+        tenantId: scope.tenant.id,
+        officeId: scope.resolvedOfficeId,
         reportDate,
-        foodSales: input.foodSales,
-        liquorSales: input.liquorSales,
-        cashPayments: input.cashPayments,
-        bankDepositBatch: input.bankDepositBatch?.trim().slice(0, 80) || null,
-        checkPayments: input.checkPayments,
-        creditCardPayments: input.creditCardPayments,
-        otherPayments: input.otherPayments,
-        notes: input.notes || null,
-        submittedByUserId: user.id,
       },
-      include: {
-        submittedBy: {
-          select: {
-            name: true,
-            email: true,
+      select: { id: true },
+    });
+
+    const data = {
+      officeId: scope.resolvedOfficeId,
+      foodSales: input.foodSales,
+      liquorSales: input.liquorSales,
+      cashPayments: input.cashPayments,
+      bankDepositBatch: input.bankDepositBatch?.trim().slice(0, 80) || null,
+      checkPayments: input.checkPayments,
+      creditCardPayments: input.creditCardPayments,
+      otherPayments: input.otherPayments,
+      notes: input.notes || null,
+      submittedByUserId: scope.user.id,
+    };
+
+    const row = existing
+      ? await this.prisma.dailySalesReport.update({
+          where: { id: existing.id },
+          data,
+          include: {
+            office: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            submittedBy: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
+          },
+        })
+      : await this.prisma.dailySalesReport.create({
+          data: {
+            tenantId: scope.tenant.id,
+            reportDate,
+            ...data,
+          },
+          include: {
+            office: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            submittedBy: {
+              select: {
+                name: true,
+                email: true,
+              },
+            },
           },
         },
-      },
-    });
+      );
 
     const report = this.toDailySalesReportRow(row);
 
@@ -1687,12 +1765,17 @@ export class ReportsService {
     input: DailyExpenseInput,
   ) {
     await this.tenancy.requireFeature(authUser, 'salesCapture');
-    const { tenant, user } = await this.requireDailySalesReporting(authUser);
+    const scope = await this.resolveDailySalesOfficeScope(
+      authUser,
+      input.officeId,
+      true,
+    );
     const normalized = this.normalizeDailyExpenseInput(input);
 
     const row = await this.prisma.dailyExpense.create({
       data: {
-        tenantId: tenant.id,
+        tenantId: scope.tenant.id,
+        officeId: scope.resolvedOfficeId,
         expenseDate: normalized.expenseDate,
         companyName: normalized.companyName.slice(0, 160),
         paymentMethod: normalized.paymentMethod,
@@ -1707,7 +1790,7 @@ export class ReportsService {
             ? normalized.payToCompany.slice(0, 160)
             : null,
         notes: normalized.notes,
-        submittedByUserId: user.id,
+        submittedByUserId: scope.user.id,
       },
       select: this.dailyExpenseRowSelect(),
     });
@@ -1724,7 +1807,11 @@ export class ReportsService {
     input: DailyExpenseInput,
   ) {
     await this.tenancy.requireFeature(authUser, 'salesCapture');
-    const { tenant } = await this.requireDailySalesReporting(authUser);
+    const scope = await this.resolveDailySalesOfficeScope(
+      authUser,
+      input.officeId,
+      true,
+    );
     const trimmedExpenseId = expenseId.trim();
     if (!trimmedExpenseId) {
       throw new BadRequestException('expenseId is required.');
@@ -1733,7 +1820,10 @@ export class ReportsService {
     const existing = await this.prisma.dailyExpense.findFirst({
       where: {
         id: trimmedExpenseId,
-        tenantId: tenant.id,
+        tenantId: scope.tenant.id,
+        ...(scope.allowedOfficeId
+          ? { officeId: scope.allowedOfficeId }
+          : {}),
       },
       select: { id: true },
     });
@@ -1747,6 +1837,7 @@ export class ReportsService {
     const row = await this.prisma.dailyExpense.update({
       where: { id: existing.id },
       data: {
+        officeId: scope.resolvedOfficeId,
         expenseDate: normalized.expenseDate,
         companyName: normalized.companyName.slice(0, 160),
         paymentMethod: normalized.paymentMethod,
@@ -1773,7 +1864,7 @@ export class ReportsService {
 
   async deleteDailyExpense(authUser: AuthUser, expenseId: string) {
     await this.tenancy.requireFeature(authUser, 'salesCapture');
-    const { tenant } = await this.requireDailySalesReporting(authUser);
+    const scope = await this.resolveDailySalesOfficeScope(authUser);
     const trimmedExpenseId = expenseId.trim();
     if (!trimmedExpenseId) {
       throw new BadRequestException('expenseId is required.');
@@ -1782,7 +1873,8 @@ export class ReportsService {
     const result = await this.prisma.dailyExpense.deleteMany({
       where: {
         id: trimmedExpenseId,
-        tenantId: tenant.id,
+        tenantId: scope.tenant.id,
+        ...(scope.allowedOfficeId ? { officeId: scope.allowedOfficeId } : {}),
       },
     });
 
@@ -1804,7 +1896,7 @@ export class ReportsService {
     },
   ) {
     await this.tenancy.requireFeature(authUser, 'salesCapture');
-    const { tenant } = await this.requireDailySalesReporting(authUser);
+    const scope = await this.resolveDailySalesOfficeScope(authUser);
     const trimmedExpenseId = expenseId.trim();
     if (!trimmedExpenseId) {
       throw new BadRequestException('expenseId is required.');
@@ -1830,7 +1922,8 @@ export class ReportsService {
     const existing = await this.prisma.dailyExpense.findFirst({
       where: {
         id: trimmedExpenseId,
-        tenantId: tenant.id,
+        tenantId: scope.tenant.id,
+        ...(scope.allowedOfficeId ? { officeId: scope.allowedOfficeId } : {}),
       },
       select: { id: true },
     });
@@ -1858,7 +1951,7 @@ export class ReportsService {
 
   async getDailyExpenseReceipt(authUser: AuthUser, expenseId: string) {
     await this.tenancy.requireFeature(authUser, 'salesCapture');
-    const { tenant } = await this.requireDailySalesReporting(authUser);
+    const scope = await this.resolveDailySalesOfficeScope(authUser);
     const trimmedExpenseId = expenseId.trim();
     if (!trimmedExpenseId) {
       throw new BadRequestException('expenseId is required.');
@@ -1867,7 +1960,8 @@ export class ReportsService {
     const expense = await this.prisma.dailyExpense.findFirst({
       where: {
         id: trimmedExpenseId,
-        tenantId: tenant.id,
+        tenantId: scope.tenant.id,
+        ...(scope.allowedOfficeId ? { officeId: scope.allowedOfficeId } : {}),
       },
       select: {
         id: true,
@@ -1929,6 +2023,66 @@ export class ReportsService {
     };
   }
 
+  private async resolveDailySalesOfficeScope(
+    authUser: AuthUser,
+    requestedOfficeId?: string,
+    requireConcreteOffice = false,
+  ): Promise<DailySalesOfficeScope> {
+    const context = await this.requireDailySalesReporting(authUser);
+    const adminAccess = await this.tenancy.resolveAdminAccess(authUser);
+    const normalizedRequestedOfficeId = requestedOfficeId?.trim() || null;
+    const allowedOfficeId = adminAccess.allowedOfficeId?.trim() || null;
+
+    if (
+      allowedOfficeId &&
+      normalizedRequestedOfficeId &&
+      normalizedRequestedOfficeId !== allowedOfficeId
+    ) {
+      throw new ForbiddenException(
+        'This account is restricted to a different location.',
+      );
+    }
+
+    const resolvedOfficeId = allowedOfficeId || normalizedRequestedOfficeId;
+
+    if (!resolvedOfficeId) {
+      if (requireConcreteOffice) {
+        throw new BadRequestException(
+          'Select a location before saving daily sales or expenses.',
+        );
+      }
+
+      return {
+        ...context,
+        allowedOfficeId,
+        resolvedOfficeId: null,
+        resolvedOfficeName: null,
+      };
+    }
+
+    const office = await this.prisma.office.findFirst({
+      where: {
+        id: resolvedOfficeId,
+        tenantId: context.tenant.id,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    });
+
+    if (!office) {
+      throw new NotFoundException('Location not found.');
+    }
+
+    return {
+      ...context,
+      allowedOfficeId,
+      resolvedOfficeId: office.id,
+      resolvedOfficeName: office.name,
+    };
+  }
+
   private canOverrideDailySalesDateLock(role: Role) {
     return role === Role.OWNER || role === Role.ADMIN;
   }
@@ -1937,6 +2091,12 @@ export class ReportsService {
     return {
       id: true,
       expenseDate: true,
+      office: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       companyName: true,
       paymentMethod: true,
       invoiceNumber: true,
@@ -2004,6 +2164,7 @@ export class ReportsService {
   private toDailySalesReportRow(report: {
     id: string;
     reportDate: Date;
+    office: { id: string; name: string } | null;
     foodSales: number;
     liquorSales: number;
     cashPayments: number;
@@ -2030,6 +2191,8 @@ export class ReportsService {
     return {
       id: report.id,
       date: report.reportDate.toISOString().slice(0, 10),
+      officeId: report.office?.id || null,
+      officeName: report.office?.name || null,
       foodSales,
       liquorSales,
       totalSales,
@@ -2052,6 +2215,7 @@ export class ReportsService {
   private toDailyExpenseRow(expense: {
     id: string;
     expenseDate: Date;
+    office: { id: string; name: string } | null;
     companyName: string;
     paymentMethod: ExpensePaymentMethod;
     invoiceNumber: string;
@@ -2067,6 +2231,8 @@ export class ReportsService {
     return {
       id: expense.id,
       date: expense.expenseDate.toISOString().slice(0, 10),
+      officeId: expense.office?.id || null,
+      officeName: expense.office?.name || null,
       companyName: expense.companyName,
       paymentMethod: expense.paymentMethod,
       invoiceNumber: expense.invoiceNumber,
@@ -2583,6 +2749,43 @@ function maxBy<T>(rows: T[], score: (row: T) => number): T | undefined {
     }
   }
   return winner;
+}
+
+function compareNullableOfficeNames(a: string | null, b: string | null) {
+  const left = (a || 'Unassigned').toLowerCase();
+  const right = (b || 'Unassigned').toLowerCase();
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
+function compareDailySalesRowsByOfficeAndDate(
+  a: DailySalesReportRow,
+  b: DailySalesReportRow,
+) {
+  const officeCompare = compareNullableOfficeNames(a.officeName, b.officeName);
+  if (officeCompare !== 0) {
+    return officeCompare;
+  }
+  if (a.date !== b.date) {
+    return a.date < b.date ? 1 : -1;
+  }
+  return a.createdAt < b.createdAt ? 1 : -1;
+}
+
+function compareDailyExpenseRowsByOfficeAndDate(
+  a: DailyExpenseRow,
+  b: DailyExpenseRow,
+) {
+  const officeCompare = compareNullableOfficeNames(a.officeName, b.officeName);
+  if (officeCompare !== 0) {
+    return officeCompare;
+  }
+  if (a.date !== b.date) {
+    return a.date < b.date ? 1 : -1;
+  }
+  return a.createdAt < b.createdAt ? 1 : -1;
 }
 
 function buildComparisonRanges(period: ComparisonPeriod, anchorDate: string) {
