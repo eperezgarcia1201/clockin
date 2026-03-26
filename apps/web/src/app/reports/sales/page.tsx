@@ -291,7 +291,7 @@ const translations: Record<
     allLocations: "All Locations",
     unassignedLocation: "Unassigned",
     locationScopeHelp:
-      "Uses the location selected in the top bar. Choose a specific location there before saving daily sales or expenses.",
+      "Managers save daily sales and expenses to their assigned location automatically. Owners and tenant admins can use the top-bar location selector when they need a specific location.",
     locationBreakdown: "Location Breakdown",
     locationBreakdownHelp:
       "Combined totals stay above. This table breaks the selected range out by location.",
@@ -304,7 +304,7 @@ const translations: Record<
     totalExpenses: "Total Expenses",
     entryLocationFilter: "Entry Location Filter",
     entryLocationFilterHelp:
-      "Filters the Daily Sales Entries and Daily Expense Entries tables below. Combined totals above stay the same.",
+      "Filters the Daily Sales Entries and Daily Expense Entries tables below. Manager-submitted rows without a saved location now follow the manager's assigned location. Combined totals above stay the same.",
   },
   es: {
     dailySalesReport: "Reporte Diario de Ventas",
@@ -439,7 +439,7 @@ const translations: Record<
     allLocations: "Todas las ubicaciones",
     unassignedLocation: "Sin asignar",
     locationScopeHelp:
-      "Usa la ubicación seleccionada en la barra superior. Elige una ubicación específica allí antes de guardar ventas o gastos diarios.",
+      "Los gerentes guardan ventas y gastos diarios automáticamente en su ubicación asignada. Los owners y administradores del tenant pueden usar el selector de ubicación de la barra superior cuando necesiten una ubicación específica.",
     locationBreakdown: "Desglose por Ubicación",
     locationBreakdownHelp:
       "Los totales combinados se mantienen arriba. Esta tabla separa el rango seleccionado por ubicación.",
@@ -452,7 +452,7 @@ const translations: Record<
     totalExpenses: "Gastos Totales",
     entryLocationFilter: "Filtro de Ubicacion de Registros",
     entryLocationFilterHelp:
-      "Filtra las tablas de Registros de Ventas Diarias y Registros de Gastos Diarios de abajo. Los totales combinados de arriba se mantienen igual.",
+      "Filtra las tablas de Registros de Ventas Diarias y Registros de Gastos Diarios de abajo. Los registros enviados por gerentes sin ubicación guardada ahora siguen la ubicación asignada del gerente. Los totales combinados de arriba se mantienen igual.",
   },
 };
 

@@ -145,6 +145,21 @@ type DailySalesOfficeScope = DailySalesReportingContext & {
   resolvedOfficeName: string | null;
 };
 
+type OfficeSummary = {
+  id: string;
+  name: string;
+};
+
+type SubmittedBySummary = {
+  name: string | null;
+  email: string;
+} | null;
+
+type SubmittedManagerOfficeLookup = {
+  byEmail: Map<string, OfficeSummary>;
+  byName: Map<string, OfficeSummary>;
+};
+
 type ComparisonPeriod = 'week' | 'month' | 'year';
 
 type ComparisonReportInput = {
@@ -608,13 +623,15 @@ export class ReportsService {
     const reports = await this.prisma.dailySalesReport.findMany({
       where: {
         tenantId: scope.tenant.id,
-        ...(scope.resolvedOfficeId
-          ? { officeId: scope.resolvedOfficeId }
-          : {}),
         reportDate: {
           gte: fromUtc,
           lt: toExclusiveUtc,
         },
+        ...(scope.resolvedOfficeId
+          ? {
+              OR: [{ officeId: scope.resolvedOfficeId }, { officeId: null }],
+            }
+          : {}),
       },
       orderBy: [{ reportDate: 'desc' }, { createdAt: 'desc' }],
       include: {
@@ -636,13 +653,15 @@ export class ReportsService {
     const expenses = await this.prisma.dailyExpense.findMany({
       where: {
         tenantId: scope.tenant.id,
-        ...(scope.resolvedOfficeId
-          ? { officeId: scope.resolvedOfficeId }
-          : {}),
         expenseDate: {
           gte: fromUtc,
           lt: toExclusiveUtc,
         },
+        ...(scope.resolvedOfficeId
+          ? {
+              OR: [{ officeId: scope.resolvedOfficeId }, { officeId: null }],
+            }
+          : {}),
       },
       orderBy: [{ expenseDate: 'desc' }, { createdAt: 'desc' }],
       select: {
@@ -673,10 +692,25 @@ export class ReportsService {
       },
     });
 
-    const rows = reports
+    const reportsWithEffectiveOffice =
+      await this.applyDerivedManagerOfficeToRows(scope.tenant.id, reports);
+    const expensesWithEffectiveOffice =
+      await this.applyDerivedManagerOfficeToRows(scope.tenant.id, expenses);
+    const scopedReports = scope.resolvedOfficeId
+      ? reportsWithEffectiveOffice.filter(
+          (report) => report.office?.id === scope.resolvedOfficeId,
+        )
+      : reportsWithEffectiveOffice;
+    const scopedExpenses = scope.resolvedOfficeId
+      ? expensesWithEffectiveOffice.filter(
+          (expense) => expense.office?.id === scope.resolvedOfficeId,
+        )
+      : expensesWithEffectiveOffice;
+
+    const rows = scopedReports
       .map((report) => this.toDailySalesReportRow(report))
       .sort(compareDailySalesRowsByOfficeAndDate);
-    const expenseRows = expenses
+    const expenseRows = scopedExpenses
       .map((expense) => this.toDailyExpenseRow(expense))
       .sort(compareDailyExpenseRowsByOfficeAndDate);
     const totals = rows.reduce(
@@ -1749,8 +1783,7 @@ export class ReportsService {
               },
             },
           },
-        },
-      );
+        });
 
     const report = this.toDailySalesReportRow(row);
 
@@ -1760,10 +1793,7 @@ export class ReportsService {
     };
   }
 
-  async createDailyExpense(
-    authUser: AuthUser,
-    input: DailyExpenseInput,
-  ) {
+  async createDailyExpense(authUser: AuthUser, input: DailyExpenseInput) {
     await this.tenancy.requireFeature(authUser, 'salesCapture');
     const scope = await this.resolveDailySalesOfficeScope(
       authUser,
@@ -1821,9 +1851,7 @@ export class ReportsService {
       where: {
         id: trimmedExpenseId,
         tenantId: scope.tenant.id,
-        ...(scope.allowedOfficeId
-          ? { officeId: scope.allowedOfficeId }
-          : {}),
+        ...(scope.allowedOfficeId ? { officeId: scope.allowedOfficeId } : {}),
       },
       select: { id: true },
     });
@@ -2048,7 +2076,7 @@ export class ReportsService {
     if (!resolvedOfficeId) {
       if (requireConcreteOffice) {
         throw new BadRequestException(
-          'Select a location before saving daily sales or expenses.',
+          'Managers use their assigned location automatically. Owners and tenant admins must select a location before saving daily sales or expenses.',
         );
       }
 
@@ -2081,6 +2109,192 @@ export class ReportsService {
       resolvedOfficeId: office.id,
       resolvedOfficeName: office.name,
     };
+  }
+
+  private normalizeSubmittedByIdentifier(value?: string | null) {
+    return value?.trim().toLowerCase() || '';
+  }
+
+  private registerOfficeLookup(
+    map: Map<string, OfficeSummary>,
+    conflicts: Set<string>,
+    key: string,
+    office: OfficeSummary | null,
+  ) {
+    if (!key || !office || conflicts.has(key)) {
+      return;
+    }
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, office);
+      return;
+    }
+
+    if (existing.id !== office.id) {
+      map.delete(key);
+      conflicts.add(key);
+    }
+  }
+
+  private async buildSubmittedManagerOfficeLookup<
+    T extends {
+      office: OfficeSummary | null;
+      submittedBy: SubmittedBySummary;
+    },
+  >(tenantId: string, rows: T[]): Promise<SubmittedManagerOfficeLookup> {
+    const byEmail = new Map<string, OfficeSummary>();
+    const byName = new Map<string, OfficeSummary>();
+    const emailConflicts = new Set<string>();
+    const nameConflicts = new Set<string>();
+    const emails = new Set<string>();
+    const names = new Set<string>();
+
+    rows.forEach((row) => {
+      if (row.office || !row.submittedBy) {
+        return;
+      }
+
+      const emailKey = this.normalizeSubmittedByIdentifier(
+        row.submittedBy.email,
+      );
+      const nameKey = this.normalizeSubmittedByIdentifier(row.submittedBy.name);
+
+      if (emailKey) {
+        emails.add(emailKey);
+      }
+      if (nameKey) {
+        names.add(nameKey);
+      }
+    });
+
+    if (emails.size === 0 && names.size === 0) {
+      return { byEmail, byName };
+    }
+
+    const identifiers = [
+      ...Array.from(emails).map((email) => ({
+        email: {
+          equals: email,
+          mode: 'insensitive' as const,
+        },
+      })),
+      ...Array.from(names).map((name) => ({
+        fullName: {
+          equals: name,
+          mode: 'insensitive' as const,
+        },
+      })),
+      ...Array.from(names).map((name) => ({
+        displayName: {
+          equals: name,
+          mode: 'insensitive' as const,
+        },
+      })),
+    ];
+
+    const managers = await this.prisma.employee.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        disabled: false,
+        officeId: { not: null },
+        OR: [{ isManager: true }, { isAdmin: true }],
+        AND: [{ OR: identifiers }],
+      },
+      select: {
+        email: true,
+        fullName: true,
+        displayName: true,
+        office: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    managers.forEach((manager) => {
+      const office = manager.office;
+      if (!office) {
+        return;
+      }
+
+      this.registerOfficeLookup(
+        byEmail,
+        emailConflicts,
+        this.normalizeSubmittedByIdentifier(manager.email),
+        office,
+      );
+      this.registerOfficeLookup(
+        byName,
+        nameConflicts,
+        this.normalizeSubmittedByIdentifier(manager.fullName),
+        office,
+      );
+      this.registerOfficeLookup(
+        byName,
+        nameConflicts,
+        this.normalizeSubmittedByIdentifier(manager.displayName),
+        office,
+      );
+    });
+
+    return { byEmail, byName };
+  }
+
+  private resolveDerivedManagerOffice(
+    lookup: SubmittedManagerOfficeLookup,
+    submittedBy: SubmittedBySummary,
+  ) {
+    if (!submittedBy) {
+      return null;
+    }
+
+    const emailKey = this.normalizeSubmittedByIdentifier(submittedBy.email);
+    if (emailKey) {
+      const officeByEmail = lookup.byEmail.get(emailKey);
+      if (officeByEmail) {
+        return officeByEmail;
+      }
+    }
+
+    const nameKey = this.normalizeSubmittedByIdentifier(submittedBy.name);
+    if (nameKey) {
+      return lookup.byName.get(nameKey) || null;
+    }
+
+    return null;
+  }
+
+  private async applyDerivedManagerOfficeToRows<
+    T extends {
+      office: OfficeSummary | null;
+      submittedBy: SubmittedBySummary;
+    },
+  >(tenantId: string, rows: T[]): Promise<T[]> {
+    const lookup = await this.buildSubmittedManagerOfficeLookup(tenantId, rows);
+
+    return rows.map((row) => {
+      if (row.office) {
+        return row;
+      }
+
+      const derivedOffice = this.resolveDerivedManagerOffice(
+        lookup,
+        row.submittedBy,
+      );
+
+      if (!derivedOffice) {
+        return row;
+      }
+
+      return {
+        ...row,
+        office: derivedOffice,
+      };
+    });
   }
 
   private canOverrideDailySalesDateLock(role: Role) {
@@ -2301,17 +2515,20 @@ export class ReportsService {
         rangeEndUtc,
         reportsEnabled: settings?.reportsEnabled ?? true,
         scheduleMinutesByEmployee: new Map(),
-        missedBreakDeductionPolicy: notificationPolicy.missedBreakDeductionEnabled
-          ? {
-              enabled: true,
-              scheduleHours: notificationPolicy.missedBreakScheduleHours,
-              deductionMinutes: notificationPolicy.missedBreakDeductionMinutes,
-            }
-          : {
-              enabled: false,
-              scheduleHours: notificationPolicy.missedBreakScheduleHours,
-              deductionMinutes: notificationPolicy.missedBreakDeductionMinutes,
-            },
+        missedBreakDeductionPolicy:
+          notificationPolicy.missedBreakDeductionEnabled
+            ? {
+                enabled: true,
+                scheduleHours: notificationPolicy.missedBreakScheduleHours,
+                deductionMinutes:
+                  notificationPolicy.missedBreakDeductionMinutes,
+              }
+            : {
+                enabled: false,
+                scheduleHours: notificationPolicy.missedBreakScheduleHours,
+                deductionMinutes:
+                  notificationPolicy.missedBreakDeductionMinutes,
+              },
       };
     }
 
@@ -2626,16 +2843,15 @@ function buildDailySummary({
       const dayPunches = punchesByDay.get(date) || [];
       const scheduledMinutes =
         scheduledMinutesByWeekday?.get(getWeekdayFromDateKey(date)) || 0;
-      const missedBreakDeductionMinutes =
-        resolveMissedBreakDeductionMinutes({
-          policy: missedBreakDeductionPolicy,
-          scheduledMinutes,
-          workedMinutes: minutes,
-          existingPenaltyMinutes: penaltyMinutes,
-          hasBreakPunch: dayPunches.some(
-            (punch) => punch.type === PunchType.BREAK,
-          ),
-        });
+      const missedBreakDeductionMinutes = resolveMissedBreakDeductionMinutes({
+        policy: missedBreakDeductionPolicy,
+        scheduledMinutes,
+        workedMinutes: minutes,
+        existingPenaltyMinutes: penaltyMinutes,
+        hasBreakPunch: dayPunches.some(
+          (punch) => punch.type === PunchType.BREAK,
+        ),
+      });
       const adjustedMinutes = Math.max(
         0,
         minutes - penaltyMinutes - missedBreakDeductionMinutes,
