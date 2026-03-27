@@ -2730,7 +2730,7 @@ function formatHoursMinutes(minutes: number) {
   return `${hours}:${String(mins).padStart(2, '0')}`;
 }
 
-function buildDailySummary({
+export function buildDailySummary({
   punches,
   before,
   scheduledMinutesByWeekday,
@@ -2740,6 +2740,7 @@ function buildDailySummary({
   offsetMs,
   roundTo,
   includeInOutTimes,
+  nowUtc,
 }: {
   punches: Array<{
     id: string;
@@ -2764,9 +2765,14 @@ function buildDailySummary({
   offsetMs: number;
   roundTo: number;
   includeInOutTimes?: boolean;
+  nowUtc?: number;
 }) {
   const intervals: Array<{ start: number; end: number }> = [];
   let currentStart: number | null = null;
+  const effectiveRangeEndUtc = Math.min(
+    rangeEndUtc,
+    nowUtc ?? Date.now(),
+  );
 
   if (before && WORKING_TYPES.has(before.type)) {
     currentStart = rangeStartUtc;
@@ -2788,8 +2794,8 @@ function buildDailySummary({
     }
   }
 
-  if (currentStart !== null && rangeEndUtc > currentStart) {
-    intervals.push({ start: currentStart, end: rangeEndUtc });
+  if (currentStart !== null && effectiveRangeEndUtc > currentStart) {
+    intervals.push({ start: currentStart, end: effectiveRangeEndUtc });
   }
 
   const minutesByDay = new Map<string, number>();
