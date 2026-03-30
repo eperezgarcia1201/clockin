@@ -969,6 +969,42 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private localDateTimeToUtc(
+    dateKey: string,
+    minutes: number,
+    timeZone?: string,
+  ) {
+    const [year, month, day] = dateKey.split('-').map((value) => Number(value));
+    if (
+      [year, month, day, minutes].some((value) => Number.isNaN(value)) ||
+      month < 1 ||
+      month > 12 ||
+      day < 1 ||
+      day > 31
+    ) {
+      return this.dateKeyToUtc(dateKey);
+    }
+
+    let candidate = new Date(
+      Date.UTC(year, month - 1, day, Math.floor(minutes / 60), minutes % 60),
+    );
+    const targetDateUtc = this.dateKeyToUtc(dateKey).getTime();
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const actualDateKey = this.toLocalDateKey(candidate, timeZone);
+      const actualInfo = this.getLocalDayInfo(candidate, timeZone);
+      const dayDelta =
+        (this.dateKeyToUtc(actualDateKey).getTime() - targetDateUtc) / DAY_MS;
+      const minuteDelta = dayDelta * 24 * 60 + (actualInfo.minutes - minutes);
+      if (minuteDelta === 0) {
+        return candidate;
+      }
+      candidate = new Date(candidate.getTime() - minuteDelta * 60_000);
+    }
+
+    return candidate;
+  }
+
   private async enforceServerTipBeforeClockOut(
     tenantId: string,
     employee: { id: string; isServer: boolean },
@@ -1010,8 +1046,6 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
     const now = new Date();
     const current = this.getLocalDayInfo(now, timeZone);
     const workDate = this.toLocalDateKey(now, timeZone);
-    const weekStartDate = this.getWeekStartDateKey(workDate, 1);
-    const weekEndDate = this.shiftDateKey(weekStartDate, 6);
     const lookbackStart = new Date(
       now.getTime() - AUTO_OUT_LOOKBACK_DAYS * DAY_MS,
     );
@@ -1079,29 +1113,46 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
     const schedules = await this.prisma.employeeSchedule.findMany({
       where: {
         tenantId,
-        weekday: current.weekday,
         employeeId: { in: filteredCandidates.map((punch) => punch.employeeId) },
       },
       select: {
         employeeId: true,
+        weekday: true,
         endTime: true,
       },
     });
     const scheduleByEmployee = new Map(
-      schedules.map((schedule) => [schedule.employeeId, schedule]),
+      schedules.map((schedule) => [
+        `${schedule.employeeId}:${schedule.weekday}`,
+        schedule,
+      ]),
     );
 
     for (const punch of filteredCandidates) {
-      const schedule = scheduleByEmployee.get(punch.employeeId);
+      const punchWorkDate = this.toLocalDateKey(punch.occurredAt, timeZone);
+      const staleFromPreviousDay = punchWorkDate < workDate;
+      const scheduleDay = staleFromPreviousDay
+        ? this.getLocalDayInfo(punch.occurredAt, timeZone)
+        : current;
+      const autoOutWorkDate = staleFromPreviousDay ? punchWorkDate : workDate;
+      const schedule = scheduleByEmployee.get(
+        `${punch.employeeId}:${scheduleDay.weekday}`,
+      );
       if (!schedule) {
         continue;
       }
 
       const endMinutes = this.parseTime(schedule.endTime);
-      if (
-        endMinutes === null ||
-        current.minutes < endMinutes + AUTO_OUT_GRACE_MINUTES
-      ) {
+      if (endMinutes === null) {
+        continue;
+      }
+
+      const scheduledCutoffAt = this.localDateTimeToUtc(
+        autoOutWorkDate,
+        endMinutes + AUTO_OUT_GRACE_MINUTES,
+        timeZone,
+      );
+      if (scheduledCutoffAt.getTime() > now.getTime()) {
         continue;
       }
 
@@ -1126,7 +1177,7 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
           punch.longitude,
         );
         awayFromAssignedOffice = distance > allowedRadius;
-        if (!awayFromAssignedOffice) {
+        if (!staleFromPreviousDay && !awayFromAssignedOffice) {
           continue;
         }
       }
@@ -1147,7 +1198,7 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
           type: PunchType.OUT,
           occurredAt: {
             gte: lookbackStart,
-            lte: now,
+            lte: scheduledCutoffAt,
           },
           notes: {
             contains: AUTO_SCHEDULE_OUT_TOKEN,
@@ -1157,6 +1208,8 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
           occurredAt: true,
         },
       });
+      const weekStartDate = this.getWeekStartDateKey(autoOutWorkDate, 1);
+      const weekEndDate = this.shiftDateKey(weekStartDate, 6);
       const priorWeekStrikeCount = priorAutoOutPunches.filter((entry) => {
         const key = this.toLocalDateKey(entry.occurredAt, timeZone);
         return key >= weekStartDate && key <= weekEndDate;
@@ -1174,27 +1227,29 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
             tenantId_employeeId_workDate: {
               tenantId,
               employeeId: punch.employeeId,
-              workDate: this.dateKeyToUtc(workDate),
+              workDate: this.dateKeyToUtc(autoOutWorkDate),
             },
           },
           select: { id: true },
         });
         if (!tip) {
-          tipsPendingWorkDate = workDate;
+          tipsPendingWorkDate = autoOutWorkDate;
         }
       }
 
       const autoOutNotes = [
         `Auto clock-out: schedule ended +${AUTO_OUT_GRACE_MINUTES}m.`,
         AUTO_SCHEDULE_OUT_TOKEN,
-        `[WORK_DATE:${workDate}]`,
+        `[WORK_DATE:${autoOutWorkDate}]`,
         `[AUTO_OUT_WEEKLY_COUNT:${weeklyStrikeCount}]`,
         `[PENALTY_MINUTES:${penaltyMinutes}]`,
         `[AWAY_FROM_LOCATION:${awayFromAssignedOffice ? 'YES' : 'UNKNOWN'}]`,
         `[TIPS_PENDING:${tipsPendingWorkDate || AUTO_OUT_TIPS_PENDING_NONE}]`,
       ].join(' ');
 
-      const autoOutAt = new Date();
+      const autoOutAt = new Date(
+        Math.max(scheduledCutoffAt.getTime(), punch.occurredAt.getTime()),
+      );
       await this.prisma.employeePunch.create({
         data: {
           tenantId,
@@ -1229,7 +1284,7 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
           message: policyMessage,
           metadata: {
             kind: AUTO_CLOCK_OUT_KIND,
-            workDate,
+            workDate: autoOutWorkDate,
             weeklyAutoClockOutCount: weeklyStrikeCount,
             penaltyMinutes,
             tipsPendingWorkDate,
