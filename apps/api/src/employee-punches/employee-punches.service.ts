@@ -1138,11 +1138,11 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
       const schedule = scheduleByEmployee.get(
         `${punch.employeeId}:${scheduleDay.weekday}`,
       );
-      if (!schedule) {
-        continue;
-      }
-
-      const endMinutes = this.parseTime(schedule.endTime);
+      const endMinutes = schedule
+        ? this.parseTime(schedule.endTime)
+        : staleFromPreviousDay
+          ? 24 * 60 - 1 + AUTO_OUT_GRACE_MINUTES
+          : null;
       if (endMinutes === null) {
         continue;
       }
@@ -1237,8 +1237,11 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      const autoOutReason = schedule
+        ? `schedule ended +${AUTO_OUT_GRACE_MINUTES}m.`
+        : `no schedule on file; closed at end of day +${AUTO_OUT_GRACE_MINUTES}m.`;
       const autoOutNotes = [
-        `Auto clock-out: schedule ended +${AUTO_OUT_GRACE_MINUTES}m.`,
+        `Auto clock-out: ${autoOutReason}`,
         AUTO_SCHEDULE_OUT_TOKEN,
         `[WORK_DATE:${autoOutWorkDate}]`,
         `[AUTO_OUT_WEEKLY_COUNT:${weeklyStrikeCount}]`,
