@@ -1251,7 +1251,10 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
       ].join(' ');
 
       const autoOutAt = new Date(
-        Math.max(scheduledCutoffAt.getTime(), punch.occurredAt.getTime()),
+        Math.max(
+          scheduledCutoffAt.getTime(),
+          punch.occurredAt.getTime() + 1_000,
+        ),
       );
       await this.prisma.employeePunch.create({
         data: {
