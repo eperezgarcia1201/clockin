@@ -2,6 +2,8 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
 import {
@@ -34,13 +36,15 @@ const LOCAL_DAY_SCAN_WINDOW_MS = 36 * 60 * 60 * 1000;
 const DEFAULT_GEOFENCE_RADIUS_METERS = 120;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AUTO_SCHEDULE_OUT_TOKEN = '[AUTO_SCHEDULE_OUT]';
-const AUTO_OUT_GRACE_MINUTES = 30;
+const AUTO_OUT_GRACE_MINUTES = 15;
+const AUTO_CLOCK_OUT_KIND = 'AUTO_CLOCK_OUT_15M';
 const AUTO_OUT_WEEKLY_STRIKE_THRESHOLD = 3;
 const AUTO_OUT_PENALTY_MINUTES = 90;
 const AUTO_OUT_TIPS_PENDING_NONE = 'NONE';
 const AUTO_OUT_LOOKBACK_DAYS = 14;
 const TIP_PENDING_LOOKBACK_DAYS = 7;
 const TIPS_PENDING_TOKEN_PREFIX = '[TIPS_PENDING:';
+const AUTO_CLOCK_OUT_TICK_MS = 60_000;
 
 type ScheduleViolation = {
   reason: ScheduleOverrideReason;
@@ -48,12 +52,31 @@ type ScheduleViolation = {
 };
 
 @Injectable()
-export class EmployeePunchesService {
+export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
+  private autoClockOutTimer: ReturnType<typeof setInterval> | null = null;
+  private autoClockOutTickRunning = false;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenancy: TenancyService,
     private readonly notifications: NotificationsService,
   ) {}
+
+  onModuleInit() {
+    if (!this.autoClockOutTimer) {
+      this.autoClockOutTimer = setInterval(() => {
+        void this.runAutoClockOutTick();
+      }, AUTO_CLOCK_OUT_TICK_MS);
+    }
+    void this.runAutoClockOutTick();
+  }
+
+  onModuleDestroy() {
+    if (this.autoClockOutTimer) {
+      clearInterval(this.autoClockOutTimer);
+      this.autoClockOutTimer = null;
+    }
+  }
 
   private scopedOfficeFilter(officeId?: string, strictOfficeMatch = false) {
     const scopedOfficeId = officeId?.trim() || undefined;
@@ -120,9 +143,7 @@ export class EmployeePunchesService {
       PUNCH_PHOTO_REQUIRED_TYPES.has(dto.type) &&
       !punchPhoto
     ) {
-      throw new BadRequestException(
-        'A face photo is required for this punch.',
-      );
+      throw new BadRequestException('A face photo is required for this punch.');
     }
 
     if (dto.type === PunchType.IN) {
@@ -298,6 +319,41 @@ export class EmployeePunchesService {
         };
       }),
     };
+  }
+
+  private async runAutoClockOutTick() {
+    if (this.autoClockOutTickRunning) {
+      return;
+    }
+    this.autoClockOutTickRunning = true;
+    try {
+      const tenants = await this.prisma.tenant.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          settings: {
+            select: {
+              timezone: true,
+            },
+          },
+        },
+      });
+
+      for (const tenant of tenants) {
+        try {
+          await this.autoClockOutAfterSchedule(
+            tenant.id,
+            tenant.settings?.timezone || undefined,
+          );
+        } catch {
+          // Keep processing other tenants even if one tenant fails.
+        }
+      }
+    } catch {
+      // Ignore scheduler-level failures; recent-punch requests still trigger on demand.
+    } finally {
+      this.autoClockOutTickRunning = false;
+    }
   }
 
   async listRecords(
@@ -572,10 +628,7 @@ export class EmployeePunchesService {
     requestId: string,
     approve: boolean,
   ) {
-    const access = await this.tenancy.requireFeature(
-      authUser,
-      'schedules',
-    );
+    const access = await this.tenancy.requireFeature(authUser, 'schedules');
     const { tenant, user } = access;
     const officeScope = this.tenancy.resolveOfficeScope(access);
 
@@ -1065,8 +1118,7 @@ export class EmployeePunchesService {
         punch.longitude !== null
       ) {
         const allowedRadius =
-          assignedOffice.geofenceRadiusMeters ||
-          DEFAULT_GEOFENCE_RADIUS_METERS;
+          assignedOffice.geofenceRadiusMeters || DEFAULT_GEOFENCE_RADIUS_METERS;
         const distance = this.distanceMeters(
           assignedOffice.latitude,
           assignedOffice.longitude,
@@ -1176,7 +1228,7 @@ export class EmployeePunchesService {
         {
           message: policyMessage,
           metadata: {
-            kind: 'AUTO_CLOCK_OUT_30M',
+            kind: AUTO_CLOCK_OUT_KIND,
             workDate,
             weeklyAutoClockOutCount: weeklyStrikeCount,
             penaltyMinutes,
