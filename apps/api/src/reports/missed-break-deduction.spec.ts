@@ -1,4 +1,5 @@
 import {
+  getScheduledPaidDurationMinutes,
   getScheduledShiftDurationMinutes,
   resolveMissedBreakDeductionMinutes,
 } from './missed-break-deduction';
@@ -68,5 +69,11 @@ describe('missed-break-deduction', () => {
     expect(getScheduledShiftDurationMinutes('08:00', '16:30')).toBe(510);
     expect(getScheduledShiftDurationMinutes('8:00 AM', '4:00 PM')).toBe(480);
     expect(getScheduledShiftDurationMinutes('16:00', '08:00')).toBe(0);
+  });
+
+  it('subtracts scheduled break minutes from paid schedule duration', () => {
+    expect(getScheduledPaidDurationMinutes('09:00', '22:00', 120)).toBe(660);
+    expect(getScheduledPaidDurationMinutes('9:00 AM', '5:00 PM', 30)).toBe(450);
+    expect(getScheduledPaidDurationMinutes('09:00', '10:00', 120)).toBe(0);
   });
 });

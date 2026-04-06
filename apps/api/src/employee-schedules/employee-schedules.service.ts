@@ -132,6 +132,13 @@ export class EmployeeSchedulesService {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   }
 
+  private normalizeBreakMinutes(value?: number | null) {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return Math.max(0, Math.min(24 * 60, Math.round(value || 0)));
+  }
+
   private resolveRoleLabel(options: {
     isServer: boolean;
     groupName?: string | null;
@@ -178,6 +185,7 @@ export class EmployeeSchedulesService {
           enabled: Boolean(entry),
           startTime: this.normalizeScheduleTime(entry?.startTime),
           endTime: this.normalizeScheduleTime(entry?.endTime),
+          breakMinutes: this.normalizeBreakMinutes(entry?.breakMinutes),
         };
       }),
     };
@@ -238,6 +246,7 @@ export class EmployeeSchedulesService {
           employeeName,
           startTime: this.normalizeScheduleTime(schedule.startTime),
           endTime: this.normalizeScheduleTime(schedule.endTime),
+          breakMinutes: this.normalizeBreakMinutes(schedule.breakMinutes),
           isServer: schedule.employee.isServer,
           officeId: schedule.employee.officeId || null,
           officeName: schedule.employee.office?.name || null,
@@ -309,6 +318,7 @@ export class EmployeeSchedulesService {
         weekday: day.weekday,
         startTime: this.normalizeScheduleTime(day.startTime) || null,
         endTime: this.normalizeScheduleTime(day.endTime) || null,
+        breakMinutes: this.normalizeBreakMinutes(day.breakMinutes),
       }));
 
     await this.prisma.$transaction([

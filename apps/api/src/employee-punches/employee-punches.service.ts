@@ -1668,10 +1668,7 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
     if (endMinutes <= startMinutes) {
       return null;
     }
-    if (
-      scheduleDay.minutes < startMinutes ||
-      scheduleDay.minutes > endMinutes
-    ) {
+    if (scheduleDay.minutes > endMinutes) {
       return {
         reason: ScheduleOverrideReason.OUTSIDE_SCHEDULE_HOURS,
         message: 'You are outside your scheduled hours.',

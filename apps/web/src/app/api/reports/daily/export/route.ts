@@ -1,6 +1,9 @@
 import { clockinFetch } from "../../../../../lib/clockin-api";
 import { excelResponse } from "../../../../../lib/excel-export";
-import { companyMetaRows, getCompanyExportProfile } from "../../../../../lib/company-export";
+import {
+  companyMetaRows,
+  getCompanyExportProfile,
+} from "../../../../../lib/company-export";
 import {
   scopedQueryFromRequest,
   withQuery,
@@ -14,6 +17,8 @@ type DailyReportDay = {
   lastOut?: string;
   hoursFormatted?: string;
   hoursDecimal?: number;
+  scheduledPaidMinutes?: number;
+  overScheduleMinutes?: number;
   photoCount?: number;
   photoPunches?: Array<{
     punchId?: string;
@@ -34,6 +39,16 @@ type DailyReportResponse = {
   employees?: DailyReportEmployee[];
 };
 
+const formatDuration = (minutes?: number) => {
+  const safeMinutes =
+    typeof minutes === "number" && Number.isFinite(minutes)
+      ? Math.max(0, Math.round(minutes))
+      : 0;
+  const hours = Math.floor(safeMinutes / 60);
+  const mins = safeMinutes % 60;
+  return `${hours}:${String(mins).padStart(2, "0")}`;
+};
+
 export async function GET(request: Request) {
   const query = await scopedQueryFromRequest(request);
   const response = await clockinFetch(withQuery("/reports/daily", query));
@@ -51,9 +66,11 @@ export async function GET(request: Request) {
     if (data.range?.from && data.range?.to) {
       sheet.addRow(["Range", `${data.range.from} - ${data.range.to}`]);
     }
-    companyMetaRows(company).slice(1).forEach(([label, value]) => {
-      sheet.addRow([label, value]);
-    });
+    companyMetaRows(company)
+      .slice(1)
+      .forEach(([label, value]) => {
+        sheet.addRow([label, value]);
+      });
     sheet.addRow([]);
     sheet.columns = [
       { header: "Employee", key: "employee", width: 26 },
@@ -62,6 +79,8 @@ export async function GET(request: Request) {
       { header: "Last Out", key: "lastOut", width: 14 },
       { header: "Hours (hh:mm)", key: "hours", width: 14 },
       { header: "Decimal", key: "decimal", width: 10 },
+      { header: "Scheduled Paid (hh:mm)", key: "scheduledPaid", width: 18 },
+      { header: "Over Schedule (hh:mm)", key: "overSchedule", width: 18 },
       { header: "Photo Count", key: "photoCount", width: 12 },
       { header: "Photo Punches", key: "photoPunches", width: 28 },
     ];
@@ -79,6 +98,15 @@ export async function GET(request: Request) {
             : "",
           hours: day.hoursFormatted || "",
           decimal: day.hoursDecimal ?? "",
+          scheduledPaid:
+            typeof day.scheduledPaidMinutes === "number"
+              ? formatDuration(day.scheduledPaidMinutes)
+              : "",
+          overSchedule:
+            typeof day.overScheduleMinutes === "number" &&
+            day.overScheduleMinutes > 0
+              ? formatDuration(day.overScheduleMinutes)
+              : "",
           photoCount: day.photoCount ?? 0,
           photoPunches:
             day.photoPunches
@@ -101,6 +129,8 @@ export async function GET(request: Request) {
         lastOut: "",
         hours: employee.totalHoursFormatted || "",
         decimal: employee.totalHoursDecimal ?? "",
+        scheduledPaid: "",
+        overSchedule: "",
         photoCount: "",
         photoPunches: "",
       });

@@ -12,6 +12,7 @@ export type ScheduleDay = {
   enabled: boolean;
   startTime: string;
   endTime: string;
+  breakMinutes: number;
 };
 
 export type TodayScheduleRow = {
@@ -19,6 +20,7 @@ export type TodayScheduleRow = {
   employeeName: string;
   startTime: string;
   endTime: string;
+  breakMinutes?: number;
   isServer: boolean;
   officeId?: string | null;
   officeName?: string | null;
@@ -45,6 +47,7 @@ type SaveSchedulePayload = {
     enabled: boolean;
     startTime?: string;
     endTime?: string;
+    breakMinutes?: number;
   }>;
 };
 
@@ -70,7 +73,13 @@ export async function getEmployeeSchedule(
   const payload = await requestJson<ScheduleDaysResponse>(
     `/api/employee-schedules?employeeId=${encodeURIComponent(employeeId)}`,
   );
-  return payload.days ?? [];
+  return (payload.days ?? []).map((day) => ({
+    ...day,
+    breakMinutes:
+      typeof day.breakMinutes === "number" && Number.isFinite(day.breakMinutes)
+        ? Math.max(0, Math.round(day.breakMinutes))
+        : 0,
+  }));
 }
 
 export async function updateEmployeeSchedule(

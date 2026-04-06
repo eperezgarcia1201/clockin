@@ -30,6 +30,7 @@ const buildDefaultDays = () =>
     enabled: false,
     startTime: "09:00",
     endTime: "17:00",
+    breakMinutes: 0,
   }));
 
 const normalizeTime = (value: string) => {
@@ -76,6 +77,13 @@ const formatShiftLabel = (startTime: string, endTime: string) => {
     return `Ends ${formatTimeLabel(endTime)}`;
   }
   return "Any time";
+};
+
+const normalizeBreakMinutes = (value: number) => {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(24 * 60, Math.round(value)));
 };
 
 const formatDateLabel = (dateKey: string) => {
@@ -125,7 +133,10 @@ export default function ManageSchedules() {
         weekday: typeof parsed.weekday === "number" ? parsed.weekday : 0,
         weekdayLabel: parsed.weekdayLabel || "",
         timezone: parsed.timezone || "UTC",
-        rows,
+        rows: rows.map((row) => ({
+          ...row,
+          breakMinutes: normalizeBreakMinutes(row.breakMinutes || 0),
+        })),
       });
     } catch {
       setTodayStatus(
@@ -169,7 +180,12 @@ export default function ManageSchedules() {
       try {
         const days = await getEmployeeSchedule(selectedEmployeeId);
         if (days.length === 7) {
-          setDays(days);
+          setDays(
+            days.map((day) => ({
+              ...day,
+              breakMinutes: normalizeBreakMinutes(day.breakMinutes || 0),
+            })),
+          );
         } else {
           setDays(buildDefaultDays());
         }
@@ -224,7 +240,7 @@ export default function ManageSchedules() {
   const updateDay = (
     weekday: number,
     key: keyof ScheduleDay,
-    value: string | boolean,
+    value: string | number | boolean,
   ) => {
     setDays((prev) =>
       prev.map((day) => {
@@ -239,6 +255,12 @@ export default function ManageSchedules() {
             enabled,
             startTime: day.startTime || "09:00",
             endTime: day.endTime || "17:00",
+          };
+        }
+        if (key === "breakMinutes") {
+          return {
+            ...day,
+            breakMinutes: normalizeBreakMinutes(Number(value)),
           };
         }
         return { ...day, [key]: value };
@@ -265,6 +287,7 @@ export default function ManageSchedules() {
             enabled: true,
             ...(startTime ? { startTime } : {}),
             ...(endTime ? { endTime } : {}),
+            breakMinutes: normalizeBreakMinutes(day.breakMinutes),
           };
         });
 
@@ -415,8 +438,8 @@ export default function ManageSchedules() {
             </h2>
             <p className="text-muted">
               {tr(
-                "Employees can only clock in on days enabled in their schedule. Disable a day to block punch-ins.",
-                "Los empleados solo pueden marcar entrada en días habilitados en su horario. Desactiva un día para bloquear marcaciones.",
+                "Employees can only clock in on days enabled in their schedule. Add break minutes to compare paid hours against the schedule at review time.",
+                "Los empleados solo pueden marcar entrada en días habilitados en su horario. Agrega minutos de descanso para comparar las horas pagadas contra el horario al revisar.",
               )}
             </p>
             <div className="table-responsive">
@@ -427,6 +450,7 @@ export default function ManageSchedules() {
                     <th>{tr("Enabled", "Habilitado")}</th>
                     <th>{tr("Start", "Inicio")}</th>
                     <th>{tr("End", "Fin")}</th>
+                    <th>{tr("Break (min)", "Descanso (min)")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -467,6 +491,24 @@ export default function ManageSchedules() {
                           value={day.endTime}
                           onChange={(e) =>
                             updateDay(day.weekday, "endTime", e.target.value)
+                          }
+                          disabled={!day.enabled}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          className="form-control"
+                          min={0}
+                          max={24 * 60}
+                          step={15}
+                          value={day.breakMinutes}
+                          onChange={(e) =>
+                            updateDay(
+                              day.weekday,
+                              "breakMinutes",
+                              normalizeBreakMinutes(Number(e.target.value)),
+                            )
                           }
                           disabled={!day.enabled}
                         />

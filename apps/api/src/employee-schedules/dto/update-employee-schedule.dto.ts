@@ -29,6 +29,12 @@ export class ScheduleDayDto {
   @IsString()
   @Matches(/^(\d{1,2}:\d{2}|\d{1,2}:\d{2}\s*[AaPp][Mm])$/)
   endTime?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(24 * 60)
+  breakMinutes?: number;
 }
 
 export class UpdateEmployeeScheduleDto {

@@ -17,6 +17,7 @@ import { buildNotificationPolicy } from '../settings/notification-policy';
 import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
 import {
+  getScheduledPaidDurationMinutes,
   getScheduledShiftDurationMinutes,
   getWeekdayFromDateKey,
   resolveMissedBreakDeductionMinutes,
@@ -55,6 +56,8 @@ type DayHours = {
   minutes: number;
   hoursDecimal: number;
   hoursFormatted: string;
+  scheduledPaidMinutes?: number;
+  overScheduleMinutes?: number;
   firstIn?: string | null;
   lastOut?: string | null;
   photoCount?: number;
@@ -248,6 +251,8 @@ export class ReportsService {
         before: context.lastBeforeMap.get(employee.id),
         scheduledMinutesByWeekday:
           context.scheduleMinutesByEmployee.get(employee.id) || undefined,
+        scheduledPaidMinutesByWeekday:
+          context.scheduledPaidMinutesByEmployee.get(employee.id) || undefined,
         missedBreakDeductionPolicy: context.missedBreakDeductionPolicy,
         rangeStartUtc: context.rangeStartUtc,
         rangeEndUtc: context.rangeEndUtc,
@@ -293,6 +298,8 @@ export class ReportsService {
         before: context.lastBeforeMap.get(employee.id),
         scheduledMinutesByWeekday:
           context.scheduleMinutesByEmployee.get(employee.id) || undefined,
+        scheduledPaidMinutesByWeekday:
+          context.scheduledPaidMinutesByEmployee.get(employee.id) || undefined,
         missedBreakDeductionPolicy: context.missedBreakDeductionPolicy,
         rangeStartUtc: context.rangeStartUtc,
         rangeEndUtc: context.rangeEndUtc,
@@ -347,6 +354,8 @@ export class ReportsService {
         before: context.lastBeforeMap.get(employee.id),
         scheduledMinutesByWeekday:
           context.scheduleMinutesByEmployee.get(employee.id) || undefined,
+        scheduledPaidMinutesByWeekday:
+          context.scheduledPaidMinutesByEmployee.get(employee.id) || undefined,
         missedBreakDeductionPolicy: context.missedBreakDeductionPolicy,
         rangeStartUtc: context.rangeStartUtc,
         rangeEndUtc: context.rangeEndUtc,
@@ -897,6 +906,8 @@ export class ReportsService {
         before: context.lastBeforeMap.get(employee.id),
         scheduledMinutesByWeekday:
           context.scheduleMinutesByEmployee.get(employee.id) || undefined,
+        scheduledPaidMinutesByWeekday:
+          context.scheduledPaidMinutesByEmployee.get(employee.id) || undefined,
         missedBreakDeductionPolicy: context.missedBreakDeductionPolicy,
         rangeStartUtc: context.rangeStartUtc,
         rangeEndUtc: context.rangeEndUtc,
@@ -2515,6 +2526,7 @@ export class ReportsService {
         rangeEndUtc,
         reportsEnabled: settings?.reportsEnabled ?? true,
         scheduleMinutesByEmployee: new Map(),
+        scheduledPaidMinutesByEmployee: new Map(),
         missedBreakDeductionPolicy:
           notificationPolicy.missedBreakDeductionEnabled
             ? {
@@ -2585,36 +2597,49 @@ export class ReportsService {
     }
 
     const scheduleMinutesByEmployee = new Map<string, Map<number, number>>();
-    if (notificationPolicy.missedBreakDeductionEnabled) {
-      const scheduleRows = await this.prisma.employeeSchedule.findMany({
-        where: {
-          tenantId: tenant.id,
-          employeeId: { in: employeeIds },
-          employee: {
-            allowOpenSchedule: false,
-          },
+    const scheduledPaidMinutesByEmployee = new Map<
+      string,
+      Map<number, number>
+    >();
+    const scheduleRows = await this.prisma.employeeSchedule.findMany({
+      where: {
+        tenantId: tenant.id,
+        employeeId: { in: employeeIds },
+        employee: {
+          allowOpenSchedule: false,
         },
-        select: {
-          employeeId: true,
-          weekday: true,
-          startTime: true,
-          endTime: true,
-        },
-      });
+      },
+      select: {
+        employeeId: true,
+        weekday: true,
+        startTime: true,
+        endTime: true,
+        breakMinutes: true,
+      },
+    });
 
-      for (const schedule of scheduleRows) {
-        const durationMinutes = getScheduledShiftDurationMinutes(
-          schedule.startTime,
-          schedule.endTime,
-        );
-        if (durationMinutes <= 0) {
-          continue;
-        }
-        const byWeekday =
-          scheduleMinutesByEmployee.get(schedule.employeeId) || new Map();
-        byWeekday.set(schedule.weekday, durationMinutes);
-        scheduleMinutesByEmployee.set(schedule.employeeId, byWeekday);
+    for (const schedule of scheduleRows) {
+      const durationMinutes = getScheduledShiftDurationMinutes(
+        schedule.startTime,
+        schedule.endTime,
+      );
+      if (durationMinutes <= 0) {
+        continue;
       }
+      const byWeekday =
+        scheduleMinutesByEmployee.get(schedule.employeeId) || new Map();
+      byWeekday.set(schedule.weekday, durationMinutes);
+      scheduleMinutesByEmployee.set(schedule.employeeId, byWeekday);
+
+      const paidDurationMinutes = getScheduledPaidDurationMinutes(
+        schedule.startTime,
+        schedule.endTime,
+        schedule.breakMinutes,
+      );
+      const paidByWeekday =
+        scheduledPaidMinutesByEmployee.get(schedule.employeeId) || new Map();
+      paidByWeekday.set(schedule.weekday, paidDurationMinutes);
+      scheduledPaidMinutesByEmployee.set(schedule.employeeId, paidByWeekday);
     }
 
     return {
@@ -2623,6 +2648,7 @@ export class ReportsService {
       punchesByEmployee,
       lastBeforeMap,
       scheduleMinutesByEmployee,
+      scheduledPaidMinutesByEmployee,
       missedBreakDeductionPolicy: notificationPolicy.missedBreakDeductionEnabled
         ? {
             enabled: true,
@@ -2734,6 +2760,7 @@ export function buildDailySummary({
   punches,
   before,
   scheduledMinutesByWeekday,
+  scheduledPaidMinutesByWeekday,
   missedBreakDeductionPolicy,
   rangeStartUtc,
   rangeEndUtc,
@@ -2759,6 +2786,7 @@ export function buildDailySummary({
     photoCapturedAt?: Date | null;
   } | null;
   scheduledMinutesByWeekday?: Map<number, number>;
+  scheduledPaidMinutesByWeekday?: Map<number, number>;
   missedBreakDeductionPolicy?: MissedBreakDeductionPolicy | null;
   rangeStartUtc: number;
   rangeEndUtc: number;
@@ -2769,10 +2797,7 @@ export function buildDailySummary({
 }) {
   const intervals: Array<{ start: number; end: number }> = [];
   let currentStart: number | null = null;
-  const effectiveRangeEndUtc = Math.min(
-    rangeEndUtc,
-    nowUtc ?? Date.now(),
-  );
+  const effectiveRangeEndUtc = Math.min(rangeEndUtc, nowUtc ?? Date.now());
 
   if (before && WORKING_TYPES.has(before.type)) {
     currentStart = rangeStartUtc;
@@ -2847,8 +2872,8 @@ export function buildDailySummary({
       const minutes = minutesByDay.get(date) || 0;
       const penaltyMinutes = penaltyByDay.get(date) || 0;
       const dayPunches = punchesByDay.get(date) || [];
-      const scheduledMinutes =
-        scheduledMinutesByWeekday?.get(getWeekdayFromDateKey(date)) || 0;
+      const weekday = getWeekdayFromDateKey(date);
+      const scheduledMinutes = scheduledMinutesByWeekday?.get(weekday) || 0;
       const missedBreakDeductionMinutes = resolveMissedBreakDeductionMinutes({
         policy: missedBreakDeductionPolicy,
         scheduledMinutes,
@@ -2862,6 +2887,17 @@ export function buildDailySummary({
         0,
         minutes - penaltyMinutes - missedBreakDeductionMinutes,
       );
+      const hasScheduledPaidMinutes =
+        scheduledPaidMinutesByWeekday?.has(weekday) ?? false;
+      const hasScheduledShift =
+        hasScheduledPaidMinutes ||
+        (scheduledMinutesByWeekday?.has(weekday) ?? false);
+      const scheduledPaidMinutes = hasScheduledPaidMinutes
+        ? Math.max(0, scheduledPaidMinutesByWeekday?.get(weekday) || 0)
+        : scheduledMinutes;
+      const overScheduleMinutes = hasScheduledShift
+        ? Math.max(0, adjustedMinutes - scheduledPaidMinutes)
+        : 0;
       const roundedMinutes = roundMinutes(adjustedMinutes, roundTo);
       const photoPunches = dayPunches
         .filter((punch) => Boolean(punch.photoMimeType))
@@ -2892,6 +2928,8 @@ export function buildDailySummary({
         minutes: roundedMinutes,
         hoursDecimal: toHoursDecimal(roundedMinutes),
         hoursFormatted: formatHoursMinutes(roundedMinutes),
+        scheduledPaidMinutes: hasScheduledShift ? scheduledPaidMinutes : 0,
+        overScheduleMinutes,
         firstIn,
         lastOut,
         photoCount: photoPunches.length,

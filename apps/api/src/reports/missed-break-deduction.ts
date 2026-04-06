@@ -57,10 +57,30 @@ export function getScheduledShiftDurationMinutes(
 ) {
   const startMinutes = parseScheduleTimeToMinutes(startTime);
   const endMinutes = parseScheduleTimeToMinutes(endTime);
-  if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+  if (
+    startMinutes === null ||
+    endMinutes === null ||
+    endMinutes <= startMinutes
+  ) {
     return 0;
   }
   return endMinutes - startMinutes;
+}
+
+export function getScheduledPaidDurationMinutes(
+  startTime?: string | null,
+  endTime?: string | null,
+  breakMinutes?: number | null,
+) {
+  const shiftMinutes = getScheduledShiftDurationMinutes(startTime, endTime);
+  if (shiftMinutes <= 0) {
+    return 0;
+  }
+  const safeBreakMinutes =
+    typeof breakMinutes === 'number' && Number.isFinite(breakMinutes)
+      ? Math.max(0, Math.round(breakMinutes))
+      : 0;
+  return Math.max(0, shiftMinutes - safeBreakMinutes);
 }
 
 export function getWeekdayFromDateKey(dateKey: string) {

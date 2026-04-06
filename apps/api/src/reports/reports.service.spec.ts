@@ -55,4 +55,47 @@ describe('buildDailySummary', () => {
       }),
     ]);
   });
+
+  it('flags days that exceed scheduled paid minutes after subtracting breaks', () => {
+    const weekday = new Date('2026-03-27T00:00:00.000Z').getUTCDay();
+    const result = buildDailySummary({
+      punches: [
+        {
+          id: 'p1',
+          occurredAt: new Date('2026-03-27T08:00:00.000Z'),
+          type: PunchType.IN,
+        },
+        {
+          id: 'p2',
+          occurredAt: new Date('2026-03-27T14:00:00.000Z'),
+          type: PunchType.BREAK,
+        },
+        {
+          id: 'p3',
+          occurredAt: new Date('2026-03-27T16:00:00.000Z'),
+          type: PunchType.IN,
+        },
+        {
+          id: 'p4',
+          occurredAt: new Date('2026-03-27T22:00:00.000Z'),
+          type: PunchType.OUT,
+        },
+      ],
+      scheduledMinutesByWeekday: new Map([[weekday, 13 * 60]]),
+      scheduledPaidMinutesByWeekday: new Map([[weekday, 11 * 60]]),
+      rangeStartUtc: new Date('2026-03-27T00:00:00.000Z').getTime(),
+      rangeEndUtc: new Date('2026-03-27T23:59:59.999Z').getTime(),
+      offsetMs: 0,
+      roundTo: 0,
+    });
+
+    expect(result.days).toEqual([
+      expect.objectContaining({
+        date: '2026-03-27',
+        minutes: 720,
+        scheduledPaidMinutes: 660,
+        overScheduleMinutes: 60,
+      }),
+    ]);
+  });
 });

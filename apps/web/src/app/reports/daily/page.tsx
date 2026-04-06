@@ -19,6 +19,8 @@ type DayRow = {
   minutes: number;
   hoursDecimal: number;
   hoursFormatted: string;
+  scheduledPaidMinutes?: number;
+  overScheduleMinutes?: number;
   firstIn?: string | null;
   lastOut?: string | null;
   photoCount?: number;
@@ -78,6 +80,8 @@ const copy: Record<UiLang, Record<string, string>> = {
     decimal: "Decimal",
     actions: "Actions",
     needsReview: "Needs review",
+    overSchedule: "Over schedule",
+    scheduled: "Scheduled paid",
     span: "Span",
     photos: "Punch Photos",
   },
@@ -113,6 +117,8 @@ const copy: Record<UiLang, Record<string, string>> = {
     decimal: "Decimal",
     actions: "Acciones",
     needsReview: "Requiere revisión",
+    overSchedule: "Sobre horario",
+    scheduled: "Programado pagado",
     span: "Rango",
     photos: "Fotos de marcación",
   },
@@ -346,7 +352,10 @@ export default function DailyReport() {
                     }).toString()}`}
                   >
                     {t.editTimes}
-                    <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+                    <i
+                      className="fa-solid fa-chevron-right"
+                      aria-hidden="true"
+                    />
                   </a>
                 </div>
               </div>
@@ -368,6 +377,10 @@ export default function DailyReport() {
                       const needsReview =
                         day.hoursFormatted === "0:00" &&
                         (day.firstIn || day.lastOut);
+                      const overScheduleMinutes = Math.max(
+                        0,
+                        day.overScheduleMinutes || 0,
+                      );
                       const spanMinutes =
                         day.firstIn && day.lastOut
                           ? Math.max(
@@ -396,17 +409,32 @@ export default function DailyReport() {
                                 })
                               : "—"}
                           </td>
-                        <td>
-                          {day.hoursFormatted}
-                          {needsReview && (
-                            <span className="report-flag">{t.needsReview}</span>
-                          )}
-                          {needsReview && spanMinutes > 0 && (
-                            <span className="report-span">
-                              {t.span} {formatSpan(spanMinutes)}
-                            </span>
-                          )}
-                        </td>
+                          <td>
+                            {day.hoursFormatted}
+                            {needsReview && (
+                              <span className="report-flag">
+                                {t.needsReview}
+                              </span>
+                            )}
+                            {overScheduleMinutes > 0 && (
+                              <span className="report-flag">
+                                {t.overSchedule} +
+                                {formatSpan(overScheduleMinutes)}
+                              </span>
+                            )}
+                            {typeof day.scheduledPaidMinutes === "number" &&
+                              day.scheduledPaidMinutes > 0 && (
+                                <span className="report-span">
+                                  {t.scheduled}{" "}
+                                  {formatSpan(day.scheduledPaidMinutes)}
+                                </span>
+                              )}
+                            {needsReview && spanMinutes > 0 && (
+                              <span className="report-span">
+                                {t.span} {formatSpan(spanMinutes)}
+                              </span>
+                            )}
+                          </td>
                           <td>{day.hoursDecimal.toFixed(2)}</td>
                           <td>
                             <PunchPhotoLinks
@@ -417,7 +445,7 @@ export default function DailyReport() {
                           <td>
                             <a
                               className={`btn btn-sm ${
-                                needsReview
+                                needsReview || overScheduleMinutes > 0
                                   ? "btn-outline-warning"
                                   : "btn-outline-secondary"
                               }`}
