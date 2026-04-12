@@ -16,10 +16,16 @@ export type PunchRecord = {
   notes: string;
 };
 
-export type PunchUpsertInput = {
+export type CreatePunchInput = {
   employeeId: string;
   type: string;
   occurredAt: string;
+  notes?: string;
+};
+
+export type UpdatePunchInput = {
+  type?: string;
+  occurredAt?: string;
   notes?: string;
 };
 
@@ -75,7 +81,7 @@ export async function listPunchRecords(
 }
 
 export async function createPunchRecord(
-  payload: PunchUpsertInput,
+  payload: CreatePunchInput,
 ): Promise<void> {
   await requestJson<unknown>("/api/employee-punches/records", {
     method: "POST",
@@ -85,7 +91,7 @@ export async function createPunchRecord(
 
 export async function updatePunchRecord(
   id: string,
-  payload: PunchUpsertInput,
+  payload: UpdatePunchInput,
 ): Promise<void> {
   await requestJson<unknown>(`/api/employee-punches/records/${id}`, {
     method: "PATCH",

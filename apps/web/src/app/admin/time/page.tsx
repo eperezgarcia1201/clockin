@@ -154,18 +154,22 @@ export default function TimeAdmin() {
         ? editingRawNotes || undefined
         : notes || undefined;
 
-    const payload = {
-      employeeId,
-      type,
-      occurredAt: new Date(occurredAt).toISOString(),
-      notes: resolvedNotes,
-    };
+    const occurredAtIso = new Date(occurredAt).toISOString();
 
     try {
       if (editingId) {
-        await updatePunchRecord(editingId, payload);
+        await updatePunchRecord(editingId, {
+          type,
+          occurredAt: occurredAtIso,
+          notes: resolvedNotes,
+        });
       } else {
-        await createPunchRecord(payload);
+        await createPunchRecord({
+          employeeId,
+          type,
+          occurredAt: occurredAtIso,
+          notes: resolvedNotes,
+        });
       }
       setStatus(
         editingId
@@ -282,7 +286,7 @@ export default function TimeAdmin() {
               value={employeeId}
               onChange={(event) => setEmployeeId(event.target.value)}
               required
-              disabled={!allowManual || lockedFromContext}
+              disabled={!allowManual || lockedFromContext || Boolean(editingId)}
             >
               {lockedFromContext && !employeeId && (
                 <option value={lockedEmployeeId}>
@@ -310,6 +314,14 @@ export default function TimeAdmin() {
                 {tr(
                   "Employee scope is locked from the previous screen.",
                   "El alcance del empleado está bloqueado desde la pantalla anterior.",
+                )}
+              </div>
+            )}
+            {!lockedFromContext && editingId && (
+              <div className="form-text">
+                {tr(
+                  "Employee cannot be changed while editing an existing time entry.",
+                  "No se puede cambiar el empleado mientras editas una entrada de tiempo existente.",
                 )}
               </div>
             )}
