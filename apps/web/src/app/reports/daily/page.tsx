@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   fetchDailyReportRequest,
   fetchEmployeesRequest,
@@ -125,6 +126,8 @@ const copy: Record<UiLang, Record<string, string>> = {
 };
 
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
+const isDateInputValue = (value: string | null) =>
+  Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 const formatSpan = (minutes: number) => {
   const rounded = Math.round(minutes);
   const hours = Math.floor(rounded / 60);
@@ -135,26 +138,73 @@ const formatSpan = (minutes: number) => {
 export default function DailyReport() {
   const lang = useUiLanguage();
   const t = useUiCopy(copy, lang);
+  const searchParams = useSearchParams();
   const today = useMemo(() => new Date(), []);
   const sevenDaysAgo = useMemo(() => {
     const date = new Date();
     date.setDate(date.getDate() - 6);
     return date;
   }, []);
+  const initialPeriodParam = searchParams.get("period");
+  const initialPeriod =
+    initialPeriodParam === "weekly" ||
+    initialPeriodParam === "biweekly" ||
+    initialPeriodParam === "monthly" ||
+    initialPeriodParam === "custom"
+      ? initialPeriodParam
+      : "weekly";
+  const initialFrom = isDateInputValue(searchParams.get("from"))
+    ? (searchParams.get("from") as string)
+    : formatDate(sevenDaysAgo);
+  const initialTo = isDateInputValue(searchParams.get("to"))
+    ? (searchParams.get("to") as string)
+    : formatDate(today);
+  const initialRoundParam = searchParams.get("round");
+  const initialRound =
+    initialRoundParam === "0" ||
+    initialRoundParam === "5" ||
+    initialRoundParam === "10" ||
+    initialRoundParam === "15" ||
+    initialRoundParam === "20" ||
+    initialRoundParam === "30"
+      ? initialRoundParam
+      : "0";
+  const initialEmployeeId = searchParams.get("employeeId") || "";
 
-  const [period, setPeriod] = useState("weekly");
-  const [from, setFrom] = useState(formatDate(sevenDaysAgo));
-  const [to, setTo] = useState(formatDate(today));
-  const [round, setRound] = useState("0");
+  const [period, setPeriod] = useState(initialPeriod);
+  const [from, setFrom] = useState(initialFrom);
+  const [to, setTo] = useState(initialTo);
+  const [round, setRound] = useState(initialRound);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [employeeId, setEmployeeId] = useState("");
+  const [employeeId, setEmployeeId] = useState(initialEmployeeId);
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tzOffset, setTzOffset] = useState(0);
+  const tzOffset = useMemo(() => -new Date().getTimezoneOffset(), []);
 
-  useEffect(() => {
-    setTzOffset(-new Date().getTimezoneOffset());
-  }, []);
+  const reportReturnTo = useMemo(() => {
+    const params = new URLSearchParams({
+      period: "custom",
+      from,
+      to,
+      round,
+    });
+    if (employeeId) {
+      params.set("employeeId", employeeId);
+    }
+    return `/reports/daily?${params.toString()}`;
+  }, [employeeId, from, to, round]);
+
+  const buildEditTimesHref = (
+    targetEmployeeId: string,
+    targetFrom: string,
+    targetTo: string,
+  ) =>
+    `/admin/time?${new URLSearchParams({
+      employeeId: targetEmployeeId,
+      from: targetFrom,
+      to: targetTo,
+      returnTo: reportReturnTo,
+    }).toString()}`;
 
   const applyPeriod = (value: string) => {
     if (value === "custom") return;
@@ -344,12 +394,11 @@ export default function DailyReport() {
                   </div>
                   <a
                     className="report-edit-btn"
-                    href={`/admin/time?${new URLSearchParams({
-                      employeeId: employee.id,
-                      from: report.range.from,
-                      to: report.range.to,
-                      returnTo: "/reports/daily",
-                    }).toString()}`}
+                    href={buildEditTimesHref(
+                      employee.id,
+                      report.range.from,
+                      report.range.to,
+                    )}
                   >
                     {t.editTimes}
                     <i
@@ -449,11 +498,11 @@ export default function DailyReport() {
                                   ? "btn-outline-warning"
                                   : "btn-outline-secondary"
                               }`}
-                              href={`/admin/time?${new URLSearchParams({
-                                employeeId: employee.id,
-                                from: day.date,
-                                to: day.date,
-                              }).toString()}`}
+                              href={buildEditTimesHref(
+                                employee.id,
+                                day.date,
+                                day.date,
+                              )}
                             >
                               {t.editTimes}
                             </a>
