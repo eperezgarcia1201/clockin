@@ -48,6 +48,11 @@ export default function TimeAdmin() {
   const [occurredAt, setOccurredAt] = useState("");
   const [notes, setNotes] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingRawNotes, setEditingRawNotes] = useState<string | null>(null);
+  const [editingDisplayNotes, setEditingDisplayNotes] = useState<string | null>(
+    null,
+  );
+  const [notesDirty, setNotesDirty] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [pendingDeleteRecord, setPendingDeleteRecord] =
     useState<PunchRecord | null>(null);
@@ -128,6 +133,9 @@ export default function TimeAdmin() {
     setOccurredAt("");
     setNotes("");
     setEditingId(null);
+    setEditingRawNotes(null);
+    setEditingDisplayNotes(null);
+    setNotesDirty(false);
   };
 
   const saveEntry = async (afterSave: boolean) => {
@@ -138,11 +146,19 @@ export default function TimeAdmin() {
       return false;
     }
 
+    const resolvedNotes =
+      editingId &&
+      !notesDirty &&
+      editingDisplayNotes !== null &&
+      notes === editingDisplayNotes
+        ? editingRawNotes || undefined
+        : notes || undefined;
+
     const payload = {
       employeeId,
       type,
       occurredAt: new Date(occurredAt).toISOString(),
-      notes: notes || undefined,
+      notes: resolvedNotes,
     };
 
     try {
@@ -180,11 +196,15 @@ export default function TimeAdmin() {
   };
 
   const handleEdit = (record: PunchRecord) => {
+    const displayNotes = formatPunchNoteForDisplay(record.notes, lang);
     setEditingId(record.id);
     setEmployeeId(record.employeeId);
     setType(record.type);
     setOccurredAt(toLocalInput(record.occurredAt));
-    setNotes(record.notes || "");
+    setNotes(displayNotes || "");
+    setEditingRawNotes(record.notes || "");
+    setEditingDisplayNotes(displayNotes || "");
+    setNotesDirty(false);
     setStatus(
       tr(
         "Editing time entry. Update fields and click Save Changes.",
@@ -326,7 +346,10 @@ export default function TimeAdmin() {
             <input
               className="form-control"
               value={notes}
-              onChange={(event) => setNotes(event.target.value)}
+              onChange={(event) => {
+                setNotes(event.target.value);
+                setNotesDirty(true);
+              }}
               disabled={!allowManual}
             />
           </div>
