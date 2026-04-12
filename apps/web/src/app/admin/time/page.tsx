@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { formatPunchNoteForDisplay } from "../../../lib/punch-note-format";
 import { useUiLanguage } from "../../../lib/ui-language";
 import {
   createPunchRecord,
@@ -436,38 +437,49 @@ export default function TimeAdmin() {
               </tr>
             </thead>
             <tbody>
-              {records.map((record) => (
-                <tr key={record.id}>
-                  <td>{record.employeeName}</td>
-                  <td>{record.type}</td>
-                  <td>{new Date(record.occurredAt).toLocaleString()}</td>
-                  <td>{record.office || "—"}</td>
-                  <td>{record.group || "—"}</td>
-                  <td>{record.notes || "—"}</td>
-                  <td>
-                    <div className="d-flex gap-2">
-                      <button
-                        className="btn btn-sm btn-outline-primary"
-                        onClick={() => handleEdit(record)}
-                        disabled={!allowManual}
-                      >
-                        {tr("Edit", "Editar")}
-                      </button>
-                      <button
-                        className="btn btn-sm btn-outline-danger"
-                        onClick={() => setPendingDeleteRecord(record)}
-                        disabled={
-                          !allowManual || deletingRecordId === record.id
-                        }
-                      >
-                        {deletingRecordId === record.id
-                          ? tr("Deleting...", "Eliminando...")
-                          : tr("Delete", "Eliminar")}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {records.map((record) => {
+                const displayNotes = formatPunchNoteForDisplay(
+                  record.notes,
+                  lang,
+                );
+                const showRawNotes =
+                  Boolean(record.notes) && displayNotes !== record.notes;
+
+                return (
+                  <tr key={record.id}>
+                    <td>{record.employeeName}</td>
+                    <td>{record.type}</td>
+                    <td>{new Date(record.occurredAt).toLocaleString()}</td>
+                    <td>{record.office || "—"}</td>
+                    <td>{record.group || "—"}</td>
+                    <td title={showRawNotes ? record.notes : undefined}>
+                      {displayNotes || "—"}
+                    </td>
+                    <td>
+                      <div className="d-flex gap-2">
+                        <button
+                          className="btn btn-sm btn-outline-primary"
+                          onClick={() => handleEdit(record)}
+                          disabled={!allowManual}
+                        >
+                          {tr("Edit", "Editar")}
+                        </button>
+                        <button
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={() => setPendingDeleteRecord(record)}
+                          disabled={
+                            !allowManual || deletingRecordId === record.id
+                          }
+                        >
+                          {deletingRecordId === record.id
+                            ? tr("Deleting...", "Eliminando...")
+                            : tr("Delete", "Eliminar")}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {records.length === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center text-muted py-4">

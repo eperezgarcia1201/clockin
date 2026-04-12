@@ -1,13 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { fetchAuditReportRequest, fetchEmployeesRequest } from "../../../lib/api/reports-core";
+import {
+  fetchAuditReportRequest,
+  fetchEmployeesRequest,
+} from "../../../lib/api/reports-core";
+import { formatPunchNoteForDisplay } from "../../../lib/punch-note-format";
 import { useUiCopy, useUiLanguage } from "../../../lib/ui-language";
 import { auditCopy } from "./audit-copy";
 import { PunchPhotoLinks } from "../components/PunchPhotoLinks";
 
 type Employee = { id: string; name: string };
-type AuditRecord = { id: string; employeeName: string; office: string | null; group: string | null; type: string; occurredAt: string; notes: string; hasPhoto?: boolean; photoCapturedAt?: string | null };
+type AuditRecord = {
+  id: string;
+  employeeName: string;
+  office: string | null;
+  group: string | null;
+  type: string;
+  occurredAt: string;
+  notes: string;
+  hasPhoto?: boolean;
+  photoCapturedAt?: string | null;
+};
 type AuditResponse = { records: AuditRecord[] };
 
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
@@ -249,33 +263,44 @@ export default function AuditReport() {
                 </tr>
               </thead>
               <tbody>
-                {report.records.map((record) => (
-                  <tr key={record.id}>
-                    <td>{record.employeeName}</td>
-                    <td>{record.type}</td>
-                    <td>{new Date(record.occurredAt).toLocaleString()}</td>
-                    <td>{record.office || t.empty}</td>
-                    <td>{record.group || t.empty}</td>
-                    <td>{record.notes || t.empty}</td>
-                    <td>
-                      <PunchPhotoLinks
-                        punches={
-                          record.hasPhoto
-                            ? [
-                                {
-                                  punchId: record.id,
-                                  type: record.type,
-                                  occurredAt: record.occurredAt,
-                                  photoCapturedAt: record.photoCapturedAt,
-                                },
-                              ]
-                            : []
-                        }
-                        lang={lang}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {report.records.map((record) => {
+                  const displayNotes = formatPunchNoteForDisplay(
+                    record.notes,
+                    lang,
+                  );
+                  const showRawNotes =
+                    Boolean(record.notes) && displayNotes !== record.notes;
+
+                  return (
+                    <tr key={record.id}>
+                      <td>{record.employeeName}</td>
+                      <td>{record.type}</td>
+                      <td>{new Date(record.occurredAt).toLocaleString()}</td>
+                      <td>{record.office || t.empty}</td>
+                      <td>{record.group || t.empty}</td>
+                      <td title={showRawNotes ? record.notes : undefined}>
+                        {displayNotes || t.empty}
+                      </td>
+                      <td>
+                        <PunchPhotoLinks
+                          punches={
+                            record.hasPhoto
+                              ? [
+                                  {
+                                    punchId: record.id,
+                                    type: record.type,
+                                    occurredAt: record.occurredAt,
+                                    photoCapturedAt: record.photoCapturedAt,
+                                  },
+                                ]
+                              : []
+                          }
+                          lang={lang}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
