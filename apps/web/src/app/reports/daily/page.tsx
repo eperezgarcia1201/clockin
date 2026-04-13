@@ -182,6 +182,10 @@ export default function DailyReport() {
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const tzOffset = useMemo(() => -new Date().getTimezoneOffset(), []);
+  const timeZone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    [],
+  );
 
   const reportReturnTo = useMemo(() => {
     const params = new URLSearchParams({
@@ -215,6 +219,7 @@ export default function DailyReport() {
       round,
       format,
       tzOffset: String(tzOffset),
+      ...(timeZone ? { timeZone } : {}),
       ...(employeeId ? { employeeId } : {}),
     }).toString()}`;
 

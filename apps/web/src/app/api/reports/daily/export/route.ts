@@ -41,6 +41,11 @@ type DailyReportResponse = {
 };
 
 type ExportFormat = "excel" | "pdf";
+type TimeFormatOptions = {
+  timeZone?: string | null;
+  tzOffsetMinutes?: number | null;
+  empty?: string;
+};
 
 const formatDuration = (minutes?: number) => {
   const safeMinutes =
@@ -87,6 +92,30 @@ const formatLongDate = (date: Date) =>
     day: "numeric",
     year: "numeric",
   });
+
+const normalizeTimeZone = (value: string | null) => {
+  const timeZone = (value || "").trim();
+  if (!timeZone) {
+    return null;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+    return timeZone;
+  } catch {
+    return null;
+  }
+};
+
+const parseTzOffsetMinutes = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return Math.trunc(parsed);
+};
 
 const formatReportPeriod = (from: string, to: string) => {
   const fromDate = parseIsoDate(from);
@@ -200,13 +229,33 @@ const truncateByWidth = (value: string | null | undefined, width: number) => {
   return `${text.slice(0, max - 1)}…`;
 };
 
-const formatPunchTime = (value?: string) => {
+const formatPunchTime = (
+  value?: string | null,
+  options: TimeFormatOptions = {},
+) => {
   if (!value) {
-    return "-";
+    return options.empty ?? "-";
   }
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return value;
+  }
+  if (options.timeZone) {
+    return parsed.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: options.timeZone,
+    });
+  }
+  if (typeof options.tzOffsetMinutes === "number") {
+    const shifted = new Date(
+      parsed.getTime() + options.tzOffsetMinutes * 60000,
+    );
+    const hours24 = shifted.getUTCHours();
+    const minutes = shifted.getUTCMinutes();
+    const suffix = hours24 >= 12 ? "PM" : "AM";
+    const hours12 = hours24 % 12 || 12;
+    return `${hours12}:${String(minutes).padStart(2, "0")} ${suffix}`;
   }
   return parsed.toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -217,6 +266,7 @@ const formatPunchTime = (value?: string) => {
 const buildPdf = (
   data: DailyReportResponse,
   companyRows: Array<[string, string]>,
+  timeFormatOptions: TimeFormatOptions,
 ) => {
   type FlatRow = {
     employeeName: string;
@@ -243,8 +293,8 @@ const buildPdf = (
       flatRows.push({
         employeeName: employee.name || "-",
         date: day.date || "",
-        firstIn: formatPunchTime(day.firstIn),
-        lastOut: formatPunchTime(day.lastOut),
+        firstIn: formatPunchTime(day.firstIn, timeFormatOptions),
+        lastOut: formatPunchTime(day.lastOut, timeFormatOptions),
         totalHours: day.hoursFormatted || "-",
         decimal: Number(day.hoursDecimal || 0).toFixed(2),
         scheduledPaid:
@@ -588,7 +638,13 @@ export async function GET(request: Request) {
   }
 
   const params = new URLSearchParams(scopedQuery);
+  const timeFormatOptions: TimeFormatOptions = {
+    timeZone: normalizeTimeZone(params.get("timeZone")),
+    tzOffsetMinutes: parseTzOffsetMinutes(params.get("tzOffset")),
+  };
   params.delete("format");
+  params.delete("timeZone");
+  params.delete("tzOffset");
   const response = await clockinFetch(withQuery("/reports/daily", params));
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -632,12 +688,14 @@ export async function GET(request: Request) {
           sheet.addRow({
             employee: employee.name || "",
             date: day.date || "",
-            firstIn: day.firstIn
-              ? new Date(day.firstIn).toLocaleTimeString()
-              : "",
-            lastOut: day.lastOut
-              ? new Date(day.lastOut).toLocaleTimeString()
-              : "",
+            firstIn: formatPunchTime(day.firstIn, {
+              ...timeFormatOptions,
+              empty: "",
+            }),
+            lastOut: formatPunchTime(day.lastOut, {
+              ...timeFormatOptions,
+              empty: "",
+            }),
             hours: day.hoursFormatted || "",
             decimal: day.hoursDecimal ?? "",
             scheduledPaid:
@@ -653,12 +711,10 @@ export async function GET(request: Request) {
             photoPunches:
               day.photoPunches
                 ?.map((punch) => {
-                  const occurredAt = punch.occurredAt
-                    ? new Date(punch.occurredAt).toLocaleTimeString([], {
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })
-                    : "";
+                  const occurredAt = formatPunchTime(punch.occurredAt, {
+                    ...timeFormatOptions,
+                    empty: "",
+                  });
                   return `${punch.type || ""} ${occurredAt}`.trim();
                 })
                 .join("; ") || "",
@@ -681,7 +737,7 @@ export async function GET(request: Request) {
     });
   }
 
-  const pdf = buildPdf(data, companyRows);
+  const pdf = buildPdf(data, companyRows, timeFormatOptions);
   return new NextResponse(pdf, {
     headers: {
       "Content-Type": "application/pdf",
