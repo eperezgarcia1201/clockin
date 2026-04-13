@@ -117,6 +117,56 @@ const parseTzOffsetMinutes = (value: string | null) => {
   return Math.trunc(parsed);
 };
 
+const resolveTimeZoneOffsetMinutes = (
+  timeZone: string | null,
+  referenceValue?: string,
+) => {
+  if (!timeZone) {
+    return null;
+  }
+
+  const referenceDate = referenceValue
+    ? new Date(`${referenceValue}T12:00:00.000Z`)
+    : new Date();
+
+  if (Number.isNaN(referenceDate.getTime())) {
+    return null;
+  }
+
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+
+    const parts = Object.fromEntries(
+      formatter
+        .formatToParts(referenceDate)
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value]),
+    );
+
+    const localAsUtc = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+      Number(parts.second),
+    );
+
+    return Math.round((localAsUtc - referenceDate.getTime()) / 60000);
+  } catch {
+    return null;
+  }
+};
+
 const formatReportPeriod = (from: string, to: string) => {
   const fromDate = parseIsoDate(from);
   const toDate = parseIsoDate(to);
@@ -638,13 +688,28 @@ export async function GET(request: Request) {
   }
 
   const params = new URLSearchParams(scopedQuery);
+  const company = await getCompanyExportProfile();
+  const requestedTimeZone = normalizeTimeZone(params.get("timeZone"));
+  const companyTimeZone = normalizeTimeZone(company.timezone);
+  const resolvedTimeZone = requestedTimeZone || companyTimeZone;
+  const requestedTzOffsetMinutes = parseTzOffsetMinutes(params.get("tzOffset"));
+  const resolvedTzOffsetMinutes =
+    requestedTzOffsetMinutes ??
+    resolveTimeZoneOffsetMinutes(
+      resolvedTimeZone,
+      params.get("from") || undefined,
+    );
   const timeFormatOptions: TimeFormatOptions = {
-    timeZone: normalizeTimeZone(params.get("timeZone")),
-    tzOffsetMinutes: parseTzOffsetMinutes(params.get("tzOffset")),
+    timeZone: resolvedTimeZone,
+    tzOffsetMinutes: resolvedTzOffsetMinutes,
   };
+
   params.delete("format");
   params.delete("timeZone");
-  params.delete("tzOffset");
+  if (typeof resolvedTzOffsetMinutes === "number" && !params.get("tzOffset")) {
+    params.set("tzOffset", String(resolvedTzOffsetMinutes));
+  }
+
   const response = await clockinFetch(withQuery("/reports/daily", params));
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
@@ -652,7 +717,6 @@ export async function GET(request: Request) {
   }
 
   const data = (await response.json()) as DailyReportResponse;
-  const company = await getCompanyExportProfile();
   const companyRows = companyMetaRows(company);
   const from = data.range?.from || "from";
   const to = data.range?.to || "to";

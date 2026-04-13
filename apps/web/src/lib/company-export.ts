@@ -13,6 +13,7 @@ type CompanySettings = {
   companyEmail?: string;
   companyWebsite?: string;
   companyTaxId?: string;
+  timezone?: string;
 };
 
 export type CompanyExportProfile = {
@@ -28,55 +29,59 @@ export type CompanyExportProfile = {
   email: string;
   website: string;
   taxId: string;
+  timezone: string;
 };
 
 const clean = (value: unknown) =>
   typeof value === "string" ? value.trim() : "";
 
-export const getCompanyExportProfile = async (): Promise<CompanyExportProfile> => {
-  const fallback: CompanyExportProfile = {
-    displayName: "WEBSYS WORKFORCE",
-    legalName: "",
-    addressLine1: "",
-    addressLine2: "",
-    city: "",
-    state: "",
-    postalCode: "",
-    country: "",
-    phone: "",
-    email: "",
-    website: "",
-    taxId: "",
-  };
+export const getCompanyExportProfile =
+  async (): Promise<CompanyExportProfile> => {
+    const fallback: CompanyExportProfile = {
+      displayName: "WEBSYS WORKFORCE",
+      legalName: "",
+      addressLine1: "",
+      addressLine2: "",
+      city: "",
+      state: "",
+      postalCode: "",
+      country: "",
+      phone: "",
+      email: "",
+      website: "",
+      taxId: "",
+      timezone: "",
+    };
 
-  try {
-    const response = await clockinFetch("/settings", { cache: "no-store" });
-    if (!response.ok) {
+    try {
+      const response = await clockinFetch("/settings", { cache: "no-store" });
+      if (!response.ok) {
+        return fallback;
+      }
+
+      const data = (await response.json()) as CompanySettings;
+      const companyName = clean(data.companyName);
+      const companyLegalName = clean(data.companyLegalName);
+
+      return {
+        displayName: companyName || companyLegalName || fallback.displayName,
+        legalName: companyLegalName,
+        addressLine1: clean(data.companyAddressLine1),
+        addressLine2: clean(data.companyAddressLine2),
+        city: clean(data.companyCity),
+        state: clean(data.companyState),
+        postalCode: clean(data.companyPostalCode),
+        country: clean(data.companyCountry),
+        phone: clean(data.companyPhone),
+        email: clean(data.companyEmail),
+        website: clean(data.companyWebsite),
+        taxId: clean(data.companyTaxId),
+        timezone: clean(data.timezone),
+      };
+    } catch {
       return fallback;
     }
-
-    const data = (await response.json()) as CompanySettings;
-    const companyName = clean(data.companyName);
-    const companyLegalName = clean(data.companyLegalName);
-
-    return {
-      displayName: companyName || companyLegalName || fallback.displayName,
-      legalName: companyLegalName,
-      addressLine1: clean(data.companyAddressLine1),
-      addressLine2: clean(data.companyAddressLine2),
-      city: clean(data.companyCity),
-      state: clean(data.companyState),
-      postalCode: clean(data.companyPostalCode),
-      country: clean(data.companyCountry),
-      phone: clean(data.companyPhone),
-      email: clean(data.companyEmail),
-      website: clean(data.companyWebsite),
-      taxId: clean(data.companyTaxId),
-    };
-  } catch {
-    return fallback;
-  }
-};
+  };
 
 export const companyAddressLine = (company: CompanyExportProfile) => {
   const cityLine = [company.city, company.state, company.postalCode]
@@ -108,4 +113,3 @@ export const companyMetaRows = (company: CompanyExportProfile) => {
 
   return rows;
 };
-
