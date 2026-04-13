@@ -181,6 +181,7 @@ export default function DailyReport() {
   const [employeeId, setEmployeeId] = useState(initialEmployeeId);
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [downloadNonce, setDownloadNonce] = useState("");
   const tzOffset = useMemo(() => -new Date().getTimezoneOffset(), []);
   const timeZone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || "",
@@ -219,6 +220,7 @@ export default function DailyReport() {
       round,
       format,
       tzOffset: String(tzOffset),
+      ...(downloadNonce ? { downloadTs: downloadNonce } : {}),
       ...(timeZone ? { timeZone } : {}),
       ...(employeeId ? { employeeId } : {}),
     }).toString()}`;
@@ -256,6 +258,10 @@ export default function DailyReport() {
     applyPeriod(period);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period]);
+
+  useEffect(() => {
+    setDownloadNonce(String(Date.now()));
+  }, [employeeId, from, round, timeZone, to, tzOffset]);
 
   const runReport = async () => {
     setLoading(true);

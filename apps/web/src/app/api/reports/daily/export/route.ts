@@ -46,6 +46,11 @@ type TimeFormatOptions = {
   tzOffsetMinutes?: number | null;
   empty?: string;
 };
+const noStoreHeaders = {
+  "Cache-Control": "private, no-store, no-cache, must-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
 
 const formatDuration = (minutes?: number) => {
   const safeMinutes =
@@ -806,6 +811,7 @@ export async function GET(request: Request) {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename=\"daily-report-${fileLabel}.pdf\"`,
+      ...noStoreHeaders,
     },
   });
 }
