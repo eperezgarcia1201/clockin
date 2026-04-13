@@ -70,6 +70,7 @@ const copy: Record<UiLang, Record<string, string>> = {
     running: "Running...",
     runReport: "Run Report",
     exportExcel: "Export Excel",
+    downloadPdf: "Download PDF",
     noPunches: "No punches recorded for this range.",
     totalHours: "Total Hours",
     hoursAbbr: "hrs",
@@ -107,6 +108,7 @@ const copy: Record<UiLang, Record<string, string>> = {
     running: "Ejecutando...",
     runReport: "Generar reporte",
     exportExcel: "Exportar Excel",
+    downloadPdf: "Descargar PDF",
     noPunches: "No hay marcaciones en este rango.",
     totalHours: "Horas totales",
     hoursAbbr: "hrs",
@@ -204,6 +206,16 @@ export default function DailyReport() {
       from: targetFrom,
       to: targetTo,
       returnTo: reportReturnTo,
+    }).toString()}`;
+
+  const buildExportHref = (format: "excel" | "pdf") =>
+    `/api/reports/daily/export?${new URLSearchParams({
+      from,
+      to,
+      round,
+      format,
+      tzOffset: String(tzOffset),
+      ...(employeeId ? { employeeId } : {}),
     }).toString()}`;
 
   const applyPeriod = (value: string) => {
@@ -351,15 +363,15 @@ export default function DailyReport() {
             </button>
             <a
               className="btn btn-outline-secondary"
-              href={`/api/reports/daily/export?${new URLSearchParams({
-                from,
-                to,
-                round,
-                tzOffset: String(tzOffset),
-                ...(employeeId ? { employeeId } : {}),
-              }).toString()}`}
+              href={buildExportHref("excel")}
             >
               {t.exportExcel}
+            </a>
+            <a
+              className="btn btn-outline-secondary"
+              href={buildExportHref("pdf")}
+            >
+              {t.downloadPdf}
             </a>
           </div>
         </div>
