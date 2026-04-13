@@ -40,7 +40,10 @@ export function ServerReminderRuleCards({
       <div className="border rounded p-3 bg-white d-flex flex-column gap-3">
         <div>
           <div className="fw-semibold">
-            {tr("Late / Missing Clock-In Workflow", "Flujo de Clock In Tardio o Faltante")}
+            {tr(
+              "Late / Missing Clock-In Workflow",
+              "Flujo de Clock In Tardio o Faltante",
+            )}
           </div>
           <div className="text-muted small">
             {tr(
@@ -51,7 +54,9 @@ export function ServerReminderRuleCards({
         </div>
         <div className="row g-3">
           <div className="col-12 col-md-4">
-            <label className="form-label">{tr("Grace Minutes", "Minutos de Gracia")}</label>
+            <label className="form-label">
+              {tr("Grace Minutes", "Minutos de Gracia")}
+            </label>
             <input
               type="number"
               min={0}
@@ -68,7 +73,12 @@ export function ServerReminderRuleCards({
             />
           </div>
           <div className="col-12 col-md-4">
-            <label className="form-label">{tr("Reminder Interval (Minutes)", "Intervalo entre Recordatorios (Minutos)")}</label>
+            <label className="form-label">
+              {tr(
+                "Reminder Interval (Minutes)",
+                "Intervalo entre Recordatorios (Minutos)",
+              )}
+            </label>
             <input
               type="number"
               min={1}
@@ -85,7 +95,9 @@ export function ServerReminderRuleCards({
             />
           </div>
           <div className="col-12 col-md-4">
-            <label className="form-label">{tr("Maximum Reminders", "Maximo de Recordatorios")}</label>
+            <label className="form-label">
+              {tr("Maximum Reminders", "Maximo de Recordatorios")}
+            </label>
             <input
               type="number"
               min={1}
@@ -110,11 +122,17 @@ export function ServerReminderRuleCards({
                 checked={policy.autoClockInAfterLateReminders}
                 disabled={settingsBusy || !policy.lateClockInWorkflowEnabled}
                 onChange={(event) =>
-                  onPolicyChange("autoClockInAfterLateReminders", event.target.checked)
+                  onPolicyChange(
+                    "autoClockInAfterLateReminders",
+                    event.target.checked,
+                  )
                 }
               />
               <label className="form-check-label">
-                {tr("Auto clock in after the final reminder", "Hacer clock in automatico despues del ultimo recordatorio")}
+                {tr(
+                  "Auto clock in after the final reminder",
+                  "Hacer clock in automatico despues del ultimo recordatorio",
+                )}
               </label>
             </div>
           </div>
@@ -126,10 +144,15 @@ export function ServerReminderRuleCards({
                 role="switch"
                 checked={policy.autoClockInOnGeofence}
                 disabled={settingsBusy || !policy.lateClockInWorkflowEnabled}
-                onChange={(event) => onPolicyChange("autoClockInOnGeofence", event.target.checked)}
+                onChange={(event) =>
+                  onPolicyChange("autoClockInOnGeofence", event.target.checked)
+                }
               />
               <label className="form-check-label">
-                {tr("Auto clock in when the latest punch is inside the assigned geofence", "Hacer clock in automatico cuando el ultimo punch este dentro del geofence asignado")}
+                {tr(
+                  "Auto clock in when the latest punch is inside the assigned geofence",
+                  "Hacer clock in automatico cuando el ultimo punch este dentro del geofence asignado",
+                )}
               </label>
             </div>
           </div>
@@ -169,7 +192,9 @@ export function ServerReminderRuleCards({
         <div className="col-12 col-xl-6">
           <div className="border rounded p-3 bg-white h-100 d-flex flex-column gap-3">
             <div>
-              <div className="fw-semibold">{tr("No-Break Alerts", "Alertas sin Descanso")}</div>
+              <div className="fw-semibold">
+                {tr("No-Break Alerts", "Alertas sin Descanso")}
+              </div>
               <div className="text-muted small">
                 {tr(
                   "Alert timing follows the no-break source above. The deduction rule below is independent and affects reported hours.",
@@ -179,7 +204,9 @@ export function ServerReminderRuleCards({
             </div>
             <div className="row g-3">
               <div className="col-12 col-md-4 col-xl-12">
-                <label className="form-label">{tr("Threshold Hours", "Horas de Umbral")}</label>
+                <label className="form-label">
+                  {tr("Threshold Hours", "Horas de Umbral")}
+                </label>
                 <input
                   type="number"
                   min={1}
@@ -196,7 +223,9 @@ export function ServerReminderRuleCards({
                 />
               </div>
               <div className="col-12 col-md-4 col-xl-12">
-                <label className="form-label">{tr("Repeat Every (Minutes)", "Repetir Cada (Minutos)")}</label>
+                <label className="form-label">
+                  {tr("Repeat Every (Minutes)", "Repetir Cada (Minutos)")}
+                </label>
                 <input
                   type="number"
                   min={1}
@@ -213,7 +242,9 @@ export function ServerReminderRuleCards({
                 />
               </div>
               <div className="col-12 col-md-4 col-xl-12">
-                <label className="form-label">{tr("Maximum Alerts", "Maximo de Alertas")}</label>
+                <label className="form-label">
+                  {tr("Maximum Alerts", "Maximo de Alertas")}
+                </label>
                 <input
                   type="number"
                   min={1}
@@ -246,21 +277,21 @@ export function ServerReminderRuleCards({
                   />
                   <label className="form-check-label">
                     {tr(
-                      "Deduct time when a full long shift ends without a break punch",
-                      "Descontar tiempo cuando un turno largo completo termina sin punch de descanso",
+                      "Deduct time when someone works too many straight hours without a break punch",
+                      "Descontar tiempo cuando alguien trabaja demasiadas horas seguidas sin punch de descanso",
                     )}
                   </label>
                 </div>
                 <div className="text-muted small mt-2">
                   {tr(
-                    "This only applies after the employee reaches the full scheduled shift length.",
-                    "Esto solo aplica despues de que el empleado cumple la duracion completa del turno programado.",
+                    "This applies once any straight work stretch reaches the trigger below and there was no BREAK punch that day.",
+                    "Esto aplica cuando cualquier tramo seguido de trabajo llega al limite de abajo y no hubo punch de DESCANSO ese dia.",
                   )}
                 </div>
               </div>
               <div className="col-12 col-md-6 col-xl-12">
                 <label className="form-label">
-                  {tr("Scheduled Hours Trigger", "Horas Programadas de Activacion")}
+                  {tr("Straight Hours Trigger", "Horas Seguidas de Activacion")}
                 </label>
                 <input
                   type="number"
@@ -268,10 +299,7 @@ export function ServerReminderRuleCards({
                   max={24}
                   className="form-control"
                   value={policy.missedBreakScheduleHours}
-                  disabled={
-                    settingsBusy ||
-                    !policy.missedBreakDeductionEnabled
-                  }
+                  disabled={settingsBusy || !policy.missedBreakDeductionEnabled}
                   onChange={(event) =>
                     onPolicyChange(
                       "missedBreakScheduleHours",
@@ -290,10 +318,7 @@ export function ServerReminderRuleCards({
                   max={720}
                   className="form-control"
                   value={policy.missedBreakDeductionMinutes}
-                  disabled={
-                    settingsBusy ||
-                    !policy.missedBreakDeductionEnabled
-                  }
+                  disabled={settingsBusy || !policy.missedBreakDeductionEnabled}
                   onChange={(event) =>
                     onPolicyChange(
                       "missedBreakDeductionMinutes",
@@ -309,7 +334,12 @@ export function ServerReminderRuleCards({
         <div className="col-12 col-xl-6">
           <div className="border rounded p-3 bg-white h-100 d-flex flex-column gap-3">
             <div>
-              <div className="fw-semibold">{tr("Owner Daily Report Email", "Correo Diario del Reporte para Owner")}</div>
+              <div className="fw-semibold">
+                {tr(
+                  "Owner Daily Report Email",
+                  "Correo Diario del Reporte para Owner",
+                )}
+              </div>
               <div className="text-muted small">
                 {tr(
                   "This send time only applies when the owner daily report source is enabled above.",
@@ -318,14 +348,21 @@ export function ServerReminderRuleCards({
               </div>
             </div>
             <div>
-              <label className="form-label">{tr("Send Time", "Hora de Envio")}</label>
+              <label className="form-label">
+                {tr("Send Time", "Hora de Envio")}
+              </label>
               <input
                 type="time"
                 className="form-control"
-                value={formatMinutesAsTimeInput(policy.ownerDailyReportSendMinutes)}
+                value={formatMinutesAsTimeInput(
+                  policy.ownerDailyReportSendMinutes,
+                )}
                 disabled={settingsBusy || !policy.ownerDailyReportEnabled}
                 onChange={(event) =>
-                  changeTimeValue("ownerDailyReportSendMinutes", event.target.value)
+                  changeTimeValue(
+                    "ownerDailyReportSendMinutes",
+                    event.target.value,
+                  )
                 }
               />
             </div>
@@ -335,7 +372,9 @@ export function ServerReminderRuleCards({
 
       <div className="border rounded p-3 bg-white d-flex flex-column gap-3">
         <div>
-          <div className="fw-semibold">{tr("Daily Sales Reminders", "Recordatorios de Ventas Diarias")}</div>
+          <div className="fw-semibold">
+            {tr("Daily Sales Reminders", "Recordatorios de Ventas Diarias")}
+          </div>
           <div className="text-muted small">
             {tr(
               "These times only apply when the daily-sales reminder source is enabled above.",
@@ -345,26 +384,40 @@ export function ServerReminderRuleCards({
         </div>
         <div className="row g-3">
           <div className="col-12 col-md-6">
-            <label className="form-label">{tr("First Reminder Time", "Hora del Primer Recordatorio")}</label>
+            <label className="form-label">
+              {tr("First Reminder Time", "Hora del Primer Recordatorio")}
+            </label>
             <input
               type="time"
               className="form-control"
-              value={formatMinutesAsTimeInput(policy.dailySalesReminderFirstMinutes)}
+              value={formatMinutesAsTimeInput(
+                policy.dailySalesReminderFirstMinutes,
+              )}
               disabled={settingsBusy || !policy.dailySalesReminderEnabled}
               onChange={(event) =>
-                changeTimeValue("dailySalesReminderFirstMinutes", event.target.value)
+                changeTimeValue(
+                  "dailySalesReminderFirstMinutes",
+                  event.target.value,
+                )
               }
             />
           </div>
           <div className="col-12 col-md-6">
-            <label className="form-label">{tr("Final Reminder Time", "Hora del Recordatorio Final")}</label>
+            <label className="form-label">
+              {tr("Final Reminder Time", "Hora del Recordatorio Final")}
+            </label>
             <input
               type="time"
               className="form-control"
-              value={formatMinutesAsTimeInput(policy.dailySalesReminderFinalMinutes)}
+              value={formatMinutesAsTimeInput(
+                policy.dailySalesReminderFinalMinutes,
+              )}
               disabled={settingsBusy || !policy.dailySalesReminderEnabled}
               onChange={(event) =>
-                changeTimeValue("dailySalesReminderFinalMinutes", event.target.value)
+                changeTimeValue(
+                  "dailySalesReminderFinalMinutes",
+                  event.target.value,
+                )
               }
             />
           </div>

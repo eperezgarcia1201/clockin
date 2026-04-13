@@ -98,4 +98,36 @@ describe('buildDailySummary', () => {
       }),
     ]);
   });
+
+  it('deducts missed break minutes from an open long straight shift on the current day', () => {
+    const result = buildDailySummary({
+      punches: [
+        {
+          id: 'p1',
+          occurredAt: new Date('2026-03-27T08:00:00.000Z'),
+          type: PunchType.IN,
+        },
+      ],
+      missedBreakDeductionPolicy: {
+        enabled: true,
+        triggerHours: 6,
+        deductionMinutes: 120,
+      },
+      rangeStartUtc: new Date('2026-03-27T00:00:00.000Z').getTime(),
+      rangeEndUtc: new Date('2026-03-27T23:59:59.999Z').getTime(),
+      offsetMs: 0,
+      roundTo: 0,
+      nowUtc: new Date('2026-03-27T15:00:00.000Z').getTime(),
+    });
+
+    expect(result.totalMinutes).toBe(300);
+    expect(result.days).toEqual([
+      expect.objectContaining({
+        date: '2026-03-27',
+        minutes: 300,
+        hoursDecimal: 5,
+        hoursFormatted: '5:00',
+      }),
+    ]);
+  });
 });

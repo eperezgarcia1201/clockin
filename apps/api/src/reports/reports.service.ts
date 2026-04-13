@@ -2531,13 +2531,13 @@ export class ReportsService {
           notificationPolicy.missedBreakDeductionEnabled
             ? {
                 enabled: true,
-                scheduleHours: notificationPolicy.missedBreakScheduleHours,
+                triggerHours: notificationPolicy.missedBreakScheduleHours,
                 deductionMinutes:
                   notificationPolicy.missedBreakDeductionMinutes,
               }
             : {
                 enabled: false,
-                scheduleHours: notificationPolicy.missedBreakScheduleHours,
+                triggerHours: notificationPolicy.missedBreakScheduleHours,
                 deductionMinutes:
                   notificationPolicy.missedBreakDeductionMinutes,
               },
@@ -2652,12 +2652,12 @@ export class ReportsService {
       missedBreakDeductionPolicy: notificationPolicy.missedBreakDeductionEnabled
         ? {
             enabled: true,
-            scheduleHours: notificationPolicy.missedBreakScheduleHours,
+            triggerHours: notificationPolicy.missedBreakScheduleHours,
             deductionMinutes: notificationPolicy.missedBreakDeductionMinutes,
           }
         : {
             enabled: false,
-            scheduleHours: notificationPolicy.missedBreakScheduleHours,
+            triggerHours: notificationPolicy.missedBreakScheduleHours,
             deductionMinutes: notificationPolicy.missedBreakDeductionMinutes,
           },
       offsetMs,
@@ -2824,6 +2824,7 @@ export function buildDailySummary({
   }
 
   const minutesByDay = new Map<string, number>();
+  const longestStraightMinutesByDay = new Map<string, number>();
   const penaltyByDay = new Map<string, number>();
 
   for (const interval of intervals) {
@@ -2834,6 +2835,10 @@ export function buildDailySummary({
       const segmentEnd = Math.min(interval.end, dayEndUtc);
       const minutes = (segmentEnd - cursor) / 60000;
       minutesByDay.set(dayKey, (minutesByDay.get(dayKey) || 0) + minutes);
+      const previousLongest = longestStraightMinutesByDay.get(dayKey) || 0;
+      if (minutes > previousLongest) {
+        longestStraightMinutesByDay.set(dayKey, minutes);
+      }
       cursor = segmentEnd;
     }
   }
@@ -2876,8 +2881,8 @@ export function buildDailySummary({
       const scheduledMinutes = scheduledMinutesByWeekday?.get(weekday) || 0;
       const missedBreakDeductionMinutes = resolveMissedBreakDeductionMinutes({
         policy: missedBreakDeductionPolicy,
-        scheduledMinutes,
         workedMinutes: minutes,
+        longestStraightMinutes: longestStraightMinutesByDay.get(date) || 0,
         existingPenaltyMinutes: penaltyMinutes,
         hasBreakPunch: dayPunches.some(
           (punch) => punch.type === PunchType.BREAK,

@@ -1,6 +1,6 @@
 export type MissedBreakDeductionPolicy = {
   enabled: boolean;
-  scheduleHours: number;
+  triggerHours: number;
   deductionMinutes: number;
 };
 
@@ -89,8 +89,8 @@ export function getWeekdayFromDateKey(dateKey: string) {
 
 export function resolveMissedBreakDeductionMinutes(input: {
   policy: MissedBreakDeductionPolicy | null | undefined;
-  scheduledMinutes: number;
   workedMinutes: number;
+  longestStraightMinutes: number;
   existingPenaltyMinutes?: number;
   hasBreakPunch: boolean;
 }) {
@@ -99,12 +99,8 @@ export function resolveMissedBreakDeductionMinutes(input: {
     return 0;
   }
 
-  const triggerMinutes = policy.scheduleHours * 60;
-  if (
-    input.scheduledMinutes < triggerMinutes ||
-    input.workedMinutes < input.scheduledMinutes ||
-    input.hasBreakPunch
-  ) {
+  const triggerMinutes = policy.triggerHours * 60;
+  if (input.longestStraightMinutes < triggerMinutes || input.hasBreakPunch) {
     return 0;
   }
 
