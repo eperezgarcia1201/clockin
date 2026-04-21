@@ -37,6 +37,44 @@ export type CompanyOrderRow = {
   updatedAt?: string;
 };
 
+export type InPersonShoppingItem = {
+  rowKey: string;
+  key: string;
+  nameEs: string;
+  nameEn: string;
+  orderedQuantity: number;
+  purchasedQuantity: number;
+  remainingQuantity: number;
+  price: number;
+  updatedAt?: string | null;
+};
+
+export type InPersonShoppingSupplier = {
+  supplierName: string;
+  itemCount: number;
+  remainingItemCount: number;
+  totalOrderedQuantity: number;
+  totalPurchasedQuantity: number;
+  totalRemainingQuantity: number;
+  totalPrice: number;
+  items: InPersonShoppingItem[];
+};
+
+export type InPersonShoppingWeek = {
+  weekStartDate: string;
+  weekEndDate: string;
+  officeId?: string | null;
+  locationLabel?: string;
+  supplierCount: number;
+  itemCount: number;
+  remainingItemCount: number;
+  totalOrderedQuantity: number;
+  totalPurchasedQuantity: number;
+  totalRemainingQuantity: number;
+  totalPrice: number;
+  suppliers: InPersonShoppingSupplier[];
+};
+
 type CompanyOrderCatalogResponse = {
   suppliers?: CompanyOrderCatalogSupplier[];
 };
@@ -58,6 +96,8 @@ type CreateCompanyOrderInput = {
 type CreateCompanyOrderResponse = {
   weekStartDate?: string;
 };
+
+type InPersonShoppingResponse = InPersonShoppingWeek;
 
 export async function getCompanyOrderCatalog(): Promise<
   CompanyOrderCatalogSupplier[]
@@ -95,6 +135,33 @@ export async function createCompanyOrder(
 ): Promise<CreateCompanyOrderResponse> {
   return requestJson<CreateCompanyOrderResponse>("/api/company-orders", {
     method: "POST",
+    body: input,
+  });
+}
+
+export async function getInPersonShopping(
+  weekStart?: string,
+): Promise<InPersonShoppingWeek> {
+  const query = new URLSearchParams();
+  if (weekStart) {
+    query.set("weekStart", weekStart);
+  }
+  const suffix = query.toString();
+  return requestJson<InPersonShoppingResponse>(
+    `/api/company-orders/in-person${suffix ? `?${suffix}` : ""}`,
+  );
+}
+
+export async function updateInPersonShoppingItem(input: {
+  weekStart: string;
+  supplierName: string;
+  nameEs: string;
+  nameEn: string;
+  purchasedQuantity: number;
+  price?: number;
+}): Promise<void> {
+  await requestJson<unknown>("/api/company-orders/in-person", {
+    method: "PUT",
     body: input,
   });
 }

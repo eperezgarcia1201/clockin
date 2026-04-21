@@ -10,7 +10,10 @@ export async function GET(
   const { id } = await context.params;
   const normalizedId = id?.trim();
   if (!normalizedId) {
-    return NextResponse.json({ error: "Order ID is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "Order ID is required." },
+      { status: 400 },
+    );
   }
 
   try {
@@ -40,6 +43,9 @@ export async function GET(
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": contentDisposition,
+        "Cache-Control": "private, no-store, no-cache, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
       },
     });
   } catch (error) {

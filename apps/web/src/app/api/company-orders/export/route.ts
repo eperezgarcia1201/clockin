@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { clockinFetch } from "../../../../lib/clockin-api";
-import { scopedQueryFromRequest, withQuery } from "../../../../lib/location-scope";
+import {
+  scopedQueryFromRequest,
+  withQuery,
+} from "../../../../lib/location-scope";
 
 const normalizeFormat = (value: string | null) => {
   const normalized = (value || "pdf").trim().toLowerCase();
@@ -21,9 +24,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    const response = await clockinFetch(withQuery("/company-orders/export", query), {
-      headers: { Accept: "*/*" },
-    });
+    const response = await clockinFetch(
+      withQuery("/company-orders/export", query),
+      {
+        headers: { Accept: "*/*" },
+      },
+    );
 
     if (!response.ok) {
       const payload = (await response.json().catch(() => ({}))) as {
@@ -31,7 +37,12 @@ export async function GET(request: Request) {
         message?: string;
       };
       return NextResponse.json(
-        { error: payload.error || payload.message || "Unable to export company orders." },
+        {
+          error:
+            payload.error ||
+            payload.message ||
+            "Unable to export company orders.",
+        },
         { status: response.status },
       );
     }
@@ -48,6 +59,9 @@ export async function GET(request: Request) {
       headers: {
         "Content-Type": contentType,
         "Content-Disposition": contentDisposition,
+        "Cache-Control": "private, no-store, no-cache, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
       },
     });
   } catch (error) {

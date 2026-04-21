@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
 import type { CreateCompanyOrderDto } from './dto/create-company-order.dto';
+import type { UpdateCompanyOrderInPersonDto } from './dto/update-company-order-in-person.dto';
 import type {
   CompanyOrderCatalogSupplierDto,
   UpdateCompanyOrderCatalogDto,
@@ -44,6 +45,17 @@ type CompanyOrderDbRow = {
     nameEn: string;
     quantity: number;
   }>;
+};
+
+type CompanyOrderInPersonRow = {
+  supplierName: string;
+  supplierKey: string;
+  itemKey: string;
+  nameEs: string;
+  nameEn: string;
+  purchasedQuantity: number;
+  price: number;
+  updatedAt: Date;
 };
 
 type StoredOrderMetadata = {
@@ -90,9 +102,33 @@ type SerializedCompanyOrder = {
   updatedAt: string;
 };
 
+type InPersonShoppingItem = {
+  rowKey: string;
+  key: string;
+  nameEs: string;
+  nameEn: string;
+  orderedQuantity: number;
+  purchasedQuantity: number;
+  remainingQuantity: number;
+  price: number;
+  updatedAt: string | null;
+};
+
+type InPersonShoppingSupplier = {
+  supplierName: string;
+  itemCount: number;
+  remainingItemCount: number;
+  totalOrderedQuantity: number;
+  totalPurchasedQuantity: number;
+  totalRemainingQuantity: number;
+  totalPrice: number;
+  items: InPersonShoppingItem[];
+};
+
 @Injectable()
 export class CompanyOrdersService {
   private catalogOverridesTableReady = false;
+  private inPersonShoppingTableReady = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -177,6 +213,202 @@ export class CompanyOrdersService {
 
     return {
       orders: mergedOrders,
+    };
+  }
+
+  async listInPersonShopping(
+    authUser: AuthUser,
+    options: { weekStart?: string; officeId?: string },
+  ) {
+    const access = await this.tenancy.requireCompanyOrdersAccess(authUser);
+    const tenantId = access.tenant.id;
+    const requestedOfficeId = options.officeId?.trim() || undefined;
+    if (
+      access.allowedOfficeId &&
+      requestedOfficeId &&
+      requestedOfficeId !== access.allowedOfficeId
+    ) {
+      throw new BadRequestException(
+        'Kitchen manager can only access orders for their assigned location.',
+      );
+    }
+    const officeId = access.allowedOfficeId || requestedOfficeId;
+    const week = this.getWeekBounds(
+      this.parseWeekStartDate(options.weekStart) || new Date(),
+    );
+    const serializedOrders = await this.getWeeklySupplierOrders(
+      tenantId,
+      officeId,
+      week.weekStart,
+      week.weekEnd,
+    );
+    const shoppingRows = await this.getInPersonShoppingRows(
+      tenantId,
+      officeId,
+      week.weekStartKey,
+    );
+    const suppliers = this.buildInPersonShoppingSuppliers(
+      serializedOrders,
+      shoppingRows,
+    );
+
+    return {
+      weekStartDate: week.weekStartKey,
+      weekEndDate: week.weekEndKey,
+      officeId: officeId || null,
+      locationLabel: this.resolvePdfLocationLabel(serializedOrders),
+      supplierCount: suppliers.length,
+      itemCount: suppliers.reduce(
+        (sum, supplier) => sum + supplier.itemCount,
+        0,
+      ),
+      remainingItemCount: suppliers.reduce(
+        (sum, supplier) => sum + supplier.remainingItemCount,
+        0,
+      ),
+      totalOrderedQuantity: Number(
+        suppliers
+          .reduce((sum, supplier) => sum + supplier.totalOrderedQuantity, 0)
+          .toFixed(2),
+      ),
+      totalPurchasedQuantity: Number(
+        suppliers
+          .reduce((sum, supplier) => sum + supplier.totalPurchasedQuantity, 0)
+          .toFixed(2),
+      ),
+      totalRemainingQuantity: Number(
+        suppliers
+          .reduce((sum, supplier) => sum + supplier.totalRemainingQuantity, 0)
+          .toFixed(2),
+      ),
+      totalPrice: Number(
+        suppliers
+          .reduce((sum, supplier) => sum + supplier.totalPrice, 0)
+          .toFixed(2),
+      ),
+      suppliers,
+    };
+  }
+
+  async updateInPersonShopping(
+    authUser: AuthUser,
+    dto: UpdateCompanyOrderInPersonDto,
+  ) {
+    const access = await this.tenancy.requireCompanyOrdersAccess(authUser);
+    const tenantId = access.tenant.id;
+    const requestedOfficeId = dto.officeId?.trim() || undefined;
+    if (
+      access.allowedOfficeId &&
+      requestedOfficeId &&
+      requestedOfficeId !== access.allowedOfficeId
+    ) {
+      throw new BadRequestException(
+        'Kitchen manager can only access orders for their assigned location.',
+      );
+    }
+    const officeId = access.allowedOfficeId || requestedOfficeId;
+    const week = this.getWeekBounds(
+      this.parseWeekStartDate(dto.weekStart) || new Date(),
+    );
+    const serializedOrders = await this.getWeeklySupplierOrders(
+      tenantId,
+      officeId,
+      week.weekStart,
+      week.weekEnd,
+    );
+    const supplierName = this.normalizeSupplierName(dto.supplierName);
+    const supplierKey = supplierName.toLowerCase();
+    const itemKey = catalogItemKey(dto.nameEs, dto.nameEn);
+    const supplier = serializedOrders.find(
+      (entry) =>
+        this.normalizeSupplierName(entry.supplierName).toLowerCase() ===
+        supplierKey,
+    );
+    if (!supplier) {
+      throw new NotFoundException('Supplier not found for this week.');
+    }
+
+    const orderedItem = supplier.items.find(
+      (item) => catalogItemKey(item.nameEs, item.nameEn) === itemKey,
+    );
+    if (!orderedItem) {
+      throw new NotFoundException(
+        'Company order item not found for this week.',
+      );
+    }
+
+    const orderedQuantity = Number(orderedItem.quantity.toFixed(2));
+    const purchasedQuantity = this.normalizePositiveDecimal(
+      dto.purchasedQuantity,
+      orderedQuantity,
+    );
+    const price = this.normalizePositiveDecimal(dto.price ?? 0);
+
+    await this.ensureInPersonShoppingTable();
+
+    if (purchasedQuantity <= 0 && price <= 0) {
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "CompanyOrderInPersonShopping"
+         WHERE "tenantId" = $1
+           AND "officeScopeId" = $2
+           AND "weekStartDate" = $3
+           AND "supplierKey" = $4
+           AND "itemKey" = $5`,
+        tenantId,
+        officeId || '',
+        week.weekStartKey,
+        supplierKey,
+        itemKey,
+      );
+    } else {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "CompanyOrderInPersonShopping" (
+           "tenantId",
+           "officeScopeId",
+           "weekStartDate",
+           "supplierKey",
+           "supplierName",
+           "itemKey",
+           "nameEs",
+           "nameEn",
+           "purchasedQuantity",
+           "price",
+           "updatedAt"
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+         ON CONFLICT ("tenantId", "officeScopeId", "weekStartDate", "supplierKey", "itemKey")
+         DO UPDATE SET
+           "supplierName" = EXCLUDED."supplierName",
+           "nameEs" = EXCLUDED."nameEs",
+           "nameEn" = EXCLUDED."nameEn",
+           "purchasedQuantity" = EXCLUDED."purchasedQuantity",
+           "price" = EXCLUDED."price",
+           "updatedAt" = NOW()`,
+        tenantId,
+        officeId || '',
+        week.weekStartKey,
+        supplierKey,
+        supplierName,
+        itemKey,
+        orderedItem.nameEs,
+        orderedItem.nameEn,
+        purchasedQuantity,
+        price,
+      );
+    }
+
+    return {
+      success: true,
+      weekStartDate: week.weekStartKey,
+      supplierName,
+      nameEs: orderedItem.nameEs,
+      nameEn: orderedItem.nameEn,
+      orderedQuantity,
+      purchasedQuantity,
+      remainingQuantity: Number(
+        Math.max(0, orderedQuantity - purchasedQuantity).toFixed(2),
+      ),
+      price,
     };
   }
 
@@ -446,42 +678,24 @@ export class CompanyOrdersService {
     const weekStart = dateKeyToUtc(weekStartDate);
     const weekEnd = new Date(`${weekEndDate}T23:59:59.999Z`);
 
-    const weeklyOrders = (await this.prisma.companyOrder.findMany({
-      where: {
-        tenantId,
-        officeId: order.officeId || null,
-        orderDate: {
-          gte: weekStart,
-          lte: weekEnd,
-        },
-      },
-      orderBy: [
-        { supplierName: 'asc' },
-        { orderDate: 'desc' },
-        { createdAt: 'desc' },
-      ],
-      include: {
-        office: { select: { name: true } },
-        createdByEmployee: { select: { fullName: true, displayName: true } },
-        items: {
-          orderBy: [{ createdAt: 'asc' }],
-          select: {
-            id: true,
-            nameEs: true,
-            nameEn: true,
-            quantity: true,
-          },
-        },
-      },
-    })) as CompanyOrderDbRow[];
-
-    const serializedOrders = weeklyOrders.length
-      ? weeklyOrders.map((entry) => this.serializeOrder(entry))
-      : [serialized];
-    const pdf = this.buildOrdersPdf(serializedOrders, {
+    const serializedOrders = await this.getWeeklySupplierOrders(
+      tenantId,
+      order.officeId || undefined,
+      weekStart,
+      weekEnd,
+    );
+    const exportOrders = await this.applyInPersonShoppingToOrders(
+      tenantId,
+      order.officeId || undefined,
+      weekStartDate,
+      serializedOrders.length ? serializedOrders : [serialized],
+    );
+    const pdf = this.buildOrdersPdf(exportOrders, {
       weekStartDate,
       weekEndDate,
-      locationLabel: this.resolvePdfLocationLabel(serializedOrders),
+      locationLabel: this.resolvePdfLocationLabel(
+        exportOrders.length ? exportOrders : serializedOrders,
+      ),
       generatedAt: new Date(),
     });
     return {
@@ -511,13 +725,67 @@ export class CompanyOrdersService {
       this.parseWeekStartDate(options.weekStart) || new Date(),
     );
 
-    const orders = (await this.prisma.companyOrder.findMany({
+    const serializedOrders = await this.getWeeklySupplierOrders(
+      tenantId,
+      officeId,
+      week.weekStart,
+      week.weekEnd,
+    );
+    const exportOrders = await this.applyInPersonShoppingToOrders(
+      tenantId,
+      officeId,
+      week.weekStartKey,
+      serializedOrders,
+    );
+
+    if (options.format === 'csv') {
+      const csv = this.buildWeeklyCsv(exportOrders, week.weekStartKey);
+      return {
+        filename: `company-orders-week-${week.weekStartKey}.csv`,
+        contentType: 'text/csv; charset=utf-8',
+        content: Buffer.from(csv, 'utf8'),
+      };
+    }
+    if (options.format === 'excel') {
+      const excelHtml = this.buildWeeklyExcelHtml(
+        exportOrders,
+        week.weekStartKey,
+      );
+      return {
+        filename: `company-orders-week-${week.weekStartKey}.xls`,
+        contentType: 'application/vnd.ms-excel; charset=utf-8',
+        content: Buffer.from(excelHtml, 'utf8'),
+      };
+    }
+
+    const pdf = this.buildOrdersPdf(exportOrders, {
+      weekStartDate: week.weekStartKey,
+      weekEndDate: week.weekEndKey,
+      locationLabel: this.resolvePdfLocationLabel(
+        exportOrders.length ? exportOrders : serializedOrders,
+      ),
+      generatedAt: new Date(),
+    });
+    return {
+      filename: `company-orders-week-${week.weekStartKey}.pdf`,
+      contentType: 'application/pdf',
+      content: pdf,
+    };
+  }
+
+  private async getWeeklyOrderRows(
+    tenantId: string,
+    officeId: string | undefined,
+    weekStart: Date,
+    weekEnd: Date,
+  ) {
+    return (await this.prisma.companyOrder.findMany({
       where: {
         tenantId,
         officeId,
         orderDate: {
-          gte: week.weekStart,
-          lte: week.weekEnd,
+          gte: weekStart,
+          lte: weekEnd,
         },
       },
       orderBy: [
@@ -539,39 +807,373 @@ export class CompanyOrdersService {
         },
       },
     })) as CompanyOrderDbRow[];
-    const serializedOrders = orders.map((order) => this.serializeOrder(order));
+  }
 
-    if (options.format === 'csv') {
-      const csv = this.buildWeeklyCsv(serializedOrders, week.weekStartKey);
-      return {
-        filename: `company-orders-week-${week.weekStartKey}.csv`,
-        contentType: 'text/csv; charset=utf-8',
-        content: Buffer.from(csv, 'utf8'),
-      };
-    }
-    if (options.format === 'excel') {
-      const excelHtml = this.buildWeeklyExcelHtml(
-        serializedOrders,
-        week.weekStartKey,
-      );
-      return {
-        filename: `company-orders-week-${week.weekStartKey}.xls`,
-        contentType: 'application/vnd.ms-excel; charset=utf-8',
-        content: Buffer.from(excelHtml, 'utf8'),
-      };
+  private async getWeeklySupplierOrders(
+    tenantId: string,
+    officeId: string | undefined,
+    weekStart: Date,
+    weekEnd: Date,
+  ) {
+    const rows = await this.getWeeklyOrderRows(
+      tenantId,
+      officeId,
+      weekStart,
+      weekEnd,
+    );
+    return this.aggregateOrdersBySupplier(
+      rows.map((order) => this.serializeOrder(order)),
+    );
+  }
+
+  private async getInPersonShoppingRows(
+    tenantId: string,
+    officeId: string | undefined,
+    weekStartDate: string,
+  ) {
+    await this.ensureInPersonShoppingTable();
+    return await this.prisma.$queryRawUnsafe<CompanyOrderInPersonRow[]>(
+      `SELECT
+         "supplierName",
+         "supplierKey",
+         "itemKey",
+         "nameEs",
+         "nameEn",
+         "purchasedQuantity",
+         "price",
+         "updatedAt"
+       FROM "CompanyOrderInPersonShopping"
+       WHERE "tenantId" = $1
+         AND "officeScopeId" = $2
+         AND "weekStartDate" = $3
+       ORDER BY "supplierName" ASC, "nameEs" ASC, "nameEn" ASC`,
+      tenantId,
+      officeId || '',
+      weekStartDate,
+    );
+  }
+
+  private async applyInPersonShoppingToOrders(
+    tenantId: string,
+    officeId: string | undefined,
+    weekStartDate: string,
+    orders: SerializedCompanyOrder[],
+  ) {
+    if (!orders.length) {
+      return [];
     }
 
-    const pdf = this.buildOrdersPdf(serializedOrders, {
-      weekStartDate: week.weekStartKey,
-      weekEndDate: week.weekEndKey,
-      locationLabel: this.resolvePdfLocationLabel(serializedOrders),
-      generatedAt: new Date(),
+    const shoppingRows = await this.getInPersonShoppingRows(
+      tenantId,
+      officeId,
+      weekStartDate,
+    );
+    if (!shoppingRows.length) {
+      return orders;
+    }
+
+    const shoppingByKey = new Map<
+      string,
+      { purchasedQuantity: number; price: number }
+    >();
+    shoppingRows.forEach((row) => {
+      shoppingByKey.set(`${row.supplierKey}|${row.itemKey}`, {
+        purchasedQuantity: this.normalizePositiveDecimal(row.purchasedQuantity),
+        price: this.normalizePositiveDecimal(row.price),
+      });
     });
-    return {
-      filename: `company-orders-week-${week.weekStartKey}.pdf`,
-      contentType: 'application/pdf',
-      content: pdf,
+
+    return orders
+      .map((order) => {
+        const supplierKey = this.normalizeSupplierName(
+          order.supplierName,
+        ).toLowerCase();
+        const items = order.items
+          .map((item) => {
+            const shopping = shoppingByKey.get(
+              `${supplierKey}|${catalogItemKey(item.nameEs, item.nameEn)}`,
+            );
+            const purchasedQuantity = Math.min(
+              item.quantity,
+              shopping?.purchasedQuantity || 0,
+            );
+            const remainingQuantity = Number(
+              Math.max(0, item.quantity - purchasedQuantity).toFixed(2),
+            );
+            if (remainingQuantity <= 0) {
+              return null;
+            }
+            return {
+              ...item,
+              quantity: remainingQuantity,
+            };
+          })
+          .filter((item): item is SerializedCompanyOrder['items'][number] =>
+            Boolean(item),
+          );
+
+        if (!items.length) {
+          return null;
+        }
+
+        return {
+          ...order,
+          items,
+          itemCount: items.length,
+          totalQuantity: Number(
+            items.reduce((sum, item) => sum + item.quantity, 0).toFixed(2),
+          ),
+        };
+      })
+      .filter((order): order is SerializedCompanyOrder => Boolean(order));
+  }
+
+  private buildInPersonShoppingSuppliers(
+    orders: SerializedCompanyOrder[],
+    shoppingRows: CompanyOrderInPersonRow[],
+  ) {
+    const shoppingByKey = new Map<string, CompanyOrderInPersonRow>();
+    shoppingRows.forEach((row) => {
+      shoppingByKey.set(`${row.supplierKey}|${row.itemKey}`, row);
+    });
+
+    return orders
+      .map((order) => {
+        const supplierKey = this.normalizeSupplierName(
+          order.supplierName,
+        ).toLowerCase();
+        const items = order.items
+          .map((item) => {
+            const key = catalogItemKey(item.nameEs, item.nameEn);
+            const shopping = shoppingByKey.get(`${supplierKey}|${key}`);
+            const orderedQuantity = this.normalizePositiveDecimal(
+              item.quantity,
+            );
+            const purchasedQuantity = Math.min(
+              orderedQuantity,
+              this.normalizePositiveDecimal(shopping?.purchasedQuantity || 0),
+            );
+            const remainingQuantity = Number(
+              Math.max(0, orderedQuantity - purchasedQuantity).toFixed(2),
+            );
+            const price = this.normalizePositiveDecimal(shopping?.price || 0);
+
+            return {
+              rowKey: `${supplierKey}|${key}`,
+              key,
+              nameEs: item.nameEs,
+              nameEn: item.nameEn,
+              orderedQuantity,
+              purchasedQuantity,
+              remainingQuantity,
+              price,
+              updatedAt: shopping?.updatedAt
+                ? new Date(shopping.updatedAt).toISOString()
+                : null,
+            };
+          })
+          .sort((a, b) => {
+            if (a.remainingQuantity === 0 && b.remainingQuantity > 0) {
+              return 1;
+            }
+            if (a.remainingQuantity > 0 && b.remainingQuantity === 0) {
+              return -1;
+            }
+            return catalogItemKey(a.nameEs, a.nameEn).localeCompare(
+              catalogItemKey(b.nameEs, b.nameEn),
+            );
+          });
+
+        return {
+          supplierName: order.supplierName,
+          itemCount: items.length,
+          remainingItemCount: items.filter((item) => item.remainingQuantity > 0)
+            .length,
+          totalOrderedQuantity: Number(
+            items
+              .reduce((sum, item) => sum + item.orderedQuantity, 0)
+              .toFixed(2),
+          ),
+          totalPurchasedQuantity: Number(
+            items
+              .reduce((sum, item) => sum + item.purchasedQuantity, 0)
+              .toFixed(2),
+          ),
+          totalRemainingQuantity: Number(
+            items
+              .reduce((sum, item) => sum + item.remainingQuantity, 0)
+              .toFixed(2),
+          ),
+          totalPrice: Number(
+            items.reduce((sum, item) => sum + item.price, 0).toFixed(2),
+          ),
+          items,
+        };
+      })
+      .sort((a, b) => a.supplierName.localeCompare(b.supplierName));
+  }
+
+  private aggregateOrdersBySupplier(orders: SerializedCompanyOrder[]) {
+    type SupplierAggregate = {
+      id: string;
+      supplierName: string;
+      weekStartDate: string;
+      weekEndDate: string;
+      officeId: string | null;
+      officeName: string | null;
+      createdBy: string | null;
+      submittedDates: Set<string>;
+      contributors: Set<string>;
+      noteLines: Set<string>;
+      items: Map<
+        string,
+        { id: string; nameEs: string; nameEn: string; quantity: number }
+      >;
+      createdAtMs: number;
+      updatedAtMs: number;
+      orderDateMs: number;
     };
+
+    const aggregates = new Map<string, SupplierAggregate>();
+
+    orders.forEach((order) => {
+      const supplierName = this.normalizeSupplierName(order.supplierName);
+      const supplierKey = supplierName.toLowerCase();
+      const createdAtMs = Date.parse(order.createdAt);
+      const updatedAtMs = Date.parse(order.updatedAt || order.orderDate);
+      const orderDateMs = Date.parse(order.orderDate);
+      const nowMs = Date.now();
+      const safeOrderDateMs = Number.isFinite(orderDateMs)
+        ? orderDateMs
+        : nowMs;
+      const safeCreatedAtMs = Number.isFinite(createdAtMs)
+        ? createdAtMs
+        : safeOrderDateMs;
+      const safeUpdatedAtMs = Number.isFinite(updatedAtMs)
+        ? updatedAtMs
+        : safeOrderDateMs;
+
+      let aggregate = aggregates.get(supplierKey);
+      if (!aggregate) {
+        aggregate = {
+          id: order.id,
+          supplierName,
+          weekStartDate: order.weekStartDate,
+          weekEndDate: order.weekEndDate,
+          officeId: order.officeId || null,
+          officeName: order.officeName || null,
+          createdBy: order.createdBy || null,
+          submittedDates: new Set<string>(),
+          contributors: new Set<string>(),
+          noteLines: new Set<string>(),
+          items: new Map(),
+          createdAtMs: safeCreatedAtMs,
+          updatedAtMs: safeUpdatedAtMs,
+          orderDateMs: safeOrderDateMs,
+        };
+        aggregates.set(supplierKey, aggregate);
+      }
+
+      if (safeCreatedAtMs < aggregate.createdAtMs) {
+        aggregate.createdAtMs = safeCreatedAtMs;
+        aggregate.id = order.id;
+        aggregate.createdBy = order.createdBy || aggregate.createdBy;
+      }
+      if (safeUpdatedAtMs > aggregate.updatedAtMs) {
+        aggregate.updatedAtMs = safeUpdatedAtMs;
+      }
+      if (safeOrderDateMs > aggregate.orderDateMs) {
+        aggregate.orderDateMs = safeOrderDateMs;
+      }
+      if (!aggregate.officeName && order.officeName) {
+        aggregate.officeName = order.officeName;
+      }
+      if (!aggregate.createdBy && order.createdBy) {
+        aggregate.createdBy = order.createdBy;
+      }
+
+      this.normalizeDateKeys(order.submittedDates || []).forEach((dateKey) => {
+        aggregate?.submittedDates.add(dateKey);
+      });
+      this.normalizeContributors(order.contributors || []).forEach(
+        (contributor) => {
+          aggregate?.contributors.add(contributor);
+        },
+      );
+      this.normalizeNoteLines((order.notes || '').split('\n')).forEach(
+        (line) => {
+          aggregate?.noteLines.add(line);
+        },
+      );
+
+      order.items.forEach((item) => {
+        const key = catalogItemKey(item.nameEs, item.nameEn);
+        const existing = aggregate?.items.get(key);
+        if (existing) {
+          existing.quantity = Number(
+            (existing.quantity + item.quantity).toFixed(2),
+          );
+          return;
+        }
+        aggregate?.items.set(key, {
+          id: item.id,
+          nameEs: item.nameEs,
+          nameEn: item.nameEn,
+          quantity: Number(item.quantity.toFixed(2)),
+        });
+      });
+    });
+
+    return Array.from(aggregates.values())
+      .map((aggregate) => {
+        const submittedDates = this.normalizeDateKeys(
+          Array.from(aggregate.submittedDates.values()),
+        );
+        const contributors = this.normalizeContributors(
+          Array.from(aggregate.contributors.values()),
+        );
+        const notes = this.normalizeNoteLines(
+          Array.from(aggregate.noteLines.values()),
+        ).join('\n');
+        const items = Array.from(aggregate.items.values()).sort((a, b) =>
+          catalogItemKey(a.nameEs, a.nameEn).localeCompare(
+            catalogItemKey(b.nameEs, b.nameEn),
+          ),
+        );
+        const totalQuantity = Number(
+          items.reduce((sum, item) => sum + item.quantity, 0).toFixed(2),
+        );
+        const orderDate = new Date(aggregate.orderDateMs);
+        const fallbackSubmittedDate = this.toDateKey(orderDate);
+        const lastSubmittedDate =
+          submittedDates[submittedDates.length - 1] || fallbackSubmittedDate;
+
+        return {
+          id: aggregate.id,
+          supplierName: aggregate.supplierName,
+          supplierNames: [aggregate.supplierName],
+          companyName: '',
+          orderDate: orderDate.toISOString(),
+          weekStartDate: aggregate.weekStartDate,
+          weekEndDate: aggregate.weekEndDate,
+          orderLabel: this.formatOrderLabel(
+            aggregate.weekStartDate,
+            lastSubmittedDate,
+          ),
+          submittedDates,
+          contributors,
+          notes,
+          officeId: aggregate.officeId,
+          officeName: aggregate.officeName,
+          createdBy: aggregate.createdBy,
+          totalQuantity,
+          itemCount: items.length,
+          items,
+          createdAt: new Date(aggregate.createdAtMs).toISOString(),
+          updatedAt: new Date(aggregate.updatedAtMs).toISOString(),
+        } satisfies SerializedCompanyOrder;
+      })
+      .sort((a, b) => a.supplierName.localeCompare(b.supplierName));
   }
 
   private parseWeekStartDate(rawValue?: string) {
@@ -791,6 +1393,36 @@ export class CompanyOrdersService {
     );
   }
 
+  private async ensureInPersonShoppingTable() {
+    if (this.inPersonShoppingTableReady) {
+      return;
+    }
+    await this.prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS "CompanyOrderInPersonShopping" (
+         "tenantId" TEXT NOT NULL,
+         "officeScopeId" TEXT NOT NULL DEFAULT '',
+         "weekStartDate" TEXT NOT NULL,
+         "supplierKey" TEXT NOT NULL,
+         "supplierName" TEXT NOT NULL,
+         "itemKey" TEXT NOT NULL,
+         "nameEs" TEXT NOT NULL,
+         "nameEn" TEXT NOT NULL,
+         "purchasedQuantity" DOUBLE PRECISION NOT NULL DEFAULT 0,
+         "price" DOUBLE PRECISION NOT NULL DEFAULT 0,
+         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+         PRIMARY KEY (
+           "tenantId",
+           "officeScopeId",
+           "weekStartDate",
+           "supplierKey",
+           "itemKey"
+         )
+       )`,
+    );
+    this.inPersonShoppingTableReady = true;
+  }
+
   private async ensureCatalogOverridesTable() {
     if (this.catalogOverridesTableReady) {
       return;
@@ -803,6 +1435,21 @@ export class CompanyOrdersService {
        )`,
     );
     this.catalogOverridesTableReady = true;
+  }
+
+  private normalizeSupplierName(value: string) {
+    return value.trim().replace(/\s+/g, ' ').slice(0, 120);
+  }
+
+  private normalizePositiveDecimal(
+    value: number,
+    max = Number.POSITIVE_INFINITY,
+  ) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 0;
+    }
+    return Number(Math.min(parsed, max).toFixed(2));
   }
 
   private normalizeCatalogSuppliers(

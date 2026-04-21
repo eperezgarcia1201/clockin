@@ -17,6 +17,7 @@ import { AuthOrDevGuard } from '../auth/auth.guard';
 import type { RequestWithUser } from '../auth/auth.types';
 import { CompanyOrdersService } from './company-orders.service';
 import { CreateCompanyOrderDto } from './dto/create-company-order.dto';
+import { UpdateCompanyOrderInPersonDto } from './dto/update-company-order-in-person.dto';
 import { UpdateCompanyOrderCatalogDto } from './dto/update-company-order-catalog.dto';
 
 @Controller('company-orders')
@@ -71,6 +72,34 @@ export class CompanyOrdersController {
       throw new UnauthorizedException();
     }
     return this.orders.createOrder(req.user, dto);
+  }
+
+  @Get('in-person')
+  async listInPersonShopping(
+    @Req() req: RequestWithUser,
+    @Query('weekStart') weekStart?: string,
+    @Query('officeId') officeId?: string,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.orders.listInPersonShopping(req.user, {
+      weekStart: weekStart?.trim() || undefined,
+      officeId: officeId?.trim() || undefined,
+    });
+  }
+
+  @Put('in-person')
+  async updateInPersonShopping(
+    @Req() req: RequestWithUser,
+    @Body() dto: UpdateCompanyOrderInPersonDto,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.orders.updateInPersonShopping(req.user, dto);
   }
 
   @Get(':id/pdf')
