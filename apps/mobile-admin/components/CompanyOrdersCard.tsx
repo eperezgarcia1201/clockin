@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { styles } from "../App.styles";
 import { companyOrderItemKey, formatMoney } from "../app-helpers";
@@ -138,15 +138,163 @@ const buildExportSupplierOptions = ({
   }
 
   companyOrderRows.forEach((order) => {
-    if (!exportWeekStartDate || !order.weekStartDate || order.weekStartDate === exportWeekStartDate) {
+    if (
+      !exportWeekStartDate ||
+      !order.weekStartDate ||
+      order.weekStartDate === exportWeekStartDate
+    ) {
       addOption(order.supplierName);
     }
   });
+
   companyOrderInPersonSuppliers.forEach((supplier) =>
     addOption(supplier.supplierName),
   );
 
   return options;
+};
+
+const buildScopedRows = ({
+  supplierName,
+  rows,
+}: {
+  supplierName: string;
+  rows: CompanyOrderRow[];
+}) => {
+  if (!supplierName) {
+    return rows;
+  }
+  const normalizedSupplier = supplierName.toLowerCase();
+  return rows.filter(
+    (order) =>
+      normalizeSupplierName(order.supplierName).toLowerCase() === normalizedSupplier,
+  );
+};
+
+const buildScopedInPersonSuppliers = ({
+  supplierName,
+  suppliers,
+  activeMode,
+  companyOrderInPersonWeekStartDate,
+  exportWeekStartDate,
+}: {
+  supplierName: string;
+  suppliers: CompanyOrderInPersonSupplier[];
+  activeMode: "orders" | "inPerson";
+  companyOrderInPersonWeekStartDate: string | null | undefined;
+  exportWeekStartDate: string;
+}) => {
+  const shouldUseCurrentInPersonWeek =
+    activeMode === "inPerson" ||
+    !companyOrderInPersonWeekStartDate ||
+    !exportWeekStartDate ||
+    companyOrderInPersonWeekStartDate === exportWeekStartDate;
+
+  if (!shouldUseCurrentInPersonWeek) {
+    return [];
+  }
+
+  if (!supplierName) {
+    return suppliers;
+  }
+
+  const normalizedSupplier = supplierName.toLowerCase();
+  return suppliers.filter(
+    (supplier) =>
+      normalizeSupplierName(supplier.supplierName).toLowerCase() ===
+      normalizedSupplier,
+  );
+};
+
+const buildScopeSummary = ({
+  supplierName,
+  rows,
+  inPersonSuppliers,
+  comparisonUnitLookup,
+}: {
+  supplierName: string;
+  rows: CompanyOrderRow[];
+  inPersonSuppliers: CompanyOrderInPersonSupplier[];
+  comparisonUnitLookup: Map<string, Map<string, CompanyOrderComparisonUnit>>;
+}) => {
+  const orderedTotals = createQuantityByUnit();
+  let orderCount = rows.length;
+  let itemCount = 0;
+
+  rows.forEach((order) => {
+    itemCount += order.itemCount || order.items.length;
+    order.items.forEach((item) => {
+      addQuantityByUnit(
+        orderedTotals,
+        resolveComparisonUnit(
+          comparisonUnitLookup,
+          order.supplierName,
+          item.nameEs,
+          item.nameEn,
+        ),
+        item.quantity,
+      );
+    });
+  });
+
+  let inPersonSpend = 0;
+  let companySpend = 0;
+  let savings = 0;
+  let shoppingItemCount = 0;
+
+  inPersonSuppliers.forEach((supplier) => {
+    supplier.items.forEach((item) => {
+      shoppingItemCount += 1;
+      if (itemCount === 0) {
+        addQuantityByUnit(
+          orderedTotals,
+          item.comparisonUnit || "each",
+          item.orderedQuantity,
+        );
+      }
+
+      const purchasedQuantity = Number(item.purchasedQuantity || 0);
+      const unitPrice =
+        typeof item.unitPrice === "number" ? item.unitPrice : null;
+      const companyUnitPrice =
+        typeof item.companyUnitPrice === "number" ? item.companyUnitPrice : null;
+
+      if (purchasedQuantity > 0 && unitPrice !== null) {
+        inPersonSpend = Number(
+          (inPersonSpend + purchasedQuantity * unitPrice).toFixed(2),
+        );
+      }
+      if (purchasedQuantity > 0 && companyUnitPrice !== null) {
+        companySpend = Number(
+          (companySpend + purchasedQuantity * companyUnitPrice).toFixed(2),
+        );
+      }
+      if (
+        purchasedQuantity > 0 &&
+        unitPrice !== null &&
+        companyUnitPrice !== null
+      ) {
+        savings = Number(
+          (savings + purchasedQuantity * (companyUnitPrice - unitPrice)).toFixed(
+            2,
+          ),
+        );
+      }
+    });
+  });
+
+  return {
+    supplierName,
+    orderCount,
+    itemCount: itemCount || shoppingItemCount,
+    orderedSummary: formatQuantitySummaryByUnit(orderedTotals),
+    inPersonSpend,
+    companySpend,
+    savings,
+    hasShoppingData:
+      inPersonSuppliers.length > 0 &&
+      (inPersonSpend > 0 || companySpend > 0 || shoppingItemCount > 0),
+  };
 };
 
 export function CompanyOrdersCard({
@@ -213,6 +361,7 @@ export function CompanyOrdersCard({
   companyOrderInPersonStatus,
 }: CompanyOrdersCardProps) {
   const activeMode = companyOrderMode === "inPerson" ? "inPerson" : "orders";
+
   const handleModeChange = (value: "orders" | "inPerson") => {
     if (typeof onCompanyOrderModeChange === "function") {
       onCompanyOrderModeChange(value);
@@ -221,6 +370,7 @@ export function CompanyOrdersCard({
 
   const selectedModeSupplier =
     activeMode === "inPerson" ? companyOrderInPersonSupplier : companyOrderSupplier;
+
   const exportWeekStartDate =
     (activeMode === "inPerson"
       ? companyOrderInPersonWeekStartDate
@@ -228,11 +378,13 @@ export function CompanyOrdersCard({
     lastSubmittedCompanyOrderWeekStart ||
     companyOrderInPersonWeekStartDate ||
     "";
+
   const exportWeekEndDate =
     (activeMode === "inPerson"
       ? companyOrderInPersonWeekEndDate
       : companyOrderRows.find((row) => row.weekStartDate === exportWeekStartDate)
           ?.weekEndDate) || buildWeekEndDate(exportWeekStartDate);
+
   const exportWeekLabel = exportWeekStartDate
     ? `${formatDisplayDate(exportWeekStartDate)}${
         exportWeekEndDate ? ` - ${formatDisplayDate(exportWeekEndDate)}` : ""
@@ -257,9 +409,18 @@ export function CompanyOrdersCard({
     ],
   );
 
-  const selectedExportSupplier = companyOrderExportAllCompanies
-    ? ""
-    : normalizeSupplierName(selectedModeSupplier);
+  useEffect(() => {
+    if (companyOrderExportAllCompanies && exportSupplierOptions.length > 0) {
+      onCompanyOrderExportAllCompaniesChange(false);
+    }
+  }, [
+    companyOrderExportAllCompanies,
+    exportSupplierOptions.length,
+    onCompanyOrderExportAllCompaniesChange,
+  ]);
+
+  const selectedExportSupplier =
+    normalizeSupplierName(selectedModeSupplier) || exportSupplierOptions[0] || "";
 
   const catalogComparisonUnitLookup = useMemo(
     () => buildCatalogComparisonUnitLookup(companyOrderCatalog),
@@ -276,140 +437,85 @@ export function CompanyOrdersCard({
     return weeklyRows.length ? weeklyRows : companyOrderRows;
   }, [companyOrderRows, exportWeekStartDate]);
 
-  const exportScopedRows = useMemo(() => {
-    if (!selectedExportSupplier) {
-      return recentRowsForExportWeek;
-    }
-    return recentRowsForExportWeek.filter(
-      (order) =>
-        normalizeSupplierName(order.supplierName).toLowerCase() ===
-        selectedExportSupplier.toLowerCase(),
-    );
-  }, [recentRowsForExportWeek, selectedExportSupplier]);
+  const exportScopedRows = useMemo(
+    () =>
+      buildScopedRows({
+        supplierName: selectedExportSupplier,
+        rows: recentRowsForExportWeek,
+      }),
+    [recentRowsForExportWeek, selectedExportSupplier],
+  );
 
-  const exportScopedInPersonSuppliers = useMemo(() => {
-    const shouldUseCurrentInPersonWeek =
-      activeMode === "inPerson" ||
-      !companyOrderInPersonWeekStartDate ||
-      !exportWeekStartDate ||
-      companyOrderInPersonWeekStartDate === exportWeekStartDate;
-    if (!shouldUseCurrentInPersonWeek) {
-      return [];
-    }
-    if (!selectedExportSupplier) {
-      return companyOrderInPersonSuppliers;
-    }
-    return companyOrderInPersonSuppliers.filter(
-      (supplier) =>
-        normalizeSupplierName(supplier.supplierName).toLowerCase() ===
-        selectedExportSupplier.toLowerCase(),
-    );
-  }, [
-    activeMode,
-    companyOrderInPersonSuppliers,
-    companyOrderInPersonWeekStartDate,
-    exportWeekStartDate,
-    selectedExportSupplier,
-  ]);
+  const selectedScopedInPersonSuppliers = useMemo(
+    () =>
+      buildScopedInPersonSuppliers({
+        supplierName: selectedExportSupplier,
+        suppliers: companyOrderInPersonSuppliers,
+        activeMode,
+        companyOrderInPersonWeekStartDate,
+        exportWeekStartDate,
+      }),
+    [
+      activeMode,
+      companyOrderInPersonSuppliers,
+      companyOrderInPersonWeekStartDate,
+      exportWeekStartDate,
+      selectedExportSupplier,
+    ],
+  );
 
-  const exportSummary = useMemo(() => {
-    const orderedTotals = createQuantityByUnit();
-    let orderCount = exportScopedRows.length;
-    let itemCount = 0;
+  const exportSummary = useMemo(
+    () =>
+      buildScopeSummary({
+        supplierName: selectedExportSupplier,
+        rows: exportScopedRows,
+        inPersonSuppliers: selectedScopedInPersonSuppliers,
+        comparisonUnitLookup: catalogComparisonUnitLookup,
+      }),
+    [
+      catalogComparisonUnitLookup,
+      exportScopedRows,
+      selectedExportSupplier,
+      selectedScopedInPersonSuppliers,
+    ],
+  );
 
-    exportScopedRows.forEach((order) => {
-      itemCount += order.itemCount || order.items.length;
-      order.items.forEach((item) => {
-        addQuantityByUnit(
-          orderedTotals,
-          resolveComparisonUnit(
-            catalogComparisonUnitLookup,
-            order.supplierName,
-            item.nameEs,
-            item.nameEn,
-          ),
-          item.quantity,
-        );
-      });
-    });
-
-    let inPersonSpend = 0;
-    let companySpend = 0;
-    let savings = 0;
-    let shoppingItemCount = 0;
-
-    exportScopedInPersonSuppliers.forEach((supplier) => {
-      supplier.items.forEach((item) => {
-        shoppingItemCount += 1;
-        if (itemCount === 0) {
-          addQuantityByUnit(
-            orderedTotals,
-            item.comparisonUnit || "each",
-            item.orderedQuantity,
-          );
-        }
-
-        const purchasedQuantity = Number(item.purchasedQuantity || 0);
-        const unitPrice =
-          typeof item.unitPrice === "number" ? item.unitPrice : null;
-        const companyUnitPrice =
-          typeof item.companyUnitPrice === "number"
-            ? item.companyUnitPrice
-            : null;
-
-        if (purchasedQuantity > 0 && unitPrice !== null) {
-          inPersonSpend = Number(
-            (inPersonSpend + purchasedQuantity * unitPrice).toFixed(2),
-          );
-        }
-        if (purchasedQuantity > 0 && companyUnitPrice !== null) {
-          companySpend = Number(
-            (companySpend + purchasedQuantity * companyUnitPrice).toFixed(2),
-          );
-        }
-        if (
-          purchasedQuantity > 0 &&
-          unitPrice !== null &&
-          companyUnitPrice !== null
-        ) {
-          savings = Number(
-            (
-              savings +
-              purchasedQuantity * (companyUnitPrice - unitPrice)
-            ).toFixed(2),
-          );
-        }
-      });
-    });
-
-    return {
-      orderCount,
-      itemCount: itemCount || shoppingItemCount,
-      orderedSummary: formatQuantitySummaryByUnit(orderedTotals),
-      inPersonSpend,
-      companySpend,
-      savings,
-      hasShoppingData:
-        exportScopedInPersonSuppliers.length > 0 &&
-        (inPersonSpend > 0 || companySpend > 0 || shoppingItemCount > 0),
-    };
-  }, [
-    catalogComparisonUnitLookup,
-    exportScopedInPersonSuppliers,
-    exportScopedRows,
-  ]);
-
-  const summaryScopeLabel = selectedExportSupplier
-    ? selectedExportSupplier
-    : language === "es"
-      ? "Todas las compañías"
-      : "All Companies";
-
-  const selectedCompanyReady =
-    companyOrderExportAllCompanies || Boolean(selectedExportSupplier);
+  const supplierPdfSections = useMemo(
+    () =>
+      exportSupplierOptions.map((supplierName) => {
+        const scopedRows = buildScopedRows({
+          supplierName,
+          rows: recentRowsForExportWeek,
+        });
+        const scopedInPersonSuppliers = buildScopedInPersonSuppliers({
+          supplierName,
+          suppliers: companyOrderInPersonSuppliers,
+          activeMode,
+          companyOrderInPersonWeekStartDate,
+          exportWeekStartDate,
+        });
+        return buildScopeSummary({
+          supplierName,
+          rows: scopedRows,
+          inPersonSuppliers: scopedInPersonSuppliers,
+          comparisonUnitLookup: catalogComparisonUnitLookup,
+        });
+      }),
+    [
+      activeMode,
+      catalogComparisonUnitLookup,
+      companyOrderInPersonSuppliers,
+      companyOrderInPersonWeekStartDate,
+      exportSupplierOptions,
+      exportWeekStartDate,
+      recentRowsForExportWeek,
+    ],
+  );
 
   const handleSelectExportSupplier = (supplierName: string) => {
-    onCompanyOrderExportAllCompaniesChange(false);
+    if (companyOrderExportAllCompanies) {
+      onCompanyOrderExportAllCompaniesChange(false);
+    }
     if (activeMode === "inPerson") {
       onCompanyOrderInPersonSupplierChange(supplierName);
       return;
@@ -417,9 +523,12 @@ export function CompanyOrdersCard({
     onCompanyOrderSupplierChange(supplierName);
   };
 
-  const handleExport = (format: "pdf" | "csv" | "excel") => {
+  const handleExport = (
+    format: "pdf" | "csv" | "excel",
+    supplierName = selectedExportSupplier,
+  ) => {
     onExportCompanyOrders(format, {
-      supplierName: companyOrderExportAllCompanies ? null : selectedExportSupplier,
+      supplierName: supplierName || null,
       weekStartDate: exportWeekStartDate || null,
     });
   };
@@ -430,41 +539,26 @@ export function CompanyOrdersCard({
         Company Orders
       </Text>
       <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-        Supplier catalog imported from your Excel. Kitchen managers and managers can submit orders here.
+        Supplier catalog imported from your Excel. Kitchen managers and managers can
+        submit orders here.
       </Text>
 
       <Text style={[styles.label, isLight && styles.labelLight]}>
-        {language === "es" ? "PDF por compañía" : "PDF by Company"}
+        {language === "es" ? "PDF individual por compañía" : "Individual Company PDF"}
       </Text>
+      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+        {language === "es"
+          ? "Cada compañía se descarga en su propio PDF para revisar gasto, costo de compañía y ahorro."
+          : "Each company downloads as its own PDF so you can review spend, company cost, and savings separately."}
+      </Text>
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.toggleRow}
       >
-        <TouchableOpacity
-          style={[
-            styles.togglePill,
-            isLight && styles.togglePillLight,
-            companyOrderExportAllCompanies && styles.toggleActive,
-            companyOrderExportAllCompanies && isLight && styles.toggleActiveLight,
-          ]}
-          onPress={() => onCompanyOrderExportAllCompaniesChange(true)}
-        >
-          <Text
-            style={[
-              styles.toggleText,
-              isLight && styles.toggleTextLight,
-              companyOrderExportAllCompanies &&
-                isLight &&
-                styles.toggleTextLightActive,
-            ]}
-          >
-            {language === "es" ? "Todas" : "All Companies"}
-          </Text>
-        </TouchableOpacity>
         {exportSupplierOptions.map((supplierName) => {
           const isActive =
-            !companyOrderExportAllCompanies &&
             selectedExportSupplier.toLowerCase() === supplierName.toLowerCase();
           return (
             <TouchableOpacity
@@ -497,7 +591,7 @@ export function CompanyOrdersCard({
             {language === "es" ? "Compañía" : "Company"}
           </Text>
           <Text style={[styles.summaryValue, isLight && styles.summaryValueLight]}>
-            {summaryScopeLabel}
+            {selectedExportSupplier || inline("No company")}
           </Text>
           <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
             {language === "es" ? "Semana" : "Week"} {exportWeekLabel}
@@ -534,7 +628,7 @@ export function CompanyOrdersCard({
         </View>
         <View style={[styles.summaryTile, isLight && styles.summaryTileLight]}>
           <Text style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}>
-            {language === "es" ? "Compañía" : "Company Cost"}
+            {language === "es" ? "Costo compañía" : "Company Cost"}
           </Text>
           <Text style={[styles.summaryValue, isLight && styles.summaryValueLight]}>
             {exportSummary.hasShoppingData
@@ -550,12 +644,10 @@ export function CompanyOrdersCard({
             style={[
               styles.summaryValue,
               isLight && styles.summaryValueLight,
-              exportSummary.hasShoppingData &&
-              exportSummary.savings > 0
+              exportSummary.hasShoppingData && exportSummary.savings > 0
                 ? styles.liquorDeltaPositive
                 : null,
-              exportSummary.hasShoppingData &&
-              exportSummary.savings < 0
+              exportSummary.hasShoppingData && exportSummary.savings < 0
                 ? styles.liquorDeltaNegative
                 : null,
             ]}
@@ -567,62 +659,124 @@ export function CompanyOrdersCard({
         </View>
       </View>
 
-      <View style={styles.companyOrderExportRow}>
-        <TouchableOpacity
-          style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
-          disabled={companyOrderExportingFormat !== null || !selectedCompanyReady}
-          onPress={() => handleExport("pdf")}
-        >
-          <Text
-            style={[
-              styles.secondaryButtonText,
-              isLight && styles.secondaryButtonTextLight,
-            ]}
-          >
-            {companyOrderExportingFormat === "pdf"
-              ? inline("Preparing...")
-              : language === "es"
-                ? "Descargar PDF"
-                : "Download PDF"}
+      <TouchableOpacity
+        style={[
+          styles.button,
+          styles.primary,
+          styles.actionButtonPrimary,
+          companyOrderExportingFormat !== null && styles.inlineButtonDisabled,
+        ]}
+        disabled={companyOrderExportingFormat !== null || !selectedExportSupplier}
+        onPress={() => handleExport("pdf")}
+      >
+        <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+          {companyOrderExportingFormat === "pdf"
+            ? inline("Preparing...")
+            : language === "es"
+              ? `Descargar PDF de ${selectedExportSupplier || "compañía"}`
+              : `Download ${selectedExportSupplier || "Company"} PDF`}
+        </Text>
+      </TouchableOpacity>
+
+      {supplierPdfSections.length > 1 ? (
+        <>
+          <Text style={[styles.label, isLight && styles.labelLight]}>
+            {language === "es" ? "Descargas rápidas por compañía" : "Quick Company PDFs"}
           </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
-          disabled={companyOrderExportingFormat !== null || !selectedCompanyReady}
-          onPress={() => handleExport("csv")}
-        >
-          <Text
-            style={[
-              styles.secondaryButtonText,
-              isLight && styles.secondaryButtonTextLight,
-            ]}
-          >
-            {companyOrderExportingFormat === "csv"
-              ? inline("Preparing...")
-              : language === "es"
-                ? "Descargar CSV"
-                : "Download CSV"}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
-          disabled={companyOrderExportingFormat !== null || !selectedCompanyReady}
-          onPress={() => handleExport("excel")}
-        >
-          <Text
-            style={[
-              styles.secondaryButtonText,
-              isLight && styles.secondaryButtonTextLight,
-            ]}
-          >
-            {companyOrderExportingFormat === "excel"
-              ? inline("Preparing...")
-              : language === "es"
-                ? "Descargar Excel"
-                : "Download Excel"}
-          </Text>
-        </TouchableOpacity>
-      </View>
+          {supplierPdfSections.map((section) => (
+            <View
+              key={`company-order-export-section-${section.supplierName}`}
+              style={[
+                styles.liquorSectionCard,
+                isLight && styles.liquorSectionCardLight,
+              ]}
+            >
+              <View style={styles.summaryHeader}>
+                <View style={[styles.summaryIcon, styles.summaryIconReports]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                    {section.supplierName}
+                  </Text>
+                  <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                    {exportWeekLabel}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.summaryGrid}>
+                <View style={[styles.summaryTile, isLight && styles.summaryTileLight]}>
+                  <Text
+                    style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}
+                  >
+                    {language === "es" ? "En persona" : "In Person"}
+                  </Text>
+                  <Text
+                    style={[styles.summaryValue, isLight && styles.summaryValueLight]}
+                  >
+                    {section.hasShoppingData ? formatMoney(section.inPersonSpend) : "—"}
+                  </Text>
+                </View>
+                <View style={[styles.summaryTile, isLight && styles.summaryTileLight]}>
+                  <Text
+                    style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}
+                  >
+                    {language === "es" ? "Costo compañía" : "Company Cost"}
+                  </Text>
+                  <Text
+                    style={[styles.summaryValue, isLight && styles.summaryValueLight]}
+                  >
+                    {section.hasShoppingData ? formatMoney(section.companySpend) : "—"}
+                  </Text>
+                </View>
+                <View style={[styles.summaryTile, isLight && styles.summaryTileLight]}>
+                  <Text
+                    style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}
+                  >
+                    {language === "es" ? "Ahorro" : "Saved"}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.summaryValue,
+                      isLight && styles.summaryValueLight,
+                      section.hasShoppingData && section.savings > 0
+                        ? styles.liquorDeltaPositive
+                        : null,
+                      section.hasShoppingData && section.savings < 0
+                        ? styles.liquorDeltaNegative
+                        : null,
+                    ]}
+                  >
+                    {section.hasShoppingData
+                      ? formatSavingsValue(section.savings)
+                      : "—"}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.secondaryButton,
+                  styles.actionButtonCompact,
+                  isLight && styles.secondaryButtonLight,
+                ]}
+                disabled={companyOrderExportingFormat !== null}
+                onPress={() => handleExport("pdf", section.supplierName)}
+              >
+                <Text
+                  style={[
+                    styles.secondaryButtonText,
+                    isLight && styles.secondaryButtonTextLight,
+                  ]}
+                >
+                  {companyOrderExportingFormat === "pdf"
+                    ? inline("Preparing...")
+                    : language === "es"
+                      ? `PDF de ${section.supplierName}`
+                      : `${section.supplierName} PDF`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </>
+      ) : null}
 
       <View style={styles.toggleRow}>
         <TouchableOpacity
@@ -657,7 +811,9 @@ export function CompanyOrdersCard({
             style={[
               styles.toggleText,
               isLight && styles.toggleTextLight,
-              activeMode === "inPerson" && isLight && styles.toggleTextLightActive,
+              activeMode === "inPerson" &&
+                isLight &&
+                styles.toggleTextLightActive,
             ]}
           >
             In Person Shopping
@@ -734,11 +890,11 @@ export function CompanyOrdersCard({
               {companyOrderLoading ? inline("Refreshing...") : inline("Refresh Orders")}
             </Text>
           </TouchableOpacity>
-          {companyOrderStatus && (
+          {companyOrderStatus ? (
             <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
               {inlineOrNull(companyOrderStatus)}
             </Text>
-          )}
+          ) : null}
           <CompanyOrdersRecentSection
             isLight={isLight}
             companyOrderRows={exportScopedRows}
@@ -761,9 +917,7 @@ export function CompanyOrdersCard({
           getMetaLine={getCompanyOrderInPersonMetaLine}
           onPurchasedQuantityChange={onCompanyOrderInPersonPurchasedQuantityChange}
           onUnitPriceChange={onCompanyOrderInPersonUnitPriceChange}
-          onCompanyUnitPriceChange={
-            onCompanyOrderInPersonCompanyUnitPriceChange
-          }
+          onCompanyUnitPriceChange={onCompanyOrderInPersonCompanyUnitPriceChange}
           onSave={onSaveCompanyOrderInPerson}
           onRefresh={onLoadCompanyOrderInPerson}
           onPreviousWeek={onPreviousCompanyOrderInPersonWeek}
