@@ -8,7 +8,10 @@ import {
   View,
 } from "react-native";
 import { styles } from "../App.styles";
-import { companyOrderItemKey } from "../app-helpers";
+import {
+  companyOrderItemKey,
+  normalizeCompanyOrderItemNames,
+} from "../app-helpers";
 import type { CompanyOrderInPersonSupplier } from "../types";
 
 type CompanyOrdersInPersonSectionProps = {
@@ -94,6 +97,7 @@ export function CompanyOrdersInPersonSection({
 }: CompanyOrdersInPersonSectionProps) {
   const inputAccessoryViewID =
     Platform.OS === "ios" ? "company-order-in-person-accessory" : undefined;
+  const normalizedSearch = typeof search === "string" ? search.trim() : "";
 
   return (
     <>
@@ -158,17 +162,22 @@ export function CompanyOrdersInPersonSection({
       <Text style={[styles.label, isLight && styles.labelLight]}>Supplier</Text>
       <View style={styles.toggleRow}>
         {suppliers.map((supplier) => {
-          const isActive = supplier.supplierName === supplierName;
+          const normalizedSupplierName =
+            typeof supplier.supplierName === "string" &&
+            supplier.supplierName.trim()
+              ? supplier.supplierName.trim()
+              : "Unknown Supplier";
+          const isActive = normalizedSupplierName === supplierName;
           return (
             <TouchableOpacity
-              key={`in-person-supplier-${supplier.supplierName}`}
+              key={`in-person-supplier-${normalizedSupplierName}`}
               style={[
                 styles.togglePill,
                 isLight && styles.togglePillLight,
                 isActive && styles.toggleActive,
                 isActive && isLight && styles.toggleActiveLight,
               ]}
-              onPress={() => onSupplierChange(supplier.supplierName)}
+              onPress={() => onSupplierChange(normalizedSupplierName)}
             >
               <Text
                 style={[
@@ -177,7 +186,7 @@ export function CompanyOrdersInPersonSection({
                   isActive && isLight && styles.toggleTextLightActive,
                 ]}
               >
-                {supplier.supplierName}
+                {normalizedSupplierName}
               </Text>
             </TouchableOpacity>
           );
@@ -186,7 +195,7 @@ export function CompanyOrdersInPersonSection({
       <Text style={[styles.label, isLight && styles.labelLight]}>Search Item</Text>
       <TextInput
         style={[styles.input, isLight && styles.inputLight]}
-        value={search}
+        value={typeof search === "string" ? search : ""}
         onChangeText={onSearchChange}
         placeholder="Search supplier or item"
       />
@@ -197,22 +206,42 @@ export function CompanyOrdersInPersonSection({
           </Text>
         ) : (
           items.map((item) => {
-            const draft = getDraftValue(item.supplierName, item.nameEs, item.nameEn);
+            const normalizedNames = normalizeCompanyOrderItemNames(
+              item.nameEs,
+              item.nameEn,
+            );
+            const normalizedSupplierName =
+              typeof item.supplierName === "string" && item.supplierName.trim()
+                ? item.supplierName.trim()
+                : "Unknown Supplier";
+            const draft = getDraftValue(
+              normalizedSupplierName,
+              normalizedNames.nameEs,
+              normalizedNames.nameEn,
+            );
             return (
               <View
-                key={`in-person-item-${item.supplierName}-${companyOrderItemKey(item.nameEs, item.nameEn)}`}
+                key={`in-person-item-${normalizedSupplierName}-${companyOrderItemKey(normalizedNames.nameEs, normalizedNames.nameEn)}`}
                 style={styles.companyOrderCartRow}
               >
                 <View style={styles.reportRowMain}>
-                  <Text style={[styles.listName, isLight && styles.listNameLight]}>{item.nameEs}</Text>
-                  <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>{item.nameEn}</Text>
-                  {search.trim() ? (
+                  <Text style={[styles.listName, isLight && styles.listNameLight]}>
+                    {normalizedNames.nameEs}
+                  </Text>
+                  <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                    {normalizedNames.nameEn}
+                  </Text>
+                  {normalizedSearch ? (
                     <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-                      Supplier: {item.supplierName}
+                      Supplier: {normalizedSupplierName}
                     </Text>
                   ) : null}
                   <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-                    {getMetaLine(item.supplierName, item)}
+                    {getMetaLine(normalizedSupplierName, {
+                      ...item,
+                      nameEs: normalizedNames.nameEs,
+                      nameEn: normalizedNames.nameEn,
+                    })}
                   </Text>
                 </View>
                 <View style={styles.companyOrderCartActions}>
@@ -221,9 +250,9 @@ export function CompanyOrdersInPersonSection({
                     value={draft.purchasedQuantity}
                     onChangeText={(value) =>
                       onPurchasedQuantityChange(
-                        item.supplierName,
-                        item.nameEs,
-                        item.nameEn,
+                        normalizedSupplierName,
+                        normalizedNames.nameEs,
+                        normalizedNames.nameEn,
                         value,
                       )
                     }
@@ -237,9 +266,9 @@ export function CompanyOrdersInPersonSection({
                     value={draft.unitPrice}
                     onChangeText={(value) =>
                       onUnitPriceChange(
-                        item.supplierName,
-                        item.nameEs,
-                        item.nameEn,
+                        normalizedSupplierName,
+                        normalizedNames.nameEs,
+                        normalizedNames.nameEn,
                         value,
                       )
                     }

@@ -1,4 +1,8 @@
-import { parseMoneyInput } from "./app-helpers";
+import {
+  companyOrderItemKey,
+  normalizeCompanyOrderItemNames,
+  parseMoneyInput,
+} from "./app-helpers";
 import type { CompanyOrderInPersonSupplier } from "./types";
 
 type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
@@ -13,12 +17,99 @@ export type CompanyOrderInPersonDrafts = Record<
   Record<string, CompanyOrderInPersonDraftValue>
 >;
 
-const companyOrderInPersonItemKey = (nameEs: string, nameEn: string) =>
-  `${nameEs.trim().toLowerCase()}|${nameEn.trim().toLowerCase()}`;
+const normalizeSupplierName = (value: unknown, index: number) => {
+  const normalized =
+    typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+  return normalized || `Supplier ${index + 1}`;
+};
+
+const normalizeQuantity = (value: unknown) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return 0;
+  }
+  return Number(parsed.toFixed(2));
+};
+
+const normalizeUnitPrice = (value: unknown) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+  return Number(parsed.toFixed(2));
+};
+
+const normalizeInPersonItem = (
+  value: unknown,
+):
+  | {
+      nameEs: string;
+      nameEn: string;
+      orderedQuantity: number;
+      purchasedQuantity: number;
+      remainingQuantity: number;
+      unitPrice: number | null;
+    }
+  | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  const names = normalizeCompanyOrderItemNames(
+    typeof raw.nameEs === "string" ? raw.nameEs : "",
+    typeof raw.nameEn === "string" ? raw.nameEn : "",
+  );
+  return {
+    nameEs: names.nameEs,
+    nameEn: names.nameEn,
+    orderedQuantity: normalizeQuantity(raw.orderedQuantity),
+    purchasedQuantity: normalizeQuantity(raw.purchasedQuantity),
+    remainingQuantity: normalizeQuantity(raw.remainingQuantity),
+    unitPrice: raw.unitPrice === null ? null : normalizeUnitPrice(raw.unitPrice),
+  };
+};
 
 const normalizeSupplierList = (payload: {
-  suppliers?: CompanyOrderInPersonSupplier[];
-}) => (Array.isArray(payload.suppliers) ? payload.suppliers : []);
+  suppliers?: unknown[];
+}): CompanyOrderInPersonSupplier[] =>
+  Array.isArray(payload.suppliers)
+    ? payload.suppliers
+        .map((supplier, index) => {
+          if (!supplier || typeof supplier !== "object" || Array.isArray(supplier)) {
+            return null;
+          }
+          const raw = supplier as Record<string, unknown>;
+          const items = Array.isArray(raw.items)
+            ? raw.items
+                .map((item) => normalizeInPersonItem(item))
+                .filter(
+                  (
+                    item,
+                  ): item is CompanyOrderInPersonSupplier["items"][number] =>
+                    item !== null,
+                )
+            : [];
+          return {
+            supplierName: normalizeSupplierName(raw.supplierName, index),
+            itemCount: items.length,
+            totalOrderedQuantity: Number(
+              items.reduce((total, item) => total + item.orderedQuantity, 0).toFixed(2),
+            ),
+            totalPurchasedQuantity: Number(
+              items
+                .reduce((total, item) => total + item.purchasedQuantity, 0)
+                .toFixed(2),
+            ),
+            totalRemainingQuantity: Number(
+              items
+                .reduce((total, item) => total + item.remainingQuantity, 0)
+                .toFixed(2),
+            ),
+            items,
+          };
+        })
+        .filter((supplier): supplier is CompanyOrderInPersonSupplier => supplier !== null)
+    : [];
 
 export const pickCompanyOrderInPersonSupplier = (
   previousSupplierName: string,
@@ -41,7 +132,7 @@ export const buildCompanyOrderInPersonDrafts = (
     drafts[supplier.supplierName] = {};
     supplier.items.forEach((item) => {
       drafts[supplier.supplierName][
-        companyOrderInPersonItemKey(item.nameEs, item.nameEn)
+        companyOrderItemKey(item.nameEs, item.nameEn)
       ] = {
         purchasedQuantity:
           item.purchasedQuantity > 0 ? String(item.purchasedQuantity) : "",
@@ -132,7 +223,7 @@ export const saveCompanyOrderInPersonData = async (params: {
       supplier.items.map((item) => {
         const draft =
           params.drafts[supplier.supplierName]?.[
-            companyOrderInPersonItemKey(item.nameEs, item.nameEn)
+            companyOrderItemKey(item.nameEs, item.nameEn)
           ] || {
             purchasedQuantity: "",
             unitPrice: "",

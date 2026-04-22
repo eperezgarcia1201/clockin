@@ -146,9 +146,13 @@ export const parseDateInputToIso = (value: string) => {
   return `${year}-${padDatePart(month)}-${padDatePart(day)}`;
 };
 
-export const formatDisplayDate = (value: string) => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (!match) return value;
+export const formatDisplayDate = (value: string | null | undefined) => {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized) {
+    return "";
+  }
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  if (!match) return normalized;
   return `${match[2]}/${match[3]}/${match[1]}`;
 };
 
@@ -250,8 +254,28 @@ export const applyExpenseAmountCents = (value: string, cents: string) => {
 export const normalizeExpenseCheckNumberInput = (value: string) =>
   value.replace(/\D/g, "").slice(0, 4);
 
-export const companyOrderItemKey = (nameEs: string, nameEn: string) =>
-  `${nameEs.trim().toLowerCase()}|${nameEn.trim().toLowerCase()}`;
+const normalizeCompanyOrderNamePart = (value: string | null | undefined) =>
+  typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+
+export const normalizeCompanyOrderItemNames = (
+  nameEs: string | null | undefined,
+  nameEn: string | null | undefined,
+) => {
+  const normalizedEs = normalizeCompanyOrderNamePart(nameEs);
+  const normalizedEn = normalizeCompanyOrderNamePart(nameEn);
+  return {
+    nameEs: normalizedEs || normalizedEn || "-",
+    nameEn: normalizedEn || normalizedEs || "-",
+  };
+};
+
+export const companyOrderItemKey = (
+  nameEs: string | null | undefined,
+  nameEn: string | null | undefined,
+) => {
+  const normalized = normalizeCompanyOrderItemNames(nameEs, nameEn);
+  return `${normalized.nameEs.toLowerCase()}|${normalized.nameEn.toLowerCase()}`;
+};
 
 export const normalizeCompanyOrderQuantityInput = (value: string) => {
   const trimmed = value.replace(/,/g, ".").replace(/[^\d.]/g, "");
