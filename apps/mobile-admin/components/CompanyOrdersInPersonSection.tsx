@@ -1,4 +1,12 @@
-import { Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  InputAccessoryView,
+  Keyboard,
+  Platform,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { styles } from "../App.styles";
 import { companyOrderItemKey } from "../app-helpers";
 import type { CompanyOrderInPersonSupplier } from "../types";
@@ -84,6 +92,9 @@ export function CompanyOrdersInPersonSection({
   status,
   formatDisplayDate,
 }: CompanyOrdersInPersonSectionProps) {
+  const inputAccessoryViewID =
+    Platform.OS === "ios" ? "company-order-in-person-accessory" : undefined;
+
   return (
     <>
       <View style={styles.companyOrderExportRow}>
@@ -120,6 +131,30 @@ export function CompanyOrdersInPersonSection({
         {weekEndDate ? ` - ${formatDisplayDate(weekEndDate)}` : ""}
       </Text>
       <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>{summaryLabel}</Text>
+      <View style={styles.companyOrderExportRow}>
+        <TouchableOpacity
+          style={[
+            styles.button,
+            styles.primary,
+            { minWidth: 180, paddingHorizontal: 16, alignSelf: "flex-start" },
+            saving && styles.inlineButtonDisabled,
+          ]}
+          onPress={onSave}
+          disabled={saving}
+        >
+          <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+            {saving ? "Saving..." : "Save Changes"}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
+          onPress={() => Keyboard.dismiss()}
+        >
+          <Text style={[styles.secondaryButtonText, isLight && styles.secondaryButtonTextLight]}>
+            Done Editing
+          </Text>
+        </TouchableOpacity>
+      </View>
       <Text style={[styles.label, isLight && styles.labelLight]}>Supplier</Text>
       <View style={styles.toggleRow}>
         {suppliers.map((supplier) => {
@@ -193,6 +228,7 @@ export function CompanyOrdersInPersonSection({
                       )
                     }
                     keyboardType="decimal-pad"
+                    inputAccessoryViewID={inputAccessoryViewID}
                     placeholder="Bought"
                     placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                   />
@@ -208,6 +244,7 @@ export function CompanyOrdersInPersonSection({
                       )
                     }
                     keyboardType="decimal-pad"
+                    inputAccessoryViewID={inputAccessoryViewID}
                     placeholder="Price"
                     placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                   />
@@ -230,6 +267,52 @@ export function CompanyOrdersInPersonSection({
         <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
           {status}
         </Text>
+      ) : null}
+      {Platform.OS === "ios" ? (
+        <InputAccessoryView nativeID="company-order-in-person-accessory">
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              backgroundColor: isLight ? "#f8fafc" : "#0f172a",
+              borderTopWidth: 1,
+              borderTopColor: isLight
+                ? "rgba(15, 23, 42, 0.1)"
+                : "rgba(148, 163, 184, 0.18)",
+            }}
+          >
+            <TouchableOpacity
+              style={[styles.secondaryButton, isLight && styles.secondaryButtonLight, { marginTop: 0 }]}
+              onPress={() => Keyboard.dismiss()}
+            >
+              <Text
+                style={[
+                  styles.secondaryButtonText,
+                  isLight && styles.secondaryButtonTextLight,
+                ]}
+              >
+                Done
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.button,
+                styles.primary,
+                { marginTop: 0, minWidth: 132, paddingHorizontal: 16 },
+                saving && styles.inlineButtonDisabled,
+              ]}
+              onPress={onSave}
+              disabled={saving}
+            >
+              <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+                {saving ? "Saving..." : "Save"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
       ) : null}
     </>
   );
