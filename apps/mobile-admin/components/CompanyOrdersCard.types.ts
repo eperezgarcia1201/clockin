@@ -2,6 +2,7 @@ import type { Lang } from "../copy";
 import type {
   CompanyOrderCatalogItem,
   CompanyOrderCatalogSupplier,
+  CompanyOrderComparisonUnit,
   CompanyOrderInPersonSupplier,
   CompanyOrderRow,
 } from "../types";
@@ -12,6 +13,7 @@ export type CompanyOrderCartItem = {
   nameEs: string;
   nameEn: string;
   quantity: number;
+  comparisonUnit: CompanyOrderComparisonUnit;
 };
 
 export type CompanyOrdersCardProps = {
@@ -71,6 +73,7 @@ export type CompanyOrdersCardProps = {
     orderedQuantity: number;
     purchasedQuantity: number;
     remainingQuantity: number;
+    comparisonUnit: CompanyOrderComparisonUnit;
     unitPrice: number | null;
     companyUnitPrice: number | null;
   }>;
@@ -91,6 +94,7 @@ export type CompanyOrdersCardProps = {
       orderedQuantity: number;
       purchasedQuantity: number;
       remainingQuantity: number;
+      comparisonUnit: CompanyOrderComparisonUnit;
       unitPrice: number | null;
       companyUnitPrice: number | null;
     },

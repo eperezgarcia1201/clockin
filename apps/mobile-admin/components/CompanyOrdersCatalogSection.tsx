@@ -134,10 +134,16 @@ export function CompanyOrdersCatalogSection({
                   <View style={styles.reportRowMain}>
                     <Text style={[styles.listName, isLight && styles.listNameLight]}>{item.nameEs}</Text>
                     <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>{item.nameEn}</Text>
+                    {item.comparisonUnit === "lb" ? (
+                      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                        Quantity in lb
+                      </Text>
+                    ) : null}
                   </View>
                   {Number(selectedCompanySupplierDraft[key] || "0") > 0 ? (
                     <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
                       Qty {selectedCompanySupplierDraft[key]}
+                      {item.comparisonUnit === "lb" ? " lb" : ""}
                     </Text>
                   ) : null}
                   <TouchableOpacity

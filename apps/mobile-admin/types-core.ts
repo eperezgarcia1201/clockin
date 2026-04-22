@@ -138,7 +138,10 @@ export type TodayScheduleResponse = {
 export type CompanyOrderCatalogItem = {
   nameEs: string;
   nameEn: string;
+  comparisonUnit?: CompanyOrderComparisonUnit;
 };
+
+export type CompanyOrderComparisonUnit = "each" | "lb";
 
 export type CompanyOrderCatalogSupplier = {
   supplierName: string;
@@ -174,6 +177,7 @@ export type CompanyOrderInPersonItem = {
   orderedQuantity: number;
   purchasedQuantity: number;
   remainingQuantity: number;
+  comparisonUnit: CompanyOrderComparisonUnit;
   unitPrice: number | null;
   companyUnitPrice: number | null;
 };

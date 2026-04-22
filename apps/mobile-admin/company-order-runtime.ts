@@ -1,11 +1,67 @@
-import type { CompanyOrderCatalogSupplier, CompanyOrderRow } from "./types";
+import type {
+  CompanyOrderCatalogItem,
+  CompanyOrderCatalogSupplier,
+  CompanyOrderComparisonUnit,
+  CompanyOrderRow,
+} from "./types";
 
 type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
+
+const normalizeComparisonUnit = (
+  value: unknown,
+): CompanyOrderComparisonUnit => (value === "lb" ? "lb" : "each");
+
+const normalizeCatalogItem = (
+  item: CompanyOrderCatalogItem | Record<string, unknown>,
+): CompanyOrderCatalogItem | null => {
+  const nameEs =
+    typeof item.nameEs === "string" ? item.nameEs.trim() : "";
+  const nameEn =
+    typeof item.nameEn === "string" ? item.nameEn.trim() : "";
+  if (!nameEs || !nameEn) {
+    return null;
+  }
+  return {
+    nameEs,
+    nameEn,
+    comparisonUnit: normalizeComparisonUnit(
+      (item as Record<string, unknown>).comparisonUnit,
+    ),
+  };
+};
 
 export const normalizeCompanyOrderSuppliers = (payload: {
   suppliers?: CompanyOrderCatalogSupplier[];
 }): CompanyOrderCatalogSupplier[] =>
-  Array.isArray(payload.suppliers) ? payload.suppliers : [];
+  Array.isArray(payload.suppliers)
+    ? payload.suppliers
+        .map((supplier) => {
+          const supplierName =
+            typeof supplier?.supplierName === "string"
+              ? supplier.supplierName.trim()
+              : "";
+          const items = Array.isArray(supplier?.items)
+            ? supplier.items
+                .map((item) =>
+                  normalizeCatalogItem(item as CompanyOrderCatalogItem),
+                )
+                .filter(
+                  (item): item is CompanyOrderCatalogItem => item !== null,
+                )
+            : [];
+          if (!supplierName || !items.length) {
+            return null;
+          }
+          return {
+            supplierName,
+            items,
+          };
+        })
+        .filter(
+          (supplier): supplier is CompanyOrderCatalogSupplier =>
+            supplier !== null,
+        )
+    : [];
 
 export const pickCompanyOrderSupplier = (
   previousSupplierName: string,

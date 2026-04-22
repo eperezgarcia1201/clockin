@@ -2,6 +2,8 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
+  IsOptional,
   IsString,
   MaxLength,
   MinLength,
@@ -18,6 +20,10 @@ export class CompanyOrderCatalogItemDto {
   @MinLength(1)
   @MaxLength(200)
   nameEn!: string;
+
+  @IsOptional()
+  @IsIn(['each', 'lb'])
+  comparisonUnit?: 'each' | 'lb';
 }
 
 export class CompanyOrderCatalogSupplierDto {

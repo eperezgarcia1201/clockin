@@ -5,7 +5,12 @@ import {
   normalizeCompanyOrderItemNames,
 } from "./app-helpers";
 import type { CompanyOrderInPersonDrafts } from "./company-order-in-person-runtime";
-import type { CompanyOrderInPersonSupplier } from "./types";
+import type {
+  CompanyOrderComparisonUnit,
+  CompanyOrderInPersonSupplier,
+} from "./types";
+
+type QuantityByUnit = Record<CompanyOrderComparisonUnit, number>;
 
 const parseDraftNumber = (value: string) => {
   const parsed = Number(value);
@@ -24,6 +29,44 @@ const formatSavingsLabel = (value: number | null) => {
   }
   return `Over ${formatMoney(Math.abs(value))}`;
 };
+
+const createQuantityByUnit = (): QuantityByUnit => ({
+  each: 0,
+  lb: 0,
+});
+
+const addQuantityByUnit = (
+  totals: QuantityByUnit,
+  comparisonUnit: CompanyOrderComparisonUnit,
+  quantity: number,
+) => {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return totals;
+  }
+  totals[comparisonUnit] = Number((totals[comparisonUnit] + quantity).toFixed(2));
+  return totals;
+};
+
+const formatQuantityWithUnit = (
+  quantity: number,
+  comparisonUnit: CompanyOrderComparisonUnit,
+) => `${Number(quantity.toFixed(2))} ${comparisonUnit === "lb" ? "lb" : "each"}`;
+
+const formatQuantitySummaryByUnit = (totals: QuantityByUnit) => {
+  const parts: string[] = [];
+  if (totals.each > 0) {
+    parts.push(`${Number(totals.each.toFixed(2))} each`);
+  }
+  if (totals.lb > 0) {
+    parts.push(`${Number(totals.lb.toFixed(2))} lb`);
+  }
+  return parts.length ? parts.join(" + ") : "0";
+};
+
+const formatPriceWithUnit = (
+  value: number,
+  comparisonUnit: CompanyOrderComparisonUnit,
+) => (comparisonUnit === "lb" ? `${formatMoney(value)}/lb` : `${formatMoney(value)} each`);
 
 export const useCompanyOrderInPersonViewState = (params: {
   suppliers: CompanyOrderInPersonSupplier[];
@@ -83,6 +126,7 @@ export const useCompanyOrderInPersonViewState = (params: {
               unitPrice: "",
               companyUnitPrice: "",
             };
+          const comparisonUnit = item.comparisonUnit || "each";
           const purchasedQuantity =
             draft.purchasedQuantity.trim().length > 0
               ? parseDraftNumber(draft.purchasedQuantity) ?? 0
@@ -111,32 +155,34 @@ export const useCompanyOrderInPersonViewState = (params: {
               ? Number((companySpend - inPersonSpend).toFixed(2))
               : 0;
 
-          acc.ordered += item.orderedQuantity;
-          acc.purchased += purchasedQuantity;
-          acc.remaining += remainingQuantity;
-          acc.inPersonSpend += inPersonSpend;
-          acc.companySpend += companySpend;
-          acc.savings += savings;
+          addQuantityByUnit(acc.ordered, comparisonUnit, item.orderedQuantity);
+          addQuantityByUnit(acc.purchased, comparisonUnit, purchasedQuantity);
+          addQuantityByUnit(acc.remaining, comparisonUnit, remainingQuantity);
+          acc.inPersonSpend = Number((acc.inPersonSpend + inPersonSpend).toFixed(2));
+          acc.companySpend = Number((acc.companySpend + companySpend).toFixed(2));
+          acc.savings = Number((acc.savings + savings).toFixed(2));
         });
         return acc;
       },
       {
-        ordered: 0,
-        purchased: 0,
-        remaining: 0,
+        ordered: createQuantityByUnit(),
+        purchased: createQuantityByUnit(),
+        remaining: createQuantityByUnit(),
         inPersonSpend: 0,
         companySpend: 0,
         savings: 0,
       },
     );
 
-    return `Ordered ${Number(totals.ordered.toFixed(2))} • Bought ${Number(
-      totals.purchased.toFixed(2),
-    )} • Remaining ${Number(totals.remaining.toFixed(2))} • Spent ${formatMoney(
-      Number(totals.inPersonSpend.toFixed(2)),
-    )} • Company ${formatMoney(
-      Number(totals.companySpend.toFixed(2)),
-    )} • ${formatSavingsLabel(Number(totals.savings.toFixed(2)))}`;
+    return `Ordered ${formatQuantitySummaryByUnit(
+      totals.ordered,
+    )} • Bought ${formatQuantitySummaryByUnit(
+      totals.purchased,
+    )} • Remaining ${formatQuantitySummaryByUnit(
+      totals.remaining,
+    )} • Spent ${formatMoney(totals.inPersonSpend)} • Company ${formatMoney(
+      totals.companySpend,
+    )} • ${formatSavingsLabel(totals.savings)}`;
   }, [params.drafts, params.suppliers]);
 
   const getDraftValue = (
@@ -164,6 +210,7 @@ export const useCompanyOrderInPersonViewState = (params: {
       orderedQuantity: number;
       purchasedQuantity: number;
       remainingQuantity: number;
+      comparisonUnit: CompanyOrderComparisonUnit;
       unitPrice: number | null;
       companyUnitPrice: number | null;
     },
@@ -177,6 +224,7 @@ export const useCompanyOrderInPersonViewState = (params: {
       normalizedNames.nameEs,
       normalizedNames.nameEn,
     );
+    const comparisonUnit = item.comparisonUnit || "each";
     const purchasedQuantity =
       draft.purchasedQuantity.trim().length > 0
         ? parseDraftNumber(draft.purchasedQuantity) ?? 0
@@ -192,36 +240,39 @@ export const useCompanyOrderInPersonViewState = (params: {
       draft.companyUnitPrice.trim().length > 0
         ? parseDraftNumber(draft.companyUnitPrice)
         : item.companyUnitPrice;
+    const inPersonSpend =
+      purchasedQuantity > 0 && unitPrice !== null
+        ? Number((purchasedQuantity * unitPrice).toFixed(2))
+        : null;
+    const companySpend =
+      purchasedQuantity > 0 && companyUnitPrice !== null
+        ? Number((purchasedQuantity * companyUnitPrice).toFixed(2))
+        : null;
+    const savings =
+      inPersonSpend !== null && companySpend !== null
+        ? Number((companySpend - inPersonSpend).toFixed(2))
+        : null;
 
     const parts = [
-      `Ordered ${item.orderedQuantity}`,
-      `Remaining ${remainingQuantity}`,
+      `Ordered ${formatQuantityWithUnit(item.orderedQuantity, comparisonUnit)}`,
+      `Remaining ${formatQuantityWithUnit(remainingQuantity, comparisonUnit)}`,
     ];
 
     if (unitPrice !== null) {
-      const inPersonSpend = Number((purchasedQuantity * unitPrice).toFixed(2));
-      parts.push(
-        purchasedQuantity > 0
-          ? `Spent ${formatMoney(inPersonSpend)}`
-          : `Paid ${formatMoney(unitPrice)}`,
-      );
+      parts.push(`Paid ${formatPriceWithUnit(unitPrice, comparisonUnit)}`);
+      if (inPersonSpend !== null) {
+        parts.push(`Spent ${formatMoney(inPersonSpend)}`);
+      }
     }
 
     if (companyUnitPrice !== null) {
-      const companySpend = Number(
-        (purchasedQuantity * companyUnitPrice).toFixed(2),
-      );
-      parts.push(
-        purchasedQuantity > 0
-          ? `Company ${formatMoney(companySpend)}`
-          : `Company ${formatMoney(companyUnitPrice)}`,
-      );
+      parts.push(`Company ${formatPriceWithUnit(companyUnitPrice, comparisonUnit)}`);
+      if (companySpend !== null) {
+        parts.push(`Equivalent ${formatMoney(companySpend)}`);
+      }
     }
 
-    if (unitPrice !== null && companyUnitPrice !== null) {
-      const savings = Number(
-        ((companyUnitPrice - unitPrice) * purchasedQuantity).toFixed(2),
-      );
+    if (savings !== null) {
       parts.push(formatSavingsLabel(savings));
     }
 

@@ -12,7 +12,10 @@ import {
   companyOrderItemKey,
   normalizeCompanyOrderItemNames,
 } from "../app-helpers";
-import type { CompanyOrderInPersonSupplier } from "../types";
+import type {
+  CompanyOrderComparisonUnit,
+  CompanyOrderInPersonSupplier,
+} from "../types";
 
 type CompanyOrdersInPersonSectionProps = {
   isLight: boolean;
@@ -31,6 +34,7 @@ type CompanyOrdersInPersonSectionProps = {
     orderedQuantity: number;
     purchasedQuantity: number;
     remainingQuantity: number;
+    comparisonUnit: CompanyOrderComparisonUnit;
     unitPrice: number | null;
     companyUnitPrice: number | null;
   }>;
@@ -51,6 +55,7 @@ type CompanyOrdersInPersonSectionProps = {
       orderedQuantity: number;
       purchasedQuantity: number;
       remainingQuantity: number;
+      comparisonUnit: CompanyOrderComparisonUnit;
       unitPrice: number | null;
       companyUnitPrice: number | null;
     },
@@ -121,6 +126,8 @@ export function CompanyOrdersInPersonSection({
     : weekEndLabel
       ? `Week ${weekEndLabel}`
       : "Week not available";
+  const unitPlaceholderLabel = (comparisonUnit: CompanyOrderComparisonUnit) =>
+    comparisonUnit === "lb" ? "lb" : "each";
 
   return (
     <>
@@ -261,6 +268,9 @@ export function CompanyOrdersInPersonSection({
                     </Text>
                   ) : null}
                   <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                    Compare by {unitPlaceholderLabel(item.comparisonUnit)}
+                  </Text>
+                  <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
                     {getMetaLine(normalizedSupplierName, {
                       ...item,
                       nameEs: normalizedNames.nameEs,
@@ -282,7 +292,7 @@ export function CompanyOrdersInPersonSection({
                     }
                     keyboardType="decimal-pad"
                     inputAccessoryViewID={inputAccessoryViewID}
-                    placeholder="Bought"
+                    placeholder={`Bought ${item.comparisonUnit === "lb" ? "(lb)" : ""}`.trim()}
                     placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                   />
                   <TextInput
@@ -298,7 +308,7 @@ export function CompanyOrdersInPersonSection({
                     }
                     keyboardType="decimal-pad"
                     inputAccessoryViewID={inputAccessoryViewID}
-                    placeholder="Price"
+                    placeholder={item.comparisonUnit === "lb" ? "Paid/lb" : "Paid each"}
                     placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                   />
                   <TextInput
@@ -314,7 +324,11 @@ export function CompanyOrdersInPersonSection({
                     }
                     keyboardType="decimal-pad"
                     inputAccessoryViewID={inputAccessoryViewID}
-                    placeholder="Company"
+                    placeholder={
+                      item.comparisonUnit === "lb"
+                        ? "Company/lb"
+                        : "Company each"
+                    }
                     placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                   />
                 </View>

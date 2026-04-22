@@ -3,7 +3,10 @@ import {
   normalizeCompanyOrderItemNames,
   parseMoneyInput,
 } from "./app-helpers";
-import type { CompanyOrderInPersonSupplier } from "./types";
+import type {
+  CompanyOrderComparisonUnit,
+  CompanyOrderInPersonSupplier,
+} from "./types";
 
 type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
 
@@ -40,6 +43,10 @@ const normalizeUnitPrice = (value: unknown) => {
   return Number(parsed.toFixed(2));
 };
 
+const normalizeComparisonUnit = (
+  value: unknown,
+): CompanyOrderComparisonUnit => (value === "lb" ? "lb" : "each");
+
 const normalizeInPersonItem = (
   value: unknown,
 ):
@@ -49,6 +56,7 @@ const normalizeInPersonItem = (
       orderedQuantity: number;
       purchasedQuantity: number;
       remainingQuantity: number;
+      comparisonUnit: CompanyOrderComparisonUnit;
       unitPrice: number | null;
       companyUnitPrice: number | null;
     }
@@ -79,6 +87,7 @@ const normalizeInPersonItem = (
     orderedQuantity: normalizeQuantity(raw.orderedQuantity),
     purchasedQuantity: normalizeQuantity(raw.purchasedQuantity),
     remainingQuantity: normalizeQuantity(raw.remainingQuantity),
+    comparisonUnit: normalizeComparisonUnit(raw.comparisonUnit),
     unitPrice:
       rawUnitPrice === null ? null : normalizeUnitPrice(rawUnitPrice),
     companyUnitPrice:

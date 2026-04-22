@@ -63,6 +63,7 @@ export function CompanyOrdersCartSection({
               <View style={[styles.companyOrderQtyBadge, isLight && styles.companyOrderQtyBadgeLight]}>
                 <Text style={[styles.companyOrderQtyBadgeText, isLight && styles.companyOrderQtyBadgeTextLight]}>
                   {Number(item.quantity.toFixed(2))}
+                  {item.comparisonUnit === "lb" ? " lb" : ""}
                 </Text>
               </View>
               <TouchableOpacity

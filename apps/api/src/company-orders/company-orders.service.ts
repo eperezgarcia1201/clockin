@@ -15,18 +15,58 @@ import type {
 import type { UpdateCompanyOrderInPersonDto } from './dto/update-company-order-in-person.dto';
 import {
   COMPANY_ORDER_CATALOG,
-  type CompanyOrderCatalogSupplier,
 } from './company-order-catalog';
 
 const catalogItemKey = (nameEs: string, nameEn: string) =>
   `${nameEs.trim().toLowerCase()}|${nameEn.trim().toLowerCase()}`;
+const supplierCatalogItemKey = (
+  supplierName: string,
+  nameEs: string,
+  nameEn: string,
+) => `${supplierName.trim().toLowerCase()}|${catalogItemKey(nameEs, nameEn)}`;
 
 const dateKeyToUtc = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const COMPANY_ORDER_META_PREFIX = '__company_order_meta__';
 const MAX_SUBMITTED_DATES = 28;
 const MAX_CONTRIBUTORS = 40;
 const MAX_NOTE_LINES = 120;
+const DEFAULT_COMPARISON_UNIT: CompanyOrderComparisonUnit = 'each';
+const LB_COMPARISON_UNIT: CompanyOrderComparisonUnit = 'lb';
+const DEFAULT_LB_COMPARISON_ITEM_KEYS = new Set<string>([
+  supplierCatalogItemKey('JOLIVETTE', 'POLLO', 'CHICKEN'),
+  supplierCatalogItemKey('JOLIVETTE', 'CHICKEN MALU', 'CHICKEN MALU'),
+  supplierCatalogItemKey(
+    'MERRILL DISTRIBUTING',
+    'PUERCO CARNITAS',
+    'PORK LAN NO BONE',
+  ),
+  supplierCatalogItemKey(
+    'MERRILL DISTRIBUTING',
+    'PUERCO CHORIZO',
+    'GROUND PORK',
+  ),
+  supplierCatalogItemKey('MERRILL DISTRIBUTING', 'TOCINO', 'BACON'),
+  supplierCatalogItemKey('MERRILL DISTRIBUTING', 'RIBEYE', 'RIBEYE'),
+  supplierCatalogItemKey('SYSCO', 'POLLO', 'CHICKEN BREAST'),
+  supplierCatalogItemKey('SYSCO', 'CARNE FAJA', 'BALL TIPS'),
+  supplierCatalogItemKey('SYSCO', 'CHULETA', 'PORK CHUP THIN CUT'),
+  supplierCatalogItemKey('SYSCO', 'CARNE MOLIDA', 'GROUND BEEF'),
+]);
 type ExportFormat = 'pdf' | 'csv' | 'excel';
+type CompanyOrderComparisonUnit = 'each' | 'lb';
+type CatalogSupplierWithComparisonUnit = {
+  supplierName: string;
+  items: Array<{
+    nameEs: string;
+    nameEn: string;
+    comparisonUnit?: CompanyOrderComparisonUnit;
+  }>;
+};
+type QuantityByUnit = Record<CompanyOrderComparisonUnit, number>;
+type CatalogComparisonUnitLookup = Map<
+  string,
+  Map<string, CompanyOrderComparisonUnit>
+>;
 
 type CompanyOrderDbRow = {
   id: string;
@@ -114,6 +154,7 @@ type SerializedCompanyOrderInPersonSupplier = {
     orderedQuantity: number;
     purchasedQuantity: number;
     remainingQuantity: number;
+    comparisonUnit: CompanyOrderComparisonUnit;
     unitPrice: number | null;
     companyUnitPrice: number | null;
   }>;
@@ -496,11 +537,17 @@ export class CompanyOrdersService {
       },
     })) as CompanyOrderDbRow[];
     const serializedOrders = orders.map((order) => this.serializeOrder(order));
+    const comparisonUnitLookup = this.buildCatalogComparisonUnitLookup(
+      await this.getCatalogForTenant(tenantId),
+    );
 
     return {
       weekStartDate: week.weekStartKey,
       weekEndDate: week.weekEndKey,
-      suppliers: this.buildInPersonShoppingSuppliers(serializedOrders),
+      suppliers: this.buildInPersonShoppingSuppliers(
+        serializedOrders,
+        comparisonUnitLookup,
+      ),
     };
   }
 
@@ -734,7 +781,10 @@ export class CompanyOrdersService {
     const serializedOrders = weeklyOrders.length
       ? weeklyOrders.map((entry) => this.serializeOrder(entry))
       : [serialized];
-    const pdf = this.buildOrdersPdf(serializedOrders, {
+    const comparisonUnitLookup = this.buildCatalogComparisonUnitLookup(
+      await this.getCatalogForTenant(tenantId),
+    );
+    const pdf = this.buildOrdersPdf(serializedOrders, comparisonUnitLookup, {
       weekStartDate,
       weekEndDate,
       locationLabel: this.resolvePdfLocationLabel(serializedOrders),
@@ -819,13 +869,17 @@ export class CompanyOrdersService {
       };
     }
 
+    const comparisonUnitLookup = this.buildCatalogComparisonUnitLookup(
+      await this.getCatalogForTenant(tenantId),
+    );
     const pdf = this.buildOrdersPdf(
       orders.map((order) => this.serializeOrder(order)),
+      comparisonUnitLookup,
       {
-      weekStartDate: week.weekStartKey,
-      weekEndDate: week.weekEndKey,
-      locationLabel: this.resolvePdfLocationLabel(serializedOrders),
-      generatedAt: new Date(),
+        weekStartDate: week.weekStartKey,
+        weekEndDate: week.weekEndKey,
+        locationLabel: this.resolvePdfLocationLabel(serializedOrders),
+        generatedAt: new Date(),
       },
     );
     return {
@@ -1039,7 +1093,7 @@ export class CompanyOrdersService {
 
   private async saveCatalogForTenant(
     tenantId: string,
-    suppliers: CompanyOrderCatalogSupplier[],
+    suppliers: CatalogSupplierWithComparisonUnit[],
   ) {
     await this.ensureCatalogOverridesTable();
     await this.prisma.$executeRawUnsafe(
@@ -1066,13 +1120,144 @@ export class CompanyOrdersService {
     this.catalogOverridesTableReady = true;
   }
 
+  private buildCatalogComparisonUnitLookup(
+    suppliers: CatalogSupplierWithComparisonUnit[],
+  ) {
+    const lookup: CatalogComparisonUnitLookup = new Map();
+    suppliers.forEach((supplier) => {
+      const supplierKey = supplier.supplierName.trim().toLowerCase();
+      const itemLookup = new Map<string, CompanyOrderComparisonUnit>();
+      supplier.items.forEach((item) => {
+        itemLookup.set(
+          catalogItemKey(item.nameEs, item.nameEn),
+          this.normalizeCatalogComparisonUnit(
+            item.comparisonUnit,
+            supplier.supplierName,
+            item.nameEs,
+            item.nameEn,
+          ),
+        );
+      });
+      lookup.set(supplierKey, itemLookup);
+    });
+    return lookup;
+  }
+
+  private normalizeCatalogComparisonUnit(
+    rawValue: unknown,
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+  ): CompanyOrderComparisonUnit {
+    const normalizedValue =
+      typeof rawValue === 'string' ? rawValue.trim().toLowerCase() : '';
+    if (normalizedValue === LB_COMPARISON_UNIT) {
+      return LB_COMPARISON_UNIT;
+    }
+    if (normalizedValue === DEFAULT_COMPARISON_UNIT) {
+      return DEFAULT_COMPARISON_UNIT;
+    }
+
+    const explicitKey = supplierCatalogItemKey(supplierName, nameEs, nameEn);
+    if (DEFAULT_LB_COMPARISON_ITEM_KEYS.has(explicitKey)) {
+      return LB_COMPARISON_UNIT;
+    }
+
+    const normalizedEs = nameEs.trim().toLowerCase();
+    if (
+      normalizedEs === 'pollo' ||
+      normalizedEs.startsWith('carne ') ||
+      normalizedEs.startsWith('puerco ') ||
+      normalizedEs === 'ribeye' ||
+      normalizedEs === 'chuleta' ||
+      normalizedEs === 'tocino'
+    ) {
+      return LB_COMPARISON_UNIT;
+    }
+
+    return DEFAULT_COMPARISON_UNIT;
+  }
+
+  private resolveComparisonUnit(
+    lookup: CatalogComparisonUnitLookup,
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+  ): CompanyOrderComparisonUnit {
+    const supplierKey = supplierName.trim().toLowerCase();
+    const itemKey = catalogItemKey(nameEs, nameEn);
+    return (
+      lookup.get(supplierKey)?.get(itemKey) ||
+      this.normalizeCatalogComparisonUnit(
+        undefined,
+        supplierName,
+        nameEs,
+        nameEn,
+      )
+    );
+  }
+
+  private createQuantityByUnit(): QuantityByUnit {
+    return {
+      each: 0,
+      lb: 0,
+    };
+  }
+
+  private addQuantityByUnit(
+    bucket: QuantityByUnit,
+    comparisonUnit: CompanyOrderComparisonUnit,
+    quantity: number,
+  ) {
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return bucket;
+    }
+    bucket[comparisonUnit] = Number(
+      (bucket[comparisonUnit] + quantity).toFixed(2),
+    );
+    return bucket;
+  }
+
+  private formatQuantityWithUnit(
+    quantity: number,
+    comparisonUnit: CompanyOrderComparisonUnit,
+  ) {
+    return comparisonUnit === LB_COMPARISON_UNIT
+      ? `${this.formatPdfQuantity(quantity)} lb`
+      : `${this.formatPdfQuantity(quantity)} each`;
+  }
+
+  private formatQuantitySummaryByUnit(bucket: QuantityByUnit) {
+    const parts: string[] = [];
+    if (bucket.each > 0) {
+      parts.push(`${this.formatPdfQuantity(bucket.each)} each`);
+    }
+    if (bucket.lb > 0) {
+      parts.push(`${this.formatPdfQuantity(bucket.lb)} lb`);
+    }
+    return parts.length ? parts.join(' + ') : '0';
+  }
+
+  private formatPdfUnitPrice(
+    value: number,
+    comparisonUnit: CompanyOrderComparisonUnit,
+  ) {
+    return comparisonUnit === LB_COMPARISON_UNIT
+      ? `${this.formatPdfMoney(value)}/lb`
+      : `${this.formatPdfMoney(value)} each`;
+  }
+
   private normalizeCatalogSuppliers(
     rawSuppliers: Array<
-      | CompanyOrderCatalogSupplier
+      | CatalogSupplierWithComparisonUnit
       | CompanyOrderCatalogSupplierDto
       | {
           supplierName?: string;
-          items?: Array<{ nameEs?: string; nameEn?: string }>;
+          items?: Array<{
+            nameEs?: string;
+            nameEn?: string;
+            comparisonUnit?: unknown;
+          }>;
         }
     >,
   ) {
@@ -1080,7 +1265,14 @@ export class CompanyOrdersService {
       string,
       {
         supplierName: string;
-        itemsByKey: Map<string, { nameEs: string; nameEn: string }>;
+        itemsByKey: Map<
+          string,
+          {
+            nameEs: string;
+            nameEn: string;
+            comparisonUnit: CompanyOrderComparisonUnit;
+          }
+        >;
       }
     >();
 
@@ -1095,7 +1287,14 @@ export class CompanyOrdersService {
       const supplierKey = supplierName.toLowerCase();
       const existing = bySupplier.get(supplierKey) || {
         supplierName,
-        itemsByKey: new Map<string, { nameEs: string; nameEn: string }>(),
+        itemsByKey: new Map<
+          string,
+          {
+            nameEs: string;
+            nameEn: string;
+            comparisonUnit: CompanyOrderComparisonUnit;
+          }
+        >(),
       };
       if (!bySupplier.has(supplierKey)) {
         bySupplier.set(supplierKey, existing);
@@ -1119,6 +1318,12 @@ export class CompanyOrdersService {
         existing.itemsByKey.set(catalogItemKey(nameEs, nameEn), {
           nameEs,
           nameEn,
+          comparisonUnit: this.normalizeCatalogComparisonUnit(
+            rawItem?.comparisonUnit,
+            supplierName,
+            nameEs,
+            nameEn,
+          ),
         });
       });
     });
@@ -1384,6 +1589,7 @@ export class CompanyOrdersService {
 
   private buildInPersonShoppingSuppliers(
     orders: SerializedCompanyOrder[],
+    comparisonUnitLookup: CatalogComparisonUnitLookup,
   ): SerializedCompanyOrderInPersonSupplier[] {
     return orders
       .map((order) => {
@@ -1411,6 +1617,12 @@ export class CompanyOrdersService {
               orderedQuantity: Number(item.quantity.toFixed(2)),
               purchasedQuantity,
               remainingQuantity,
+              comparisonUnit: this.resolveComparisonUnit(
+                comparisonUnitLookup,
+                order.supplierName,
+                item.nameEs,
+                item.nameEn,
+              ),
               unitPrice:
                 purchase?.unitPrice === null || purchase?.unitPrice === undefined
                   ? null
@@ -1507,7 +1719,10 @@ export class CompanyOrdersService {
       .filter((order): order is SerializedCompanyOrder => order !== null);
   }
 
-  private buildPdfRemainingOrderRows(order: SerializedCompanyOrder) {
+  private buildPdfRemainingOrderRows(
+    order: SerializedCompanyOrder,
+    comparisonUnitLookup: CatalogComparisonUnitLookup,
+  ) {
     const purchasesByKey = new Map<string, StoredInPersonPurchase>();
     order.inPersonPurchases.forEach((purchase) => {
       purchasesByKey.set(catalogItemKey(purchase.nameEs, purchase.nameEn), purchase);
@@ -1524,10 +1739,17 @@ export class CompanyOrdersService {
         if (remainingQuantity <= 0) {
           return null;
         }
+        const comparisonUnit = this.resolveComparisonUnit(
+          comparisonUnitLookup,
+          order.supplierName,
+          item.nameEs,
+          item.nameEn,
+        );
         return {
           nameEs: item.nameEs || item.nameEn || '-',
           nameEn: item.nameEn || item.nameEs || '-',
           quantity: remainingQuantity,
+          comparisonUnit,
         };
       })
       .filter(
@@ -1537,13 +1759,17 @@ export class CompanyOrdersService {
           nameEs: string;
           nameEn: string;
           quantity: number;
+          comparisonUnit: CompanyOrderComparisonUnit;
         } => item !== null,
       )
       .map((item, index) => ({
         rowNumber: index + 1,
         nameEs: item.nameEs,
         nameEn: item.nameEn,
-        quantity: this.formatPdfQuantity(item.quantity),
+        quantity: this.formatQuantityWithUnit(
+          item.quantity,
+          item.comparisonUnit,
+        ),
       }));
 
     if (rows.length) {
@@ -1560,34 +1786,51 @@ export class CompanyOrdersService {
     ];
   }
 
-  private buildPdfRemainingOrderTotals(order: SerializedCompanyOrder) {
+  private buildPdfRemainingOrderTotals(
+    order: SerializedCompanyOrder,
+    comparisonUnitLookup: CatalogComparisonUnitLookup,
+  ) {
     const purchasesByKey = new Map<string, StoredInPersonPurchase>();
     order.inPersonPurchases.forEach((purchase) => {
       purchasesByKey.set(catalogItemKey(purchase.nameEs, purchase.nameEn), purchase);
     });
 
-    const remainingItems = order.items
-      .map((item) =>
-        Number(
-          Math.max(
-            0,
-            item.quantity -
-              (purchasesByKey.get(catalogItemKey(item.nameEs, item.nameEn))
-                ?.purchasedQuantity || 0),
-          ).toFixed(2),
+    const quantitiesByUnit = this.createQuantityByUnit();
+    const remainingItems = order.items.reduce((count, item) => {
+      const remainingQuantity = Number(
+        Math.max(
+          0,
+          item.quantity -
+            (purchasesByKey.get(catalogItemKey(item.nameEs, item.nameEn))
+              ?.purchasedQuantity || 0),
+        ).toFixed(2),
+      );
+      if (remainingQuantity <= 0) {
+        return count;
+      }
+      this.addQuantityByUnit(
+        quantitiesByUnit,
+        this.resolveComparisonUnit(
+          comparisonUnitLookup,
+          order.supplierName,
+          item.nameEs,
+          item.nameEn,
         ),
-      )
-      .filter((quantity) => quantity > 0);
+        remainingQuantity,
+      );
+      return count + 1;
+    }, 0);
 
     return {
-      itemCount: remainingItems.length,
-      totalQuantity: Number(
-        remainingItems.reduce((total, quantity) => total + quantity, 0).toFixed(2),
-      ),
+      itemCount: remainingItems,
+      quantitiesByUnit,
     };
   }
 
-  private buildPdfInPersonPurchaseSummary(order: SerializedCompanyOrder) {
+  private buildPdfInPersonPurchaseSummary(
+    order: SerializedCompanyOrder,
+    comparisonUnitLookup: CatalogComparisonUnitLookup,
+  ) {
     const items = order.inPersonPurchases
       .map((purchase) => {
         const purchasedQuantity = Number(
@@ -1622,11 +1865,18 @@ export class CompanyOrdersService {
         ) {
           return null;
         }
+        const comparisonUnit = this.resolveComparisonUnit(
+          comparisonUnitLookup,
+          order.supplierName,
+          purchase.nameEs,
+          purchase.nameEn,
+        );
 
         return {
           nameEs: purchase.nameEs || purchase.nameEn || '-',
           nameEn: purchase.nameEn || purchase.nameEs || '-',
           purchasedQuantity,
+          comparisonUnit,
           unitPrice,
           companyUnitPrice,
           inPersonSpend,
@@ -1641,6 +1891,7 @@ export class CompanyOrdersService {
           nameEs: string;
           nameEn: string;
           purchasedQuantity: number;
+          comparisonUnit: CompanyOrderComparisonUnit;
           unitPrice: number | null;
           companyUnitPrice: number | null;
           inPersonSpend: number | null;
@@ -1654,11 +1905,18 @@ export class CompanyOrdersService {
         ),
       );
 
+    const purchasedQuantitiesByUnit = this.createQuantityByUnit();
+    items.forEach((item) => {
+      this.addQuantityByUnit(
+        purchasedQuantitiesByUnit,
+        item.comparisonUnit,
+        item.purchasedQuantity,
+      );
+    });
+
     return {
       items,
-      totalPurchasedQuantity: Number(
-        items.reduce((total, item) => total + item.purchasedQuantity, 0).toFixed(2),
-      ),
+      purchasedQuantitiesByUnit,
       totalInPersonSpend: Number(
         items
           .reduce((total, item) => total + (item.inPersonSpend || 0), 0)
@@ -1675,14 +1933,28 @@ export class CompanyOrdersService {
     };
   }
 
-  private buildPdfInPersonTotals(orders: SerializedCompanyOrder[]) {
+  private buildPdfInPersonTotals(
+    orders: SerializedCompanyOrder[],
+    comparisonUnitLookup: CatalogComparisonUnitLookup,
+  ) {
     return orders.reduce(
       (acc, order) => {
-        const summary = this.buildPdfInPersonPurchaseSummary(order);
+        const summary = this.buildPdfInPersonPurchaseSummary(
+          order,
+          comparisonUnitLookup,
+        );
+        this.addQuantityByUnit(
+          acc.purchasedQuantitiesByUnit,
+          'each',
+          summary.purchasedQuantitiesByUnit.each,
+        );
+        this.addQuantityByUnit(
+          acc.purchasedQuantitiesByUnit,
+          'lb',
+          summary.purchasedQuantitiesByUnit.lb,
+        );
         return {
-          totalPurchasedQuantity: Number(
-            (acc.totalPurchasedQuantity + summary.totalPurchasedQuantity).toFixed(2),
-          ),
+          purchasedQuantitiesByUnit: acc.purchasedQuantitiesByUnit,
           totalInPersonSpend: Number(
             (acc.totalInPersonSpend + summary.totalInPersonSpend).toFixed(2),
           ),
@@ -1696,7 +1968,7 @@ export class CompanyOrdersService {
         };
       },
       {
-        totalPurchasedQuantity: 0,
+        purchasedQuantitiesByUnit: this.createQuantityByUnit(),
         totalInPersonSpend: 0,
         totalCompanySpend: 0,
         totalSavings: 0,
@@ -2102,6 +2374,7 @@ export class CompanyOrdersService {
 
   private buildOrdersPdf(
     orders: SerializedCompanyOrder[],
+    comparisonUnitLookup: CatalogComparisonUnitLookup,
     options: {
       weekStartDate: string;
       weekEndDate: string;
@@ -2192,7 +2465,10 @@ export class CompanyOrdersService {
       }
     };
 
-    const overallInPersonTotals = this.buildPdfInPersonTotals(orders);
+    const overallInPersonTotals = this.buildPdfInPersonTotals(
+      orders,
+      comparisonUnitLookup,
+    );
 
     const drawDocumentHeader = () => {
       drawText('COMPANY PURCHASE ORDERS', LEFT, cursorY, 18, true);
@@ -2223,7 +2499,7 @@ export class CompanyOrdersService {
       cursorY -= 14;
       if (overallInPersonTotals.itemCount > 0) {
         drawText(
-          `In-Person Spend: ${this.formatPdfMoney(overallInPersonTotals.totalInPersonSpend)} | Company Equivalent: ${this.formatPdfMoney(overallInPersonTotals.totalCompanySpend)} | ${this.formatPdfSavingsLabel(overallInPersonTotals.totalSavings)}`,
+          `In-Person: ${this.formatQuantitySummaryByUnit(overallInPersonTotals.purchasedQuantitiesByUnit)} | Spend: ${this.formatPdfMoney(overallInPersonTotals.totalInPersonSpend)} | Company Equivalent: ${this.formatPdfMoney(overallInPersonTotals.totalCompanySpend)} | ${this.formatPdfSavingsLabel(overallInPersonTotals.totalSavings)}`,
           LEFT,
           cursorY,
           10,
@@ -2260,9 +2536,15 @@ export class CompanyOrdersService {
       const contributorLabel = order.contributors.length
         ? order.contributors.join(', ')
         : order.createdBy || 'N/A';
-      const rows = this.buildPdfRemainingOrderRows(order);
-      const remainingTotals = this.buildPdfRemainingOrderTotals(order);
-      const inPersonSummary = this.buildPdfInPersonPurchaseSummary(order);
+      const rows = this.buildPdfRemainingOrderRows(order, comparisonUnitLookup);
+      const remainingTotals = this.buildPdfRemainingOrderTotals(
+        order,
+        comparisonUnitLookup,
+      );
+      const inPersonSummary = this.buildPdfInPersonPurchaseSummary(
+        order,
+        comparisonUnitLookup,
+      );
 
       let rowOffset = 0;
       while (rowOffset < rows.length) {
@@ -2365,8 +2647,8 @@ export class CompanyOrdersService {
           );
           cursorY -= 14;
           drawText(
-            `Total Quantity Remaining: ${this.formatPdfQuantity(
-              remainingTotals.totalQuantity,
+            `Remaining Quantity: ${this.formatQuantitySummaryByUnit(
+              remainingTotals.quantitiesByUnit,
             )}`,
             LEFT,
             cursorY,
@@ -2387,7 +2669,7 @@ export class CompanyOrdersService {
           if (inPersonSummary.items.length) {
             ensureSpace(26);
             drawText(
-              `In-Person Shopping: Bought ${this.formatPdfQuantity(inPersonSummary.totalPurchasedQuantity)} | Spent ${this.formatPdfMoney(inPersonSummary.totalInPersonSpend)} | Company ${this.formatPdfMoney(inPersonSummary.totalCompanySpend)} | ${this.formatPdfSavingsLabel(inPersonSummary.totalSavings)}`,
+              `In-Person Shopping: Bought ${this.formatQuantitySummaryByUnit(inPersonSummary.purchasedQuantitiesByUnit)} | Spent ${this.formatPdfMoney(inPersonSummary.totalInPersonSpend)} | Company ${this.formatPdfMoney(inPersonSummary.totalCompanySpend)} | ${this.formatPdfSavingsLabel(inPersonSummary.totalSavings)}`,
               LEFT,
               cursorY,
               10,
@@ -2398,12 +2680,21 @@ export class CompanyOrdersService {
             inPersonSummary.items.forEach((purchase) => {
               const line = [
                 `- ${purchase.nameEs}${purchase.nameEn && purchase.nameEn !== purchase.nameEs ? ` / ${purchase.nameEn}` : ''}`,
-                `x ${this.formatPdfQuantity(purchase.purchasedQuantity)}`,
+                this.formatQuantityWithUnit(
+                  purchase.purchasedQuantity,
+                  purchase.comparisonUnit,
+                ),
                 purchase.unitPrice !== null
-                  ? `Paid ${this.formatPdfMoney(purchase.unitPrice)}`
+                  ? `Paid ${this.formatPdfUnitPrice(
+                      purchase.unitPrice,
+                      purchase.comparisonUnit,
+                    )}${purchase.inPersonSpend !== null ? ` (${this.formatPdfMoney(purchase.inPersonSpend)})` : ''}`
                   : 'Paid n/a',
                 purchase.companyUnitPrice !== null
-                  ? `Company ${this.formatPdfMoney(purchase.companyUnitPrice)}`
+                  ? `Company ${this.formatPdfUnitPrice(
+                      purchase.companyUnitPrice,
+                      purchase.comparisonUnit,
+                    )}${purchase.companySpend !== null ? ` (${this.formatPdfMoney(purchase.companySpend)})` : ''}`
                   : 'Company n/a',
                 purchase.savings !== null
                   ? this.formatPdfSavingsLabel(purchase.savings)
@@ -2599,7 +2890,7 @@ export class CompanyOrdersService {
 
   private normalizeItems(
     rawItems: CreateCompanyOrderDto['items'],
-    supplier: CompanyOrderCatalogSupplier,
+    supplier: CatalogSupplierWithComparisonUnit,
   ) {
     if (!Array.isArray(rawItems) || rawItems.length === 0) {
       return [];

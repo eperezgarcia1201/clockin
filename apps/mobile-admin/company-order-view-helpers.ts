@@ -2,6 +2,7 @@ import { companyOrderItemKey } from "./app-helpers";
 import type { CompanyOrderDrafts } from "./company-order-draft-helpers";
 import type {
   CompanyOrderCatalogItem,
+  CompanyOrderComparisonUnit,
   CompanyOrderCatalogSupplier,
 } from "./types";
 
@@ -11,6 +12,7 @@ export type CompanyOrderCartItem = {
   nameEs: string;
   nameEn: string;
   quantity: number;
+  comparisonUnit: CompanyOrderComparisonUnit;
 };
 
 export type CompanyOrderSupplierPayload = {
@@ -95,6 +97,7 @@ export const buildCompanyOrderCartItems = (
           nameEs: item.nameEs,
           nameEn: item.nameEn,
           quantity,
+          comparisonUnit: item.comparisonUnit,
         };
       })
       .filter((entry): entry is CompanyOrderCartItem => Boolean(entry));
