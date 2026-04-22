@@ -244,6 +244,7 @@ model EmployeeSchedule {
   weekday    Int
   startTime  String?
   endTime    String?
+  breakMinutes Int    @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -252,6 +253,23 @@ model EmployeeSchedule {
 
   @@unique([employeeId, weekday])
   @@index([tenantId, employeeId])
+}
+
+model CompanyOrderInPersonShopping {
+  tenantId          String
+  officeScopeId     String   @default("")
+  weekStartDate     String
+  supplierKey       String
+  supplierName      String
+  itemKey           String
+  nameEs            String
+  nameEn            String
+  purchasedQuantity Float    @default(0)
+  price             Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now())
+
+  @@id([tenantId, officeScopeId, weekStartDate, supplierKey, itemKey])
 }
 
 model ScheduleOverrideRequest {
