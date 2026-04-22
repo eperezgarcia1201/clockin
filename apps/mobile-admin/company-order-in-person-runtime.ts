@@ -59,13 +59,20 @@ const normalizeInPersonItem = (
     typeof raw.nameEs === "string" ? raw.nameEs : "",
     typeof raw.nameEn === "string" ? raw.nameEn : "",
   );
+  const rawUnitPrice =
+    raw.unitPrice !== undefined
+      ? raw.unitPrice
+      : raw.price !== undefined
+        ? raw.price
+        : null;
   return {
     nameEs: names.nameEs,
     nameEn: names.nameEn,
     orderedQuantity: normalizeQuantity(raw.orderedQuantity),
     purchasedQuantity: normalizeQuantity(raw.purchasedQuantity),
     remainingQuantity: normalizeQuantity(raw.remainingQuantity),
-    unitPrice: raw.unitPrice === null ? null : normalizeUnitPrice(raw.unitPrice),
+    unitPrice:
+      rawUnitPrice === null ? null : normalizeUnitPrice(rawUnitPrice),
   };
 };
 
@@ -218,42 +225,117 @@ export const saveCompanyOrderInPersonData = async (params: {
     }
   | { ok: false; error: string }
 > => {
-  try {
-    const items = params.suppliers.flatMap((supplier) =>
-      supplier.items.map((item) => {
-        const draft =
-          params.drafts[supplier.supplierName]?.[
-            companyOrderItemKey(item.nameEs, item.nameEn)
-          ] || {
-            purchasedQuantity: "",
-            unitPrice: "",
-          };
-        const purchasedQuantity = Number(draft.purchasedQuantity || "0");
-        const safePurchasedQuantity = Number.isFinite(purchasedQuantity)
-          ? Number(Math.max(0, purchasedQuantity).toFixed(2))
-          : 0;
-        return {
-          supplierName: supplier.supplierName,
+  const items = params.suppliers.flatMap((supplier) =>
+    supplier.items.map((item) => {
+      const draft =
+        params.drafts[supplier.supplierName]?.[
+          companyOrderItemKey(item.nameEs, item.nameEn)
+        ] || {
+          purchasedQuantity: "",
+          unitPrice: "",
+        };
+      const purchasedQuantity = Number(draft.purchasedQuantity || "0");
+      const safePurchasedQuantity = Number.isFinite(purchasedQuantity)
+        ? Number(Math.max(0, purchasedQuantity).toFixed(2))
+        : 0;
+      return {
+        supplierName: supplier.supplierName,
+        nameEs: item.nameEs,
+        nameEn: item.nameEn,
+        purchasedQuantity: safePurchasedQuantity,
+        unitPrice: parseMoneyInput(draft.unitPrice),
+        currentPurchasedQuantity: item.purchasedQuantity,
+        currentUnitPrice: item.unitPrice,
+      };
+    }),
+  );
+
+  const changedItems = items.filter((item) => {
+    const currentUnitPrice =
+      item.currentUnitPrice !== null && item.currentUnitPrice !== undefined
+        ? Number(item.currentUnitPrice.toFixed(2))
+        : null;
+    const nextUnitPrice =
+      item.unitPrice !== null && item.unitPrice !== undefined
+        ? Number(item.unitPrice.toFixed(2))
+        : null;
+    return (
+      item.purchasedQuantity !== item.currentPurchasedQuantity ||
+      nextUnitPrice !== currentUnitPrice
+    );
+  });
+
+  const loadLatestInPersonData = async () => {
+    const reloaded = await loadCompanyOrderInPersonData({
+      fetchJson: params.fetchJson,
+      weekStartDate: params.weekStartDate,
+      officeId: params.officeId,
+      previousSupplierName: params.suppliers[0]?.supplierName || "",
+    });
+    if (reloaded.ok === false) {
+      return reloaded;
+    }
+    return {
+      ok: true as const,
+      weekStartDate: reloaded.weekStartDate,
+      weekEndDate: reloaded.weekEndDate,
+      suppliers: reloaded.suppliers,
+      drafts: reloaded.drafts,
+    };
+  };
+
+  const saveLegacySingleItemPayloads = async () => {
+    for (const item of changedItems) {
+      await params.fetchJson("/company-orders/in-person", {
+        method: "PUT",
+        body: JSON.stringify({
+          weekStart: params.weekStartDate,
+          officeId: params.officeId || undefined,
+          supplierName: item.supplierName,
           nameEs: item.nameEs,
           nameEn: item.nameEn,
-          purchasedQuantity: safePurchasedQuantity,
-          unitPrice: parseMoneyInput(draft.unitPrice),
-        };
-      }),
-    );
+          purchasedQuantity: item.purchasedQuantity,
+          price: item.unitPrice ?? undefined,
+        }),
+      });
+    }
+    return loadLatestInPersonData();
+  };
 
+  const shouldRetryLegacySave = (error: unknown) => {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("property items should not exist") &&
+      message.includes("suppliername must be a string")
+    );
+  };
+
+  try {
     const data = (await params.fetchJson("/company-orders/in-person", {
       method: "PUT",
       body: JSON.stringify({
         weekStart: params.weekStartDate,
         officeId: params.officeId || undefined,
-        items,
+        items: items.map((item) => ({
+          supplierName: item.supplierName,
+          nameEs: item.nameEs,
+          nameEn: item.nameEn,
+          purchasedQuantity: item.purchasedQuantity,
+          unitPrice: item.unitPrice,
+        })),
       }),
     })) as {
       weekStartDate?: string;
       weekEndDate?: string;
       suppliers?: CompanyOrderInPersonSupplier[];
     };
+
+    if (!Array.isArray(data.suppliers)) {
+      return loadLatestInPersonData();
+    }
 
     const suppliers = normalizeSupplierList(data);
     return {
@@ -268,6 +350,23 @@ export const saveCompanyOrderInPersonData = async (params: {
       drafts: buildCompanyOrderInPersonDrafts(suppliers),
     };
   } catch (error) {
+    if (shouldRetryLegacySave(error)) {
+      try {
+        const legacyResult = await saveLegacySingleItemPayloads();
+        if (legacyResult.ok === false) {
+          return legacyResult;
+        }
+        return legacyResult;
+      } catch (legacyError) {
+        return {
+          ok: false,
+          error:
+            legacyError instanceof Error
+              ? legacyError.message
+              : "Unable to save in person shopping.",
+        };
+      }
+    }
     return {
       ok: false,
       error:
