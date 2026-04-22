@@ -16,8 +16,8 @@ export type CompanyOrderCartItem = {
 
 export type CompanyOrdersCardProps = {
   isLight: boolean;
-  companyOrderMode: "orders" | "inPerson";
-  onCompanyOrderModeChange: (value: "orders" | "inPerson") => void;
+  companyOrderMode?: "orders" | "inPerson" | null;
+  onCompanyOrderModeChange?: (value: "orders" | "inPerson") => void;
   companyOrderExportingFormat: "pdf" | "csv" | "excel" | null;
   onExportCompanyOrders: (format: "pdf" | "csv" | "excel") => void;
   inline: (value: string) => string;

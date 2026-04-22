@@ -65,6 +65,13 @@ export function CompanyOrdersCard({
   companyOrderInPersonSaving,
   companyOrderInPersonStatus,
 }: CompanyOrdersCardProps) {
+  const activeMode = companyOrderMode === "inPerson" ? "inPerson" : "orders";
+  const handleModeChange = (value: "orders" | "inPerson") => {
+    if (typeof onCompanyOrderModeChange === "function") {
+      onCompanyOrderModeChange(value);
+    }
+  };
+
   return (
     <View style={[styles.card, isLight && styles.cardLight]}>
       <Text style={[styles.cardTitle, isLight && styles.cardTitleLight]}>Company Orders</Text>
@@ -117,16 +124,16 @@ export function CompanyOrdersCard({
           style={[
             styles.togglePill,
             isLight && styles.togglePillLight,
-            companyOrderMode === "orders" && styles.toggleActive,
-            companyOrderMode === "orders" && isLight && styles.toggleActiveLight,
+            activeMode === "orders" && styles.toggleActive,
+            activeMode === "orders" && isLight && styles.toggleActiveLight,
           ]}
-          onPress={() => onCompanyOrderModeChange("orders")}
+          onPress={() => handleModeChange("orders")}
         >
           <Text
             style={[
               styles.toggleText,
               isLight && styles.toggleTextLight,
-              companyOrderMode === "orders" && isLight && styles.toggleTextLightActive,
+              activeMode === "orders" && isLight && styles.toggleTextLightActive,
             ]}
           >
             Company Orders
@@ -136,23 +143,23 @@ export function CompanyOrdersCard({
           style={[
             styles.togglePill,
             isLight && styles.togglePillLight,
-            companyOrderMode === "inPerson" && styles.toggleActive,
-            companyOrderMode === "inPerson" && isLight && styles.toggleActiveLight,
+            activeMode === "inPerson" && styles.toggleActive,
+            activeMode === "inPerson" && isLight && styles.toggleActiveLight,
           ]}
-          onPress={() => onCompanyOrderModeChange("inPerson")}
+          onPress={() => handleModeChange("inPerson")}
         >
           <Text
             style={[
               styles.toggleText,
               isLight && styles.toggleTextLight,
-              companyOrderMode === "inPerson" && isLight && styles.toggleTextLightActive,
+              activeMode === "inPerson" && isLight && styles.toggleTextLightActive,
             ]}
           >
             In Person Shopping
           </Text>
         </TouchableOpacity>
       </View>
-      {companyOrderMode === "orders" ? (
+      {activeMode === "orders" ? (
         <>
           <CompanyOrdersCatalogSection
             isLight={isLight}

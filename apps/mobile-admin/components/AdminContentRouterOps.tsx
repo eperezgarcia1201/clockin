@@ -156,6 +156,8 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
     return (
       <CompanyOrdersCard
         isLight={props.isLight}
+        companyOrderMode={props.companyOrderMode}
+        onCompanyOrderModeChange={props.setCompanyOrderMode}
         companyOrderExportingFormat={props.companyOrderExportingFormat}
         onExportCompanyOrders={(format) => {
           void props.handleCompanyOrderExport(format);
@@ -198,6 +200,34 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
         inlineOrNull={props.inlineOrNull}
         companyOrderRows={props.companyOrderRows}
         formatDisplayDate={props.formatDisplayDate}
+        companyOrderInPersonWeekStartDate={props.companyOrderInPersonWeekStartDate}
+        companyOrderInPersonWeekEndDate={props.companyOrderInPersonWeekEndDate}
+        companyOrderInPersonSuppliers={props.companyOrderInPersonSuppliers}
+        companyOrderInPersonSupplier={props.companyOrderInPersonSupplier}
+        onCompanyOrderInPersonSupplierChange={props.setCompanyOrderInPersonSupplier}
+        companyOrderInPersonSearch={props.companyOrderInPersonSearch}
+        onCompanyOrderInPersonSearchChange={props.setCompanyOrderInPersonSearch}
+        companyOrderInPersonSummaryLabel={props.companyOrderInPersonSummaryLabel}
+        companyOrderInPersonItems={props.companyOrderInPersonItems}
+        getCompanyOrderInPersonDraftValue={props.getCompanyOrderInPersonDraftValue}
+        getCompanyOrderInPersonMetaLine={props.getCompanyOrderInPersonMetaLine}
+        onCompanyOrderInPersonPurchasedQuantityChange={
+          props.handleCompanyOrderInPersonPurchasedQuantityChange
+        }
+        onCompanyOrderInPersonUnitPriceChange={
+          props.handleCompanyOrderInPersonUnitPriceChange
+        }
+        onSaveCompanyOrderInPerson={() => {
+          void props.saveCompanyOrderInPerson();
+        }}
+        onLoadCompanyOrderInPerson={() => {
+          void props.loadCompanyOrderInPerson();
+        }}
+        onPreviousCompanyOrderInPersonWeek={props.goToPreviousCompanyOrderInPersonWeek}
+        onNextCompanyOrderInPersonWeek={props.goToNextCompanyOrderInPersonWeek}
+        companyOrderInPersonLoading={props.companyOrderInPersonLoading}
+        companyOrderInPersonSaving={props.companyOrderInPersonSaving}
+        companyOrderInPersonStatus={props.companyOrderInPersonStatus}
       />
     );
   }
