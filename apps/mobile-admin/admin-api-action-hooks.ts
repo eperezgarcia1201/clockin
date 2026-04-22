@@ -47,10 +47,15 @@ export const useAdminApiActions = (params: {
   );
 
   const fetchCompanyOrderExport = useCallback(
-    async (format: "pdf" | "csv" | "excel", weekStartDate: string) => {
+    async (
+      format: "pdf" | "csv" | "excel",
+      weekStartDate: string,
+      supplierName?: string | null,
+    ) => {
       const result = await fetchCompanyOrderExportRequest({
         format,
         weekStartDate,
+        supplierName,
         resolvedApiBase: params.resolvedApiBase,
         loggedIn: params.loggedIn,
         activeTenant: params.activeTenant,

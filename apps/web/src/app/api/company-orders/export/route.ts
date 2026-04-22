@@ -20,6 +20,11 @@ export async function GET(request: Request) {
     query.set("weekStart", weekStart);
   }
 
+  const supplierName = (url.searchParams.get("supplierName") || "").trim();
+  if (supplierName) {
+    query.set("supplierName", supplierName);
+  }
+
   try {
     const response = await clockinFetch(withQuery("/company-orders/export", query), {
       headers: { Accept: "*/*" },

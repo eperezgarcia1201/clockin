@@ -43,6 +43,7 @@ export const useAdminSessionActions = (params: {
   setCompanyOrderDrafts: (value: any) => void;
   setCompanyOrderRows: (value: any) => void;
   setCompanyOrderExportingFormat: (value: "pdf" | "csv" | "excel" | null) => void;
+  setCompanyOrderExportAllCompanies: (value: boolean) => void;
   setLastSubmittedCompanyOrderWeekStart: (value: string) => void;
   setCompanyOrderStatus: (value: any) => void;
   setCompanyOrderMode: (value: "orders" | "inPerson") => void;
@@ -131,6 +132,7 @@ export const useAdminSessionActions = (params: {
     params.setCompanyOrderDrafts({});
     params.setCompanyOrderRows([]);
     params.setCompanyOrderExportingFormat(null);
+    params.setCompanyOrderExportAllCompanies(true);
     params.setLastSubmittedCompanyOrderWeekStart(getCurrentWeekStartDateKey());
     params.setCompanyOrderStatus(null);
     params.setCompanyOrderInPersonWeekStartDate(getCurrentWeekStartDateKey());

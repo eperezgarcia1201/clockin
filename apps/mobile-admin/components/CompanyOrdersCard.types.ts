@@ -20,8 +20,16 @@ export type CompanyOrdersCardProps = {
   isLight: boolean;
   companyOrderMode?: "orders" | "inPerson" | null;
   onCompanyOrderModeChange?: (value: "orders" | "inPerson") => void;
+  companyOrderExportAllCompanies: boolean;
+  onCompanyOrderExportAllCompaniesChange: (value: boolean) => void;
   companyOrderExportingFormat: "pdf" | "csv" | "excel" | null;
-  onExportCompanyOrders: (format: "pdf" | "csv" | "excel") => void;
+  onExportCompanyOrders: (
+    format: "pdf" | "csv" | "excel",
+    options?: {
+      supplierName?: string | null;
+      weekStartDate?: string | null;
+    },
+  ) => void;
   inline: (value: string) => string;
   language: Lang;
   companyOrderCatalog: CompanyOrderCatalogSupplier[];
@@ -56,6 +64,7 @@ export type CompanyOrdersCardProps = {
   companyOrderLoading: boolean;
   companyOrderStatus: string | null;
   inlineOrNull: (value: string | null | undefined) => string | null;
+  lastSubmittedCompanyOrderWeekStart: string;
   companyOrderRows: CompanyOrderRow[];
   formatDisplayDate: (value: string | null | undefined) => string;
   companyOrderInPersonWeekStartDate: string | null | undefined;

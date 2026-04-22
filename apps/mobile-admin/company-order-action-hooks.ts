@@ -42,6 +42,7 @@ export const useCompanyOrderActions = (params: {
   fetchCompanyOrderExport: (
     format: "pdf" | "csv" | "excel",
     weekStartDate: string,
+    supplierName?: string | null,
   ) => Promise<boolean>;
 }) => {
   const setCompanyOrderDraftQuantity = (
@@ -118,15 +119,26 @@ export const useCompanyOrderActions = (params: {
     params.setCompanyOrderSaving(false);
   };
 
-  const handleCompanyOrderExport = async (format: "pdf" | "csv" | "excel") => {
+  const handleCompanyOrderExport = async (
+    format: "pdf" | "csv" | "excel",
+    options?: {
+      supplierName?: string | null;
+      weekStartDate?: string | null;
+    },
+  ) => {
     params.setCompanyOrderExportingFormat(format);
     try {
       const weekStartDate = resolveCompanyOrderExportWeekStart(
-        params.lastSubmittedCompanyOrderWeekStart,
+        options?.weekStartDate?.trim() || params.lastSubmittedCompanyOrderWeekStart,
       );
-      const ok = await params.fetchCompanyOrderExport(format, weekStartDate);
+      const supplierName = options?.supplierName?.trim() || null;
+      const ok = await params.fetchCompanyOrderExport(
+        format,
+        weekStartDate,
+        supplierName,
+      );
       params.setCompanyOrderStatus(
-        buildCompanyOrderExportStatus(format, weekStartDate, ok),
+        buildCompanyOrderExportStatus(format, weekStartDate, supplierName, ok),
       );
     } catch (error) {
       params.setCompanyOrderStatus(

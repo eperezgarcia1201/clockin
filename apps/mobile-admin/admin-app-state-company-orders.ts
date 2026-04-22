@@ -28,6 +28,8 @@ export function useAdminCompanyOrderState() {
   const [companyOrderSaving, setCompanyOrderSaving] = useState(false);
   const [companyOrderExportingFormat, setCompanyOrderExportingFormat] =
     useState<"pdf" | "csv" | "excel" | null>(null);
+  const [companyOrderExportAllCompanies, setCompanyOrderExportAllCompanies] =
+    useState(true);
   const [
     lastSubmittedCompanyOrderWeekStart,
     setLastSubmittedCompanyOrderWeekStart,
@@ -79,6 +81,8 @@ export function useAdminCompanyOrderState() {
     setCompanyOrderSaving,
     companyOrderExportingFormat,
     setCompanyOrderExportingFormat,
+    companyOrderExportAllCompanies,
+    setCompanyOrderExportAllCompanies,
     lastSubmittedCompanyOrderWeekStart,
     setLastSubmittedCompanyOrderWeekStart,
     companyOrderStatus,

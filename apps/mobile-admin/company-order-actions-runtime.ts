@@ -64,10 +64,15 @@ export const resolveCompanyOrderExportWeekStart = (
 export const buildCompanyOrderExportStatus = (
   format: "pdf" | "csv" | "excel",
   weekStartDate: string,
+  supplierName: string | null | undefined,
   ok: boolean,
 ): string => {
+  const scopeLabel =
+    supplierName && supplierName.trim()
+      ? `${format.toUpperCase()} ready for ${supplierName.trim()}`
+      : `${format.toUpperCase()} ready`;
   if (ok) {
-    return `${format.toUpperCase()} ready for week ${weekStartDate}.`;
+    return `${scopeLabel} • week ${weekStartDate}.`;
   }
   return "Unable to export company order.";
 };
@@ -75,6 +80,7 @@ export const buildCompanyOrderExportStatus = (
 export const fetchCompanyOrderExportRequest = async (params: {
   format: "pdf" | "csv" | "excel";
   weekStartDate: string;
+  supplierName?: string | null;
   resolvedApiBase: string | null;
   loggedIn: boolean;
   activeTenant: string;
@@ -98,6 +104,7 @@ export const fetchCompanyOrderExportRequest = async (params: {
   const result = await downloadCompanyOrderExport({
     format: params.format,
     weekStartDate: params.weekStartDate,
+    supplierName: params.supplierName,
     orderedBases,
     companyOrdersOfficeId: params.companyOrdersOfficeId,
     tenantHeader,

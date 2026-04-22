@@ -125,6 +125,7 @@ export class CompanyOrdersController {
     @Query('format') format: string | undefined,
     @Query('weekStart') weekStart: string | undefined,
     @Query('officeId') officeId: string | undefined,
+    @Query('supplierName') supplierName: string | undefined,
     @Res() response: Response,
   ) {
     if (!req.user) {
@@ -144,6 +145,7 @@ export class CompanyOrdersController {
       format: normalizedFormat,
       weekStart: weekStart?.trim() || undefined,
       officeId: officeId?.trim() || undefined,
+      supplierName: supplierName?.trim() || undefined,
     });
 
     response.setHeader('Content-Type', file.contentType);

@@ -798,7 +798,12 @@ export class CompanyOrdersService {
 
   async exportWeeklyOrders(
     authUser: AuthUser,
-    options: { format: ExportFormat; weekStart?: string; officeId?: string },
+    options: {
+      format: ExportFormat;
+      weekStart?: string;
+      officeId?: string;
+      supplierName?: string;
+    },
   ) {
     const access = await this.tenancy.requireCompanyOrdersAccess(authUser);
     const tenantId = access.tenant.id;
@@ -813,6 +818,7 @@ export class CompanyOrdersService {
       );
     }
     const officeId = access.allowedOfficeId || requestedOfficeId;
+    const supplierName = options.supplierName?.trim() || undefined;
     const week = this.getWeekBounds(
       this.parseWeekStartDate(options.weekStart) || new Date(),
     );
@@ -821,6 +827,9 @@ export class CompanyOrdersService {
       where: {
         tenantId,
         officeId,
+        supplierName: supplierName
+          ? { equals: supplierName, mode: 'insensitive' }
+          : undefined,
         orderDate: {
           gte: week.weekStart,
           lte: week.weekEnd,
@@ -852,7 +861,11 @@ export class CompanyOrdersService {
     if (options.format === 'csv') {
       const csv = this.buildWeeklyCsv(serializedOrders, week.weekStartKey);
       return {
-        filename: `company-orders-week-${week.weekStartKey}.csv`,
+        filename: this.buildWeeklyExportFilename(
+          week.weekStartKey,
+          'csv',
+          supplierName,
+        ),
         contentType: 'text/csv; charset=utf-8',
         content: Buffer.from(csv, 'utf8'),
       };
@@ -863,7 +876,11 @@ export class CompanyOrdersService {
         week.weekStartKey,
       );
       return {
-        filename: `company-orders-week-${week.weekStartKey}.xls`,
+        filename: this.buildWeeklyExportFilename(
+          week.weekStartKey,
+          'xls',
+          supplierName,
+        ),
         contentType: 'application/vnd.ms-excel; charset=utf-8',
         content: Buffer.from(excelHtml, 'utf8'),
       };
@@ -879,11 +896,16 @@ export class CompanyOrdersService {
         weekStartDate: week.weekStartKey,
         weekEndDate: week.weekEndKey,
         locationLabel: this.resolvePdfLocationLabel(serializedOrders),
+        supplierLabel: supplierName || null,
         generatedAt: new Date(),
       },
     );
     return {
-      filename: `company-orders-week-${week.weekStartKey}.pdf`,
+      filename: this.buildWeeklyExportFilename(
+        week.weekStartKey,
+        'pdf',
+        supplierName,
+      ),
       contentType: 'application/pdf',
       content: pdf,
     };
@@ -919,6 +941,23 @@ export class CompanyOrdersService {
       return locationNames[0];
     }
     return 'Multiple locations';
+  }
+
+  private buildWeeklyExportFilename(
+    weekStartDate: string,
+    extension: 'pdf' | 'csv' | 'xls',
+    supplierName?: string,
+  ) {
+    const supplierSlug = supplierName
+      ? supplierName
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/(^-|-$)+/g, '')
+      : '';
+    return supplierSlug
+      ? `company-orders-${supplierSlug}-week-${weekStartDate}.${extension}`
+      : `company-orders-week-${weekStartDate}.${extension}`;
   }
 
   private buildWeeklyCsv(
@@ -2379,6 +2418,7 @@ export class CompanyOrdersService {
       weekStartDate: string;
       weekEndDate: string;
       locationLabel: string;
+      supplierLabel?: string | null;
       generatedAt: Date;
     },
   ) {
@@ -2485,6 +2525,13 @@ export class CompanyOrdersService {
       cursorY -= 14;
       drawText(
         `Location: ${options.locationLabel || 'All locations'}`,
+        LEFT,
+        cursorY,
+        10,
+      );
+      cursorY -= 14;
+      drawText(
+        `Supplier: ${this.normalizePdfText(options.supplierLabel || 'All companies')}`,
         LEFT,
         cursorY,
         10,

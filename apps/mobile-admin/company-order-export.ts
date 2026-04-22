@@ -8,6 +8,7 @@ export type CompanyOrderExportFormat = "pdf" | "csv" | "excel";
 type DownloadCompanyOrderExportParams = {
   format: CompanyOrderExportFormat;
   weekStartDate: string;
+  supplierName?: string | null;
   orderedBases: string[];
   companyOrdersOfficeId: string;
   tenantHeader: string;
@@ -19,6 +20,7 @@ type DownloadCompanyOrderExportParams = {
 export async function downloadCompanyOrderExport({
   format,
   weekStartDate,
+  supplierName,
   orderedBases,
   companyOrdersOfficeId,
   tenantHeader,
@@ -31,6 +33,9 @@ export async function downloadCompanyOrderExport({
   query.set("weekStart", weekStartDate);
   if (companyOrdersOfficeId) {
     query.set("officeId", companyOrdersOfficeId);
+  }
+  if (supplierName && supplierName.trim()) {
+    query.set("supplierName", supplierName.trim());
   }
 
   const path = `/company-orders/export?${query.toString()}`;
@@ -67,10 +72,17 @@ export async function downloadCompanyOrderExport({
       }
 
       const extension = format === "pdf" ? "pdf" : format === "csv" ? "csv" : "xls";
+      const supplierSlug = (supplierName || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)+/g, "");
       const contentDisposition = response.headers.get("content-disposition") || "";
       const filenameMatch = /filename=\"?([^\";]+)\"?/i.exec(contentDisposition);
       const filename =
-        (filenameMatch?.[1] || `company-orders-week-${weekStartDate}.${extension}`)
+        (filenameMatch?.[1] ||
+          (supplierSlug
+            ? `company-orders-${supplierSlug}-week-${weekStartDate}.${extension}`
+            : `company-orders-week-${weekStartDate}.${extension}`))
           .trim()
           .replace(/[^\w.\-]/g, "_");
 

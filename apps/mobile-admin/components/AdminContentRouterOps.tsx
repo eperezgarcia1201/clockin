@@ -158,9 +158,13 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
         isLight={props.isLight}
         companyOrderMode={props.companyOrderMode}
         onCompanyOrderModeChange={props.setCompanyOrderMode}
+        companyOrderExportAllCompanies={props.companyOrderExportAllCompanies}
+        onCompanyOrderExportAllCompaniesChange={
+          props.setCompanyOrderExportAllCompanies
+        }
         companyOrderExportingFormat={props.companyOrderExportingFormat}
-        onExportCompanyOrders={(format) => {
-          void props.handleCompanyOrderExport(format);
+        onExportCompanyOrders={(format, options) => {
+          void props.handleCompanyOrderExport(format, options);
         }}
         inline={props.inline}
         language={props.language}
@@ -198,6 +202,9 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
         companyOrderLoading={props.companyOrderLoading}
         companyOrderStatus={props.companyOrderStatus}
         inlineOrNull={props.inlineOrNull}
+        lastSubmittedCompanyOrderWeekStart={
+          props.lastSubmittedCompanyOrderWeekStart
+        }
         companyOrderRows={props.companyOrderRows}
         formatDisplayDate={props.formatDisplayDate}
         companyOrderInPersonWeekStartDate={props.companyOrderInPersonWeekStartDate}
