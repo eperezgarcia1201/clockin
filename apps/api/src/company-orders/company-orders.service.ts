@@ -965,11 +965,11 @@ export class CompanyOrdersService {
     weekStartDate: string,
   ) {
     const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const formattedWeekStartDate = this.formatDateKeyUs(weekStartDate);
     const rows: string[][] = [
       [
         'weekStart',
         'supplier',
-        'orderLabel',
         'office',
         'submittedDates',
         'contributors',
@@ -981,16 +981,18 @@ export class CompanyOrdersService {
     ];
 
     if (!orders.length) {
-      rows.push([weekStartDate, '', '', '', '', '', '', '', '', '']);
+      rows.push([formattedWeekStartDate, '', '', '', '', '', '', '', '']);
     } else {
       orders.forEach((order) => {
+        const submittedDatesLabel = order.submittedDates
+          .map((dateKey) => this.formatDateKeyUs(dateKey))
+          .join('; ');
         if (!order.items.length) {
           rows.push([
-            weekStartDate,
+            formattedWeekStartDate,
             order.supplierName,
-            order.orderLabel || '',
             order.officeName || '',
-            order.submittedDates.join('; '),
+            submittedDatesLabel,
             order.contributors.join('; '),
             '',
             '',
@@ -999,18 +1001,17 @@ export class CompanyOrdersService {
           ]);
           return;
         }
-        order.items.forEach((item) => {
+        order.items.forEach((item, itemIndex) => {
           rows.push([
-            weekStartDate,
+            formattedWeekStartDate,
             order.supplierName,
-            order.orderLabel || '',
             order.officeName || '',
-            order.submittedDates.join('; '),
+            submittedDatesLabel,
             order.contributors.join('; '),
             item.nameEs,
             item.nameEn,
             String(item.quantity),
-            order.notes || '',
+            itemIndex === 0 ? order.notes || '' : '',
           ]);
         });
       });
@@ -1032,11 +1033,11 @@ export class CompanyOrdersService {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    const formattedWeekStartDate = this.formatDateKeyUs(weekStartDate);
 
     const header = [
       'Week Start',
       'Supplier',
-      'Order Label',
       'Location',
       'Submitted Dates',
       'Contributors',
@@ -1049,18 +1050,20 @@ export class CompanyOrdersService {
     const bodyRows: string[] = [];
     if (!orders.length) {
       bodyRows.push(
-        `<tr>${[weekStartDate, '', '', '', '', '', '', '', '', '']
+        `<tr>${[formattedWeekStartDate, '', '', '', '', '', '', '', '']
           .map((cell) => `<td>${escapeHtml(cell)}</td>`)
           .join('')}</tr>`,
       );
     } else {
       orders.forEach((order) => {
+        const submittedDatesLabel = order.submittedDates
+          .map((dateKey) => this.formatDateKeyUs(dateKey))
+          .join('; ');
         const baseCells = [
-          weekStartDate,
+          formattedWeekStartDate,
           order.supplierName,
-          order.orderLabel || '',
           order.officeName || '',
-          order.submittedDates.join('; '),
+          submittedDatesLabel,
           order.contributors.join('; '),
         ];
 
@@ -1073,14 +1076,14 @@ export class CompanyOrdersService {
           return;
         }
 
-        order.items.forEach((item) => {
+        order.items.forEach((item, itemIndex) => {
           bodyRows.push(
             `<tr>${[
               ...baseCells,
               item.nameEs,
               item.nameEn,
               String(item.quantity),
-              order.notes || '',
+              itemIndex === 0 ? order.notes || '' : '',
             ]
               .map((cell) => `<td>${escapeHtml(cell)}</td>`)
               .join('')}</tr>`,
