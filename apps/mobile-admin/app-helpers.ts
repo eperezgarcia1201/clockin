@@ -162,6 +162,16 @@ export const getCurrentWeekStartDateKey = () => {
   utcDate.setUTCDate(utcDate.getUTCDate() - distanceToMonday);
   return utcDate.toISOString().slice(0, 10);
 };
+
+export const shiftWeekStartDateKey = (weekStartDate: string, deltaWeeks: number) => {
+  const base = parseDateInputToIso(weekStartDate) || getCurrentWeekStartDateKey();
+  const parsed = new Date(`${base}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return getCurrentWeekStartDateKey();
+  }
+  parsed.setUTCDate(parsed.getUTCDate() + deltaWeeks * 7);
+  return parsed.toISOString().slice(0, 10);
+};
 export const todayDateKey = () => new Date().toISOString().slice(0, 10);
 export const nowDateTimeLocal = () => {
   const now = new Date();
@@ -209,6 +219,36 @@ export const parseMoneyInput = (value: string) => {
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return Number(parsed.toFixed(2));
 };
+
+export const normalizeExpenseAmountInput = (value: string) => {
+  const sanitized = value.replace(/,/g, ".").replace(/[^\d.]/g, "");
+  if (!sanitized) {
+    return "";
+  }
+  const parts = sanitized.split(".");
+  const hasDecimal = sanitized.includes(".");
+  const integerDigits = (parts[0] || "")
+    .replace(/^0+(?=\d)/, "")
+    .slice(0, 4);
+  const decimalDigits = parts.slice(1).join("").slice(0, 2);
+  const integerPart = integerDigits || (hasDecimal ? "0" : "");
+  if (!integerPart && !decimalDigits) {
+    return "";
+  }
+  if (hasDecimal) {
+    return `${integerPart || "0"}.${decimalDigits}`;
+  }
+  return integerPart;
+};
+
+export const applyExpenseAmountCents = (value: string, cents: string) => {
+  const normalized = normalizeExpenseAmountInput(value);
+  const integerPart = (normalized.split(".")[0] || "0").slice(0, 4);
+  return `${integerPart || "0"}.${cents.slice(0, 2).padEnd(2, "0")}`;
+};
+
+export const normalizeExpenseCheckNumberInput = (value: string) =>
+  value.replace(/\D/g, "").slice(0, 4);
 
 export const companyOrderItemKey = (nameEs: string, nameEn: string) =>
   `${nameEs.trim().toLowerCase()}|${nameEn.trim().toLowerCase()}`;

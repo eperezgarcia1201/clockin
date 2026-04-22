@@ -12,6 +12,7 @@ import type {
   CompanyOrderCatalogSupplierDto,
   UpdateCompanyOrderCatalogDto,
 } from './dto/update-company-order-catalog.dto';
+import type { UpdateCompanyOrderInPersonDto } from './dto/update-company-order-in-person.dto';
 import {
   COMPANY_ORDER_CATALOG,
   type CompanyOrderCatalogSupplier,
@@ -46,13 +47,21 @@ type CompanyOrderDbRow = {
   }>;
 };
 
+type StoredInPersonPurchase = {
+  nameEs: string;
+  nameEn: string;
+  purchasedQuantity: number;
+  unitPrice: number | null;
+};
+
 type StoredOrderMetadata = {
-  version: 2;
+  version: 3;
   weekStart: string;
   weekEnd: string;
   submittedDates: string[];
   contributors: string[];
   noteLines: string[];
+  inPersonPurchases: StoredInPersonPurchase[];
 };
 
 type ParsedStoredOrderNotes = {
@@ -61,6 +70,7 @@ type ParsedStoredOrderNotes = {
   submittedDates: string[];
   contributors: string[];
   noteLines: string[];
+  inPersonPurchases: StoredInPersonPurchase[];
   notes: string;
 };
 type SerializedCompanyOrder = {
@@ -86,8 +96,25 @@ type SerializedCompanyOrder = {
     nameEn: string;
     quantity: number;
   }>;
+  inPersonPurchases: StoredInPersonPurchase[];
   createdAt: string;
   updatedAt: string;
+};
+
+type SerializedCompanyOrderInPersonSupplier = {
+  supplierName: string;
+  itemCount: number;
+  totalOrderedQuantity: number;
+  totalPurchasedQuantity: number;
+  totalRemainingQuantity: number;
+  items: Array<{
+    nameEs: string;
+    nameEn: string;
+    orderedQuantity: number;
+    purchasedQuantity: number;
+    remainingQuantity: number;
+    unitPrice: number | null;
+  }>;
 };
 
 @Injectable()
@@ -260,6 +287,7 @@ export class CompanyOrdersService {
       const contributors = new Set<string>();
       const submittedDates = new Set<string>();
       const noteLines = new Set<string>();
+      const inPersonPurchases = new Map<string, StoredInPersonPurchase>();
 
       existingOrders.forEach((existingOrder) => {
         existingOrder.items.forEach((item) => {
@@ -275,6 +303,12 @@ export class CompanyOrdersService {
         parsed.contributors.forEach((name) => contributors.add(name));
         parsed.submittedDates.forEach((dateKey) => submittedDates.add(dateKey));
         parsed.noteLines.forEach((line) => noteLines.add(line));
+        parsed.inPersonPurchases.forEach((purchase) => {
+          inPersonPurchases.set(
+            catalogItemKey(purchase.nameEs, purchase.nameEn),
+            purchase,
+          );
+        });
 
         if (!parsed.submittedDates.length) {
           submittedDates.add(this.toDateKey(existingOrder.orderDate));
@@ -313,12 +347,15 @@ export class CompanyOrdersService {
       }
 
       const metadata: StoredOrderMetadata = {
-        version: 2,
+        version: 3,
         weekStart: week.weekStartKey,
         weekEnd: week.weekEndKey,
         submittedDates: this.normalizeDateKeys(Array.from(submittedDates)),
         contributors: this.normalizeContributors(Array.from(contributors)),
         noteLines: this.normalizeNoteLines(Array.from(noteLines)),
+        inPersonPurchases: this.normalizeStoredInPersonPurchases(
+          Array.from(inPersonPurchases.values()),
+        ),
       };
 
       const storedNotes = this.composeStoredOrderNotes(metadata);
@@ -407,6 +444,219 @@ export class CompanyOrdersService {
     return this.serializeOrder(order);
   }
 
+  async getInPersonShopping(
+    authUser: AuthUser,
+    options: { weekStart?: string; officeId?: string },
+  ) {
+    const access = await this.tenancy.requireCompanyOrdersAccess(authUser);
+    const tenantId = access.tenant.id;
+    const requestedOfficeId = options.officeId?.trim() || undefined;
+    if (
+      access.allowedOfficeId &&
+      requestedOfficeId &&
+      requestedOfficeId !== access.allowedOfficeId
+    ) {
+      throw new BadRequestException(
+        'Kitchen manager can only access orders for their assigned location.',
+      );
+    }
+    const officeId = access.allowedOfficeId || requestedOfficeId;
+    const week = this.getWeekBounds(
+      this.parseWeekStartDate(options.weekStart) || new Date(),
+    );
+
+    const orders = (await this.prisma.companyOrder.findMany({
+      where: {
+        tenantId,
+        officeId,
+        orderDate: {
+          gte: week.weekStart,
+          lte: week.weekEnd,
+        },
+      },
+      orderBy: [
+        { supplierName: 'asc' },
+        { orderDate: 'desc' },
+        { createdAt: 'desc' },
+      ],
+      include: {
+        office: { select: { name: true } },
+        createdByEmployee: { select: { fullName: true, displayName: true } },
+        items: {
+          orderBy: [{ nameEs: 'asc' }, { nameEn: 'asc' }],
+          select: {
+            id: true,
+            nameEs: true,
+            nameEn: true,
+            quantity: true,
+          },
+        },
+      },
+    })) as CompanyOrderDbRow[];
+    const serializedOrders = orders.map((order) => this.serializeOrder(order));
+
+    return {
+      weekStartDate: week.weekStartKey,
+      weekEndDate: week.weekEndKey,
+      suppliers: this.buildInPersonShoppingSuppliers(serializedOrders),
+    };
+  }
+
+  async updateInPersonShopping(
+    authUser: AuthUser,
+    dto: UpdateCompanyOrderInPersonDto,
+  ) {
+    const access = await this.tenancy.requireCompanyOrdersAccess(authUser);
+    const tenantId = access.tenant.id;
+    const requestedOfficeId = dto.officeId?.trim() || undefined;
+    if (
+      access.allowedOfficeId &&
+      requestedOfficeId &&
+      requestedOfficeId !== access.allowedOfficeId
+    ) {
+      throw new BadRequestException(
+        'Kitchen manager can only access orders for their assigned location.',
+      );
+    }
+    const officeId = access.allowedOfficeId || requestedOfficeId;
+    const week = this.getWeekBounds(
+      this.parseWeekStartDate(dto.weekStart) || new Date(),
+    );
+
+    const orders = (await this.prisma.companyOrder.findMany({
+      where: {
+        tenantId,
+        officeId,
+        orderDate: {
+          gte: week.weekStart,
+          lte: week.weekEnd,
+        },
+      },
+      orderBy: [
+        { supplierName: 'asc' },
+        { orderDate: 'desc' },
+        { createdAt: 'desc' },
+      ],
+      include: {
+        office: { select: { name: true } },
+        createdByEmployee: { select: { fullName: true, displayName: true } },
+        items: {
+          orderBy: [{ nameEs: 'asc' }, { nameEn: 'asc' }],
+          select: {
+            id: true,
+            nameEs: true,
+            nameEn: true,
+            quantity: true,
+          },
+        },
+      },
+    })) as CompanyOrderDbRow[];
+
+    const ordersBySupplier = new Map<string, CompanyOrderDbRow>();
+    const validItemsBySupplier = new Map<
+      string,
+      Map<string, { nameEs: string; nameEn: string }>
+    >();
+
+    orders.forEach((order) => {
+      ordersBySupplier.set(order.supplierName.trim().toLowerCase(), order);
+      const itemMap = new Map<string, { nameEs: string; nameEn: string }>();
+      order.items.forEach((item) => {
+        itemMap.set(catalogItemKey(item.nameEs, item.nameEn), {
+          nameEs: item.nameEs,
+          nameEn: item.nameEn,
+        });
+      });
+      validItemsBySupplier.set(order.supplierName.trim().toLowerCase(), itemMap);
+    });
+
+    if (!ordersBySupplier.size) {
+      throw new BadRequestException(
+        'No company orders found for the selected week.',
+      );
+    }
+
+    const purchasesBySupplier = new Map<
+      string,
+      Map<string, StoredInPersonPurchase>
+    >();
+
+    dto.items.forEach((item) => {
+      const supplierKey = item.supplierName.trim().toLowerCase();
+      const order = ordersBySupplier.get(supplierKey);
+      if (!order) {
+        throw new BadRequestException(
+          `Supplier "${item.supplierName}" has no order for this week.`,
+        );
+      }
+      const itemKey = catalogItemKey(item.nameEs, item.nameEn);
+      const validItems = validItemsBySupplier.get(supplierKey);
+      if (!validItems?.has(itemKey)) {
+        throw new BadRequestException(
+          `Item "${item.nameEs}" is not part of supplier ${order.supplierName}'s weekly order.`,
+        );
+      }
+
+      const supplierBucket =
+        purchasesBySupplier.get(supplierKey) ||
+        new Map<string, StoredInPersonPurchase>();
+      purchasesBySupplier.set(supplierKey, supplierBucket);
+      supplierBucket.set(itemKey, {
+        nameEs: item.nameEs.trim(),
+        nameEn: item.nameEn.trim(),
+        purchasedQuantity: item.purchasedQuantity,
+        unitPrice:
+          item.unitPrice === undefined || item.unitPrice === null
+            ? null
+            : item.unitPrice,
+      });
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const order of orders) {
+        const supplierKey = order.supplierName.trim().toLowerCase();
+        const parsed = this.readStoredOrderNotes(order.notes);
+        const nextPurchases = purchasesBySupplier.get(supplierKey);
+        const metadata: StoredOrderMetadata = {
+          version: 3,
+          weekStart:
+            this.normalizeDateKey(parsed.weekStart) || week.weekStartKey,
+          weekEnd: this.normalizeDateKey(parsed.weekEnd) || week.weekEndKey,
+          submittedDates: this.normalizeDateKeys(
+            parsed.submittedDates.length
+              ? parsed.submittedDates
+              : [this.toDateKey(order.orderDate)],
+          ),
+          contributors: this.normalizeContributors(
+            parsed.contributors.length
+              ? parsed.contributors
+              : this.resolveOrderContributor(order)
+                ? [this.resolveOrderContributor(order) as string]
+                : [],
+          ),
+          noteLines: this.normalizeNoteLines(parsed.noteLines),
+          inPersonPurchases: this.normalizeStoredInPersonPurchases(
+            nextPurchases
+              ? Array.from(nextPurchases.values())
+              : parsed.inPersonPurchases,
+          ),
+        };
+
+        await tx.companyOrder.update({
+          where: { id: order.id },
+          data: {
+            notes: this.composeStoredOrderNotes(metadata),
+          },
+        });
+      }
+    });
+
+    return this.getInPersonShopping(authUser, {
+      weekStart: week.weekStartKey,
+      officeId: officeId || undefined,
+    });
+  }
+
   async exportOrderPdf(authUser: AuthUser, orderId: string) {
     const access = await this.tenancy.requireCompanyOrdersAccess(authUser);
     const tenantId = access.tenant.id;
@@ -478,10 +728,11 @@ export class CompanyOrdersService {
     const serializedOrders = weeklyOrders.length
       ? weeklyOrders.map((entry) => this.serializeOrder(entry))
       : [serialized];
-    const pdf = this.buildOrdersPdf(serializedOrders, {
+    const adjustedOrders = this.applyInPersonShoppingToOrders(serializedOrders);
+    const pdf = this.buildOrdersPdf(adjustedOrders, {
       weekStartDate,
       weekEndDate,
-      locationLabel: this.resolvePdfLocationLabel(serializedOrders),
+      locationLabel: this.resolvePdfLocationLabel(adjustedOrders),
       generatedAt: new Date(),
     });
     return {
@@ -539,7 +790,9 @@ export class CompanyOrdersService {
         },
       },
     })) as CompanyOrderDbRow[];
-    const serializedOrders = orders.map((order) => this.serializeOrder(order));
+    const serializedOrders = this.applyInPersonShoppingToOrders(
+      orders.map((order) => this.serializeOrder(order)),
+    );
 
     if (options.format === 'csv') {
       const csv = this.buildWeeklyCsv(serializedOrders, week.weekStartKey);
@@ -922,6 +1175,7 @@ export class CompanyOrdersService {
         nameEn: item.nameEn,
         quantity: Number(item.quantity.toFixed(2)),
       })),
+      inPersonPurchases: parsedNotes.inPersonPurchases,
       createdAt: order.createdAt.toISOString(),
       updatedAt: order.updatedAt.toISOString(),
     };
@@ -1102,6 +1356,7 @@ export class CompanyOrdersService {
           totalQuantity,
           itemCount: items.length,
           items,
+          inPersonPurchases: [],
           createdAt: new Date(aggregate.createdAtMs).toISOString(),
           updatedAt: new Date(aggregate.updatedAtMs).toISOString(),
         };
@@ -1117,6 +1372,126 @@ export class CompanyOrdersService {
         }
         return b.weekStartDate.localeCompare(a.weekStartDate);
       });
+  }
+
+  private buildInPersonShoppingSuppliers(
+    orders: SerializedCompanyOrder[],
+  ): SerializedCompanyOrderInPersonSupplier[] {
+    return orders
+      .map((order) => {
+        const purchasesByKey = new Map<string, StoredInPersonPurchase>();
+        order.inPersonPurchases.forEach((purchase) => {
+          purchasesByKey.set(
+            catalogItemKey(purchase.nameEs, purchase.nameEn),
+            purchase,
+          );
+        });
+        const items = order.items
+          .map((item) => {
+            const purchase = purchasesByKey.get(
+              catalogItemKey(item.nameEs, item.nameEn),
+            );
+            const purchasedQuantity = Number(
+              Math.max(0, purchase?.purchasedQuantity || 0).toFixed(2),
+            );
+            const remainingQuantity = Number(
+              Math.max(0, item.quantity - purchasedQuantity).toFixed(2),
+            );
+            return {
+              nameEs: item.nameEs,
+              nameEn: item.nameEn,
+              orderedQuantity: Number(item.quantity.toFixed(2)),
+              purchasedQuantity,
+              remainingQuantity,
+              unitPrice:
+                purchase?.unitPrice === null || purchase?.unitPrice === undefined
+                  ? null
+                  : Number(purchase.unitPrice.toFixed(2)),
+            };
+          })
+          .sort((a, b) =>
+            catalogItemKey(a.nameEs, a.nameEn).localeCompare(
+              catalogItemKey(b.nameEs, b.nameEn),
+            ),
+          );
+
+        return {
+          supplierName: order.supplierName,
+          itemCount: items.length,
+          totalOrderedQuantity: Number(
+            items
+              .reduce((total, item) => total + item.orderedQuantity, 0)
+              .toFixed(2),
+          ),
+          totalPurchasedQuantity: Number(
+            items
+              .reduce((total, item) => total + item.purchasedQuantity, 0)
+              .toFixed(2),
+          ),
+          totalRemainingQuantity: Number(
+            items
+              .reduce((total, item) => total + item.remainingQuantity, 0)
+              .toFixed(2),
+          ),
+          items,
+        };
+      })
+      .sort((a, b) => a.supplierName.localeCompare(b.supplierName));
+  }
+
+  private applyInPersonShoppingToOrders(orders: SerializedCompanyOrder[]) {
+    return orders
+      .map((order) => {
+        const purchasesByKey = new Map<string, StoredInPersonPurchase>();
+        order.inPersonPurchases.forEach((purchase) => {
+          purchasesByKey.set(
+            catalogItemKey(purchase.nameEs, purchase.nameEn),
+            purchase,
+          );
+        });
+
+        const items = order.items
+          .map((item) => {
+            const purchase = purchasesByKey.get(
+              catalogItemKey(item.nameEs, item.nameEn),
+            );
+            const remainingQuantity = Number(
+              Math.max(0, item.quantity - (purchase?.purchasedQuantity || 0))
+                .toFixed(2),
+            );
+            if (remainingQuantity <= 0) {
+              return null;
+            }
+            return {
+              ...item,
+              quantity: remainingQuantity,
+            };
+          })
+          .filter(
+            (
+              item,
+            ): item is {
+              id: string;
+              nameEs: string;
+              nameEn: string;
+              quantity: number;
+            } => item !== null,
+          );
+
+        if (!items.length) {
+          return null;
+        }
+
+        return {
+          ...order,
+          itemCount: items.length,
+          totalQuantity: Number(
+            items.reduce((total, item) => total + item.quantity, 0).toFixed(2),
+          ),
+          items,
+        };
+      })
+      .filter((order): order is SerializedCompanyOrder => order !== null);
   }
 
   private formatOrderLabel(weekStartDate: string, submittedDate: string) {
@@ -1213,14 +1588,55 @@ export class CompanyOrdersService {
     return all.slice(Math.max(0, all.length - MAX_NOTE_LINES));
   }
 
+  private normalizeStoredInPersonPurchases(values: StoredInPersonPurchase[]) {
+    const byKey = new Map<string, StoredInPersonPurchase>();
+    values.forEach((value) => {
+      const nameEs = value.nameEs?.trim().replace(/\s+/g, ' ').slice(0, 200);
+      const nameEn = value.nameEn?.trim().replace(/\s+/g, ' ').slice(0, 200);
+      if (!nameEs || !nameEn) {
+        return;
+      }
+      const purchasedQuantity = Number(value.purchasedQuantity);
+      const unitPriceRaw =
+        value.unitPrice === null || value.unitPrice === undefined
+          ? null
+          : Number(value.unitPrice);
+      const safePurchasedQuantity =
+        Number.isFinite(purchasedQuantity) && purchasedQuantity > 0
+          ? Number(purchasedQuantity.toFixed(2))
+          : 0;
+      const safeUnitPrice =
+        unitPriceRaw !== null && Number.isFinite(unitPriceRaw) && unitPriceRaw >= 0
+          ? Number(unitPriceRaw.toFixed(2))
+          : null;
+      if (safePurchasedQuantity <= 0 && safeUnitPrice === null) {
+        return;
+      }
+      byKey.set(catalogItemKey(nameEs, nameEn), {
+        nameEs,
+        nameEn,
+        purchasedQuantity: safePurchasedQuantity,
+        unitPrice: safeUnitPrice,
+      });
+    });
+    return Array.from(byKey.values()).sort((a, b) =>
+      catalogItemKey(a.nameEs, a.nameEn).localeCompare(
+        catalogItemKey(b.nameEs, b.nameEn),
+      ),
+    );
+  }
+
   private composeStoredOrderNotes(metadata: StoredOrderMetadata) {
     const payload: StoredOrderMetadata = {
-      version: 2,
+      version: 3,
       weekStart: this.normalizeDateKey(metadata.weekStart),
       weekEnd: this.normalizeDateKey(metadata.weekEnd),
       submittedDates: this.normalizeDateKeys(metadata.submittedDates),
       contributors: this.normalizeContributors(metadata.contributors),
       noteLines: this.normalizeNoteLines(metadata.noteLines),
+      inPersonPurchases: this.normalizeStoredInPersonPurchases(
+        metadata.inPersonPurchases,
+      ),
     };
 
     const serialized = JSON.stringify(payload);
@@ -1238,6 +1654,7 @@ export class CompanyOrdersService {
         submittedDates: [],
         contributors: [],
         noteLines: source ? [source] : [],
+        inPersonPurchases: [],
         notes: source,
       };
     }
@@ -1292,6 +1709,82 @@ export class CompanyOrdersService {
           submittedDates,
           contributors,
           noteLines,
+          inPersonPurchases: [],
+          notes: noteLines.join('\n'),
+        };
+      }
+
+      if (version === 3) {
+        const weekStart =
+          typeof parsed.weekStart === 'string'
+            ? this.normalizeDateKey(parsed.weekStart)
+            : '';
+        const weekEnd =
+          typeof parsed.weekEnd === 'string'
+            ? this.normalizeDateKey(parsed.weekEnd)
+            : '';
+        const submittedDates = Array.isArray(parsed.submittedDates)
+          ? this.normalizeDateKeys(
+              parsed.submittedDates.filter(
+                (value): value is string => typeof value === 'string',
+              ),
+            )
+          : [];
+        const contributors = Array.isArray(parsed.contributors)
+          ? this.normalizeContributors(
+              parsed.contributors.filter(
+                (value): value is string => typeof value === 'string',
+              ),
+            )
+          : [];
+        const noteLines = this.normalizeNoteLines([
+          ...(Array.isArray(parsed.noteLines)
+            ? parsed.noteLines.filter(
+                (value): value is string => typeof value === 'string',
+              )
+            : []),
+          ...(legacyNotes ? [legacyNotes] : []),
+        ]);
+        const inPersonPurchases = this.normalizeStoredInPersonPurchases(
+          Array.isArray(parsed.inPersonPurchases)
+            ? parsed.inPersonPurchases
+                .filter(
+                  (
+                    value,
+                  ): value is {
+                    nameEs?: string;
+                    nameEn?: string;
+                    purchasedQuantity?: number;
+                    unitPrice?: number | null;
+                  } =>
+                    Boolean(value) &&
+                    typeof value === 'object' &&
+                    !Array.isArray(value),
+                )
+                .map((value) => ({
+                  nameEs:
+                    typeof value.nameEs === 'string' ? value.nameEs : '',
+                  nameEn:
+                    typeof value.nameEn === 'string' ? value.nameEn : '',
+                  purchasedQuantity:
+                    typeof value.purchasedQuantity === 'number'
+                      ? value.purchasedQuantity
+                      : 0,
+                  unitPrice:
+                    typeof value.unitPrice === 'number'
+                      ? value.unitPrice
+                      : null,
+                }))
+            : [],
+        );
+
+        return {
+          weekStart,
+          weekEnd,
+          submittedDates,
+          contributors,
+          noteLines,
+          inPersonPurchases,
           notes: noteLines.join('\n'),
         };
       }
@@ -1302,6 +1795,7 @@ export class CompanyOrdersService {
         submittedDates: [],
         contributors: [],
         noteLines: legacyNotes ? [legacyNotes] : [],
+        inPersonPurchases: [],
         notes: legacyNotes,
       };
     } catch {
@@ -1311,6 +1805,7 @@ export class CompanyOrdersService {
         submittedDates: [],
         contributors: [],
         noteLines: source ? [source] : [],
+        inPersonPurchases: [],
         notes: source,
       };
     }

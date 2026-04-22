@@ -7,6 +7,7 @@ export const useAdminViewEffects = (params: {
   screen: string;
   loadCompanyOrderCatalog: () => Promise<void>;
   loadCompanyOrders: () => Promise<void>;
+  loadCompanyOrderInPerson: () => Promise<void>;
   hasLiquorManagerAccess: boolean;
   loadLiquorControlData: () => Promise<void>;
   setLiquorCatalog: (value: any) => void;
@@ -22,6 +23,7 @@ export const useAdminViewEffects = (params: {
   setLiquorInvoiceImageName: (value: string) => void;
   setLiquorStatus: (value: string | null) => void;
   companyOrdersOfficeId: string;
+  companyOrderInPersonWeekStartDate: string;
   liquorMonth: string;
   liquorTargetCostPct: string;
   liquorYear: string;
@@ -50,6 +52,7 @@ export const useAdminViewEffects = (params: {
     if (params.screen === "companyOrders") {
       void params.loadCompanyOrderCatalog();
       void params.loadCompanyOrders();
+      void params.loadCompanyOrderInPerson();
       return;
     }
     if (params.screen === "liquorControl") {
@@ -72,6 +75,7 @@ export const useAdminViewEffects = (params: {
     }
   }, [
     params.companyOrdersOfficeId,
+    params.companyOrderInPersonWeekStartDate,
     params.hasLiquorManagerAccess,
     params.liquorMonth,
     params.liquorTargetCostPct,

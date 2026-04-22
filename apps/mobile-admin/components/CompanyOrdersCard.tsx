@@ -2,11 +2,14 @@ import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { styles } from "../App.styles";
 import { CompanyOrdersCartSection } from "./CompanyOrdersCartSection";
 import { CompanyOrdersCatalogSection } from "./CompanyOrdersCatalogSection";
+import { CompanyOrdersInPersonSection } from "./CompanyOrdersInPersonSection";
 import { CompanyOrdersRecentSection } from "./CompanyOrdersRecentSection";
 import type { CompanyOrdersCardProps } from "./CompanyOrdersCard.types";
 
 export function CompanyOrdersCard({
   isLight,
+  companyOrderMode,
+  onCompanyOrderModeChange,
   companyOrderExportingFormat,
   onExportCompanyOrders,
   inline,
@@ -41,6 +44,26 @@ export function CompanyOrdersCard({
   inlineOrNull,
   companyOrderRows,
   formatDisplayDate,
+  companyOrderInPersonWeekStartDate,
+  companyOrderInPersonWeekEndDate,
+  companyOrderInPersonSuppliers,
+  companyOrderInPersonSupplier,
+  onCompanyOrderInPersonSupplierChange,
+  companyOrderInPersonSearch,
+  onCompanyOrderInPersonSearchChange,
+  companyOrderInPersonSummaryLabel,
+  companyOrderInPersonItems,
+  getCompanyOrderInPersonDraftValue,
+  getCompanyOrderInPersonMetaLine,
+  onCompanyOrderInPersonPurchasedQuantityChange,
+  onCompanyOrderInPersonUnitPriceChange,
+  onSaveCompanyOrderInPerson,
+  onLoadCompanyOrderInPerson,
+  onPreviousCompanyOrderInPersonWeek,
+  onNextCompanyOrderInPersonWeek,
+  companyOrderInPersonLoading,
+  companyOrderInPersonSaving,
+  companyOrderInPersonStatus,
 }: CompanyOrdersCardProps) {
   return (
     <View style={[styles.card, isLight && styles.cardLight]}>
@@ -89,70 +112,139 @@ export function CompanyOrdersCard({
           </Text>
         </TouchableOpacity>
       </View>
-      <CompanyOrdersCatalogSection
-        isLight={isLight}
-        companyOrderCatalog={companyOrderCatalog}
-        companyOrderSupplier={companyOrderSupplier}
-        companyOrderDrafts={companyOrderDrafts}
-        onCompanyOrderSupplierChange={onCompanyOrderSupplierChange}
-        companyOrderSearch={companyOrderSearch}
-        onCompanyOrderSearchChange={onCompanyOrderSearchChange}
-        companyOrderShowOnlyAdded={companyOrderShowOnlyAdded}
-        onCompanyOrderShowOnlyAddedChange={onCompanyOrderShowOnlyAddedChange}
-        selectedCompanyOrderSupplier={selectedCompanyOrderSupplier}
-        visibleCompanyOrderItems={visibleCompanyOrderItems}
-        selectedCompanySupplierDraft={selectedCompanySupplierDraft}
-        onAddCompanyOrderItem={onAddCompanyOrderItem}
-        hasMoreCompanyOrderItems={hasMoreCompanyOrderItems}
-        onShowMoreCompanyOrderItems={onShowMoreCompanyOrderItems}
-      />
-      <CompanyOrdersCartSection
-        isLight={isLight}
-        selectedCompanyOrderCount={selectedCompanyOrderCount}
-        selectedCompanyOrderTotalUnits={selectedCompanyOrderTotalUnits}
-        companyOrderCartItems={companyOrderCartItems}
-        onStepCompanyOrderItem={onStepCompanyOrderItem}
-        onRemoveCompanyOrderItem={onRemoveCompanyOrderItem}
-      />
-      <Text style={[styles.label, isLight && styles.labelLight]}>Notes</Text>
-      <TextInput
-        style={[styles.input, styles.employeeMessageInput, isLight && styles.inputLight]}
-        value={companyOrderNotes}
-        onChangeText={onCompanyOrderNotesChange}
-        placeholder="Order notes"
-        multiline
-      />
-      <TouchableOpacity
-        style={[styles.button, styles.primary, companyOrderSaving && styles.inlineButtonDisabled]}
-        onPress={onSubmitCompanyOrder}
-        disabled={companyOrderSaving}
-      >
-        <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
-          {companyOrderSaving
-            ? inline("Submitting...")
-            : language === "es"
-              ? `Enviar Orden de Empresa (${selectedCompanyOrderSupplierCount} proveedores / ${selectedCompanyOrderCount} artículos)`
-              : `Submit Company Order (${selectedCompanyOrderSupplierCount} suppliers / ${selectedCompanyOrderCount} items)`}
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
-        onPress={onRefreshCompanyOrders}
-      >
-        <Text style={[styles.secondaryButtonText, isLight && styles.secondaryButtonTextLight]}>
-          {companyOrderLoading ? inline("Refreshing...") : inline("Refresh Orders")}
-        </Text>
-      </TouchableOpacity>
-      {companyOrderStatus && (
-        <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
-          {inlineOrNull(companyOrderStatus)}
-        </Text>
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            companyOrderMode === "orders" && styles.toggleActive,
+            companyOrderMode === "orders" && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() => onCompanyOrderModeChange("orders")}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              companyOrderMode === "orders" && isLight && styles.toggleTextLightActive,
+            ]}
+          >
+            Company Orders
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.togglePill,
+            isLight && styles.togglePillLight,
+            companyOrderMode === "inPerson" && styles.toggleActive,
+            companyOrderMode === "inPerson" && isLight && styles.toggleActiveLight,
+          ]}
+          onPress={() => onCompanyOrderModeChange("inPerson")}
+        >
+          <Text
+            style={[
+              styles.toggleText,
+              isLight && styles.toggleTextLight,
+              companyOrderMode === "inPerson" && isLight && styles.toggleTextLightActive,
+            ]}
+          >
+            In Person Shopping
+          </Text>
+        </TouchableOpacity>
+      </View>
+      {companyOrderMode === "orders" ? (
+        <>
+          <CompanyOrdersCatalogSection
+            isLight={isLight}
+            companyOrderCatalog={companyOrderCatalog}
+            companyOrderSupplier={companyOrderSupplier}
+            companyOrderDrafts={companyOrderDrafts}
+            onCompanyOrderSupplierChange={onCompanyOrderSupplierChange}
+            companyOrderSearch={companyOrderSearch}
+            onCompanyOrderSearchChange={onCompanyOrderSearchChange}
+            companyOrderShowOnlyAdded={companyOrderShowOnlyAdded}
+            onCompanyOrderShowOnlyAddedChange={onCompanyOrderShowOnlyAddedChange}
+            selectedCompanyOrderSupplier={selectedCompanyOrderSupplier}
+            visibleCompanyOrderItems={visibleCompanyOrderItems}
+            selectedCompanySupplierDraft={selectedCompanySupplierDraft}
+            onAddCompanyOrderItem={onAddCompanyOrderItem}
+            hasMoreCompanyOrderItems={hasMoreCompanyOrderItems}
+            onShowMoreCompanyOrderItems={onShowMoreCompanyOrderItems}
+          />
+          <CompanyOrdersCartSection
+            isLight={isLight}
+            selectedCompanyOrderCount={selectedCompanyOrderCount}
+            selectedCompanyOrderTotalUnits={selectedCompanyOrderTotalUnits}
+            companyOrderCartItems={companyOrderCartItems}
+            onStepCompanyOrderItem={onStepCompanyOrderItem}
+            onRemoveCompanyOrderItem={onRemoveCompanyOrderItem}
+          />
+          <Text style={[styles.label, isLight && styles.labelLight]}>Notes</Text>
+          <TextInput
+            style={[styles.input, styles.employeeMessageInput, isLight && styles.inputLight]}
+            value={companyOrderNotes}
+            onChangeText={onCompanyOrderNotesChange}
+            placeholder="Order notes"
+            multiline
+          />
+          <TouchableOpacity
+            style={[styles.button, styles.primary, companyOrderSaving && styles.inlineButtonDisabled]}
+            onPress={onSubmitCompanyOrder}
+            disabled={companyOrderSaving}
+          >
+            <Text style={[styles.primaryText, isLight && styles.primaryTextLight]}>
+              {companyOrderSaving
+                ? inline("Submitting...")
+                : language === "es"
+                  ? `Enviar Orden de Empresa (${selectedCompanyOrderSupplierCount} proveedores / ${selectedCompanyOrderCount} artículos)`
+                  : `Submit Company Order (${selectedCompanyOrderSupplierCount} suppliers / ${selectedCompanyOrderCount} items)`}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.secondaryButton, isLight && styles.secondaryButtonLight]}
+            onPress={onRefreshCompanyOrders}
+          >
+            <Text style={[styles.secondaryButtonText, isLight && styles.secondaryButtonTextLight]}>
+              {companyOrderLoading ? inline("Refreshing...") : inline("Refresh Orders")}
+            </Text>
+          </TouchableOpacity>
+          {companyOrderStatus && (
+            <Text style={[styles.statusText, isLight && styles.statusTextLight]}>
+              {inlineOrNull(companyOrderStatus)}
+            </Text>
+          )}
+          <CompanyOrdersRecentSection
+            isLight={isLight}
+            companyOrderRows={companyOrderRows}
+            formatDisplayDate={formatDisplayDate}
+          />
+        </>
+      ) : (
+        <CompanyOrdersInPersonSection
+          isLight={isLight}
+          weekStartDate={companyOrderInPersonWeekStartDate}
+          weekEndDate={companyOrderInPersonWeekEndDate}
+          suppliers={companyOrderInPersonSuppliers}
+          supplierName={companyOrderInPersonSupplier}
+          onSupplierChange={onCompanyOrderInPersonSupplierChange}
+          search={companyOrderInPersonSearch}
+          onSearchChange={onCompanyOrderInPersonSearchChange}
+          summaryLabel={companyOrderInPersonSummaryLabel}
+          items={companyOrderInPersonItems}
+          getDraftValue={getCompanyOrderInPersonDraftValue}
+          getMetaLine={getCompanyOrderInPersonMetaLine}
+          onPurchasedQuantityChange={onCompanyOrderInPersonPurchasedQuantityChange}
+          onUnitPriceChange={onCompanyOrderInPersonUnitPriceChange}
+          onSave={onSaveCompanyOrderInPerson}
+          onRefresh={onLoadCompanyOrderInPerson}
+          onPreviousWeek={onPreviousCompanyOrderInPersonWeek}
+          onNextWeek={onNextCompanyOrderInPersonWeek}
+          loading={companyOrderInPersonLoading}
+          saving={companyOrderInPersonSaving}
+          status={companyOrderInPersonStatus}
+          formatDisplayDate={formatDisplayDate}
+        />
       )}
-      <CompanyOrdersRecentSection
-        isLight={isLight}
-        companyOrderRows={companyOrderRows}
-        formatDisplayDate={formatDisplayDate}
-      />
     </View>
   );
 }

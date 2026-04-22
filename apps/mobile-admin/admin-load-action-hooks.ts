@@ -13,9 +13,11 @@ import {
   loadCompanyOrderCatalogData,
   loadCompanyOrdersData,
 } from "./company-order-runtime";
+import { loadCompanyOrderInPersonData } from "./company-order-in-person-runtime";
 import { loadTodayScheduleWithFallback } from "./today-schedule-runtime";
 import type {
   CompanyOrderCatalogSupplier,
+  CompanyOrderInPersonSupplier,
   CompanyOrderRow,
   EditUserForm,
   Employee,
@@ -66,6 +68,15 @@ export const useAdminLoadActions = (params: {
   setCompanyOrderSupplier: (value: string) => void;
   setCompanyOrderRows: (value: CompanyOrderRow[]) => void;
   setLastSubmittedCompanyOrderWeekStart: (value: string) => void;
+  setCompanyOrderInPersonLoading: (value: boolean) => void;
+  setCompanyOrderInPersonStatus: (value: string | null) => void;
+  setCompanyOrderInPersonSuppliers: (value: CompanyOrderInPersonSupplier[]) => void;
+  setCompanyOrderInPersonSupplier: (value: string) => void;
+  setCompanyOrderInPersonDrafts: (value: any) => void;
+  companyOrderInPersonWeekStartDate: string;
+  companyOrderInPersonSupplier: string;
+  setCompanyOrderInPersonWeekStartDate: (value: string) => void;
+  setCompanyOrderInPersonWeekEndDate: (value: string) => void;
 }) => {
   const loadSummary = useCallback(async () => {
     const result = await loadSummaryData({
@@ -237,6 +248,36 @@ export const useAdminLoadActions = (params: {
     }
   }, [params.companyOrdersOfficeId, params.fetchJson]);
 
+  const loadCompanyOrderInPerson = useCallback(async () => {
+    params.setCompanyOrderInPersonLoading(true);
+    params.setCompanyOrderInPersonStatus(null);
+    try {
+      const result = await loadCompanyOrderInPersonData({
+        fetchJson: params.fetchJson,
+        officeId: params.companyOrdersOfficeId,
+        weekStartDate: params.companyOrderInPersonWeekStartDate,
+        previousSupplierName: params.companyOrderInPersonSupplier,
+      });
+      if (result.ok === false) {
+        params.setCompanyOrderInPersonSuppliers([]);
+        params.setCompanyOrderInPersonStatus(result.error);
+        return;
+      }
+      params.setCompanyOrderInPersonWeekStartDate(result.weekStartDate);
+      params.setCompanyOrderInPersonWeekEndDate(result.weekEndDate);
+      params.setCompanyOrderInPersonSuppliers(result.suppliers);
+      params.setCompanyOrderInPersonSupplier(result.selectedSupplierName);
+      params.setCompanyOrderInPersonDrafts(result.drafts);
+    } finally {
+      params.setCompanyOrderInPersonLoading(false);
+    }
+  }, [
+    params.companyOrderInPersonSupplier,
+    params.companyOrderInPersonWeekStartDate,
+    params.companyOrdersOfficeId,
+    params.fetchJson,
+  ]);
+
   return {
     loadSummary,
     loadEmployees,
@@ -247,5 +288,6 @@ export const useAdminLoadActions = (params: {
     loadTodaySchedule,
     loadCompanyOrderCatalog,
     loadCompanyOrders,
+    loadCompanyOrderInPerson,
   };
 };

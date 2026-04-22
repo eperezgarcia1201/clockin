@@ -2,6 +2,7 @@ import type { Lang } from "../copy";
 import type {
   CompanyOrderCatalogItem,
   CompanyOrderCatalogSupplier,
+  CompanyOrderInPersonSupplier,
   CompanyOrderRow,
 } from "../types";
 
@@ -15,6 +16,8 @@ export type CompanyOrderCartItem = {
 
 export type CompanyOrdersCardProps = {
   isLight: boolean;
+  companyOrderMode: "orders" | "inPerson";
+  onCompanyOrderModeChange: (value: "orders" | "inPerson") => void;
   companyOrderExportingFormat: "pdf" | "csv" | "excel" | null;
   onExportCompanyOrders: (format: "pdf" | "csv" | "excel") => void;
   inline: (value: string) => string;
@@ -53,4 +56,56 @@ export type CompanyOrdersCardProps = {
   inlineOrNull: (value: string | null | undefined) => string | null;
   companyOrderRows: CompanyOrderRow[];
   formatDisplayDate: (value: string) => string;
+  companyOrderInPersonWeekStartDate: string;
+  companyOrderInPersonWeekEndDate: string;
+  companyOrderInPersonSuppliers: CompanyOrderInPersonSupplier[];
+  companyOrderInPersonSupplier: string;
+  onCompanyOrderInPersonSupplierChange: (value: string) => void;
+  companyOrderInPersonSearch: string;
+  onCompanyOrderInPersonSearchChange: (value: string) => void;
+  companyOrderInPersonSummaryLabel: string;
+  companyOrderInPersonItems: Array<{
+    supplierName: string;
+    nameEs: string;
+    nameEn: string;
+    orderedQuantity: number;
+    purchasedQuantity: number;
+    remainingQuantity: number;
+    unitPrice: number | null;
+  }>;
+  getCompanyOrderInPersonDraftValue: (
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+  ) => { purchasedQuantity: string; unitPrice: string };
+  getCompanyOrderInPersonMetaLine: (
+    supplierName: string,
+    item: {
+      nameEs: string;
+      nameEn: string;
+      orderedQuantity: number;
+      purchasedQuantity: number;
+      remainingQuantity: number;
+      unitPrice: number | null;
+    },
+  ) => string;
+  onCompanyOrderInPersonPurchasedQuantityChange: (
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+    value: string,
+  ) => void;
+  onCompanyOrderInPersonUnitPriceChange: (
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+    value: string,
+  ) => void;
+  onSaveCompanyOrderInPerson: () => void;
+  onLoadCompanyOrderInPerson: () => void;
+  onPreviousCompanyOrderInPersonWeek: () => void;
+  onNextCompanyOrderInPersonWeek: () => void;
+  companyOrderInPersonLoading: boolean;
+  companyOrderInPersonSaving: boolean;
+  companyOrderInPersonStatus: string | null;
 };

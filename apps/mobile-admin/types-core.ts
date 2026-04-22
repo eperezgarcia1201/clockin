@@ -32,6 +32,7 @@ export type Employee = {
   isReports?: boolean;
   isServer?: boolean;
   isKitchenManager?: boolean;
+  allowOpenSchedule?: boolean;
 };
 
 export type Office = {
@@ -167,6 +168,24 @@ export type CompanyOrderRow = {
   items: CompanyOrderItem[];
 };
 
+export type CompanyOrderInPersonItem = {
+  nameEs: string;
+  nameEn: string;
+  orderedQuantity: number;
+  purchasedQuantity: number;
+  remainingQuantity: number;
+  unitPrice: number | null;
+};
+
+export type CompanyOrderInPersonSupplier = {
+  supplierName: string;
+  itemCount: number;
+  totalOrderedQuantity: number;
+  totalPurchasedQuantity: number;
+  totalRemainingQuantity: number;
+  items: CompanyOrderInPersonItem[];
+};
+
 export type EditUserForm = {
   fullName: string;
   displayName: string;
@@ -182,5 +201,6 @@ export type EditUserForm = {
   isReports: boolean;
   isServer: boolean;
   isKitchenManager: boolean;
+  allowOpenSchedule: boolean;
   disabled: boolean;
 };
