@@ -57,6 +57,7 @@ export function CompanyOrdersCard({
   getCompanyOrderInPersonMetaLine,
   onCompanyOrderInPersonPurchasedQuantityChange,
   onCompanyOrderInPersonUnitPriceChange,
+  onCompanyOrderInPersonCompanyUnitPriceChange,
   onSaveCompanyOrderInPerson,
   onLoadCompanyOrderInPerson,
   onPreviousCompanyOrderInPersonWeek,
@@ -242,6 +243,9 @@ export function CompanyOrdersCard({
           getMetaLine={getCompanyOrderInPersonMetaLine}
           onPurchasedQuantityChange={onCompanyOrderInPersonPurchasedQuantityChange}
           onUnitPriceChange={onCompanyOrderInPersonUnitPriceChange}
+          onCompanyUnitPriceChange={
+            onCompanyOrderInPersonCompanyUnitPriceChange
+          }
           onSave={onSaveCompanyOrderInPerson}
           onRefresh={onLoadCompanyOrderInPerson}
           onPreviousWeek={onPreviousCompanyOrderInPersonWeek}

@@ -64,6 +64,24 @@ export const useCompanyOrderInPersonActions = (params: {
     [],
   );
 
+  const setCompanyUnitPrice = useCallback(
+    (
+      supplierName: string,
+      nameEs: string,
+      nameEn: string,
+      value: string,
+    ) => {
+      const itemKey = companyOrderItemKey(nameEs, nameEn);
+      const normalized = normalizeExpenseAmountInput(value);
+      params.setDrafts((previous) =>
+        updateCompanyOrderInPersonDraftValue(previous, supplierName, itemKey, {
+          companyUnitPrice: normalized,
+        }),
+      );
+    },
+    [],
+  );
+
   const saveInPersonShopping = useCallback(async () => {
     params.setSaving(true);
     params.setStatus(null);
@@ -106,6 +124,7 @@ export const useCompanyOrderInPersonActions = (params: {
   return {
     setPurchasedQuantity,
     setUnitPrice,
+    setCompanyUnitPrice,
     saveInPersonShopping,
     goToPreviousWeek: () => shiftWeek(-1),
     goToNextWeek: () => shiftWeek(1),

@@ -7,6 +7,24 @@ import {
 import type { CompanyOrderInPersonDrafts } from "./company-order-in-person-runtime";
 import type { CompanyOrderInPersonSupplier } from "./types";
 
+const parseDraftNumber = (value: string) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+  return Number(parsed.toFixed(2));
+};
+
+const formatSavingsLabel = (value: number | null) => {
+  if (value === null || Math.abs(value) < 0.005) {
+    return "Difference $0.00";
+  }
+  if (value > 0) {
+    return `Saved ${formatMoney(value)}`;
+  }
+  return `Over ${formatMoney(Math.abs(value))}`;
+};
+
 export const useCompanyOrderInPersonViewState = (params: {
   suppliers: CompanyOrderInPersonSupplier[];
   supplierName: string;
@@ -44,7 +62,9 @@ export const useCompanyOrderInPersonViewState = (params: {
     }
 
     return baseItems.filter((item) => {
-      const supplierMatch = item.supplierName.toLowerCase().includes(normalizedSearch);
+      const supplierMatch = item.supplierName
+        .toLowerCase()
+        .includes(normalizedSearch);
       const esMatch = item.nameEs.toLowerCase().includes(normalizedSearch);
       const enMatch = item.nameEn.toLowerCase().includes(normalizedSearch);
       return supplierMatch || esMatch || enMatch;
@@ -53,17 +73,71 @@ export const useCompanyOrderInPersonViewState = (params: {
 
   const summaryLabel = useMemo(() => {
     const totals = params.suppliers.reduce(
-      (acc, supplier) => ({
-        ordered: acc.ordered + supplier.totalOrderedQuantity,
-        purchased: acc.purchased + supplier.totalPurchasedQuantity,
-        remaining: acc.remaining + supplier.totalRemainingQuantity,
-      }),
-      { ordered: 0, purchased: 0, remaining: 0 },
+      (acc, supplier) => {
+        supplier.items.forEach((item) => {
+          const draft =
+            params.drafts[supplier.supplierName]?.[
+              companyOrderItemKey(item.nameEs, item.nameEn)
+            ] || {
+              purchasedQuantity: "",
+              unitPrice: "",
+              companyUnitPrice: "",
+            };
+          const purchasedQuantity =
+            draft.purchasedQuantity.trim().length > 0
+              ? parseDraftNumber(draft.purchasedQuantity) ?? 0
+              : item.purchasedQuantity;
+          const remainingQuantity = Number(
+            Math.max(0, item.orderedQuantity - purchasedQuantity).toFixed(2),
+          );
+          const unitPrice =
+            draft.unitPrice.trim().length > 0
+              ? parseDraftNumber(draft.unitPrice)
+              : item.unitPrice;
+          const companyUnitPrice =
+            draft.companyUnitPrice.trim().length > 0
+              ? parseDraftNumber(draft.companyUnitPrice)
+              : item.companyUnitPrice;
+          const inPersonSpend =
+            unitPrice !== null
+              ? Number((purchasedQuantity * unitPrice).toFixed(2))
+              : 0;
+          const companySpend =
+            companyUnitPrice !== null
+              ? Number((purchasedQuantity * companyUnitPrice).toFixed(2))
+              : 0;
+          const savings =
+            unitPrice !== null && companyUnitPrice !== null
+              ? Number((companySpend - inPersonSpend).toFixed(2))
+              : 0;
+
+          acc.ordered += item.orderedQuantity;
+          acc.purchased += purchasedQuantity;
+          acc.remaining += remainingQuantity;
+          acc.inPersonSpend += inPersonSpend;
+          acc.companySpend += companySpend;
+          acc.savings += savings;
+        });
+        return acc;
+      },
+      {
+        ordered: 0,
+        purchased: 0,
+        remaining: 0,
+        inPersonSpend: 0,
+        companySpend: 0,
+        savings: 0,
+      },
     );
+
     return `Ordered ${Number(totals.ordered.toFixed(2))} • Bought ${Number(
       totals.purchased.toFixed(2),
-    )} • Remaining ${Number(totals.remaining.toFixed(2))}`;
-  }, [params.suppliers]);
+    )} • Remaining ${Number(totals.remaining.toFixed(2))} • Spent ${formatMoney(
+      Number(totals.inPersonSpend.toFixed(2)),
+    )} • Company ${formatMoney(
+      Number(totals.companySpend.toFixed(2)),
+    )} • ${formatSavingsLabel(Number(totals.savings.toFixed(2)))}`;
+  }, [params.drafts, params.suppliers]);
 
   const getDraftValue = (
     supplierName: string,
@@ -77,6 +151,7 @@ export const useCompanyOrderInPersonViewState = (params: {
       ] || {
         purchasedQuantity: "",
         unitPrice: "",
+        companyUnitPrice: "",
       }
     );
   };
@@ -90,6 +165,7 @@ export const useCompanyOrderInPersonViewState = (params: {
       purchasedQuantity: number;
       remainingQuantity: number;
       unitPrice: number | null;
+      companyUnitPrice: number | null;
     },
   ) => {
     const normalizedNames = normalizeCompanyOrderItemNames(
@@ -101,12 +177,55 @@ export const useCompanyOrderInPersonViewState = (params: {
       normalizedNames.nameEs,
       normalizedNames.nameEn,
     );
-    const priceLabel = draft.unitPrice
-      ? formatMoney(Number(draft.unitPrice || "0"))
-      : item.unitPrice !== null
-        ? formatMoney(item.unitPrice)
-        : "No price";
-    return `Ordered ${item.orderedQuantity} • Remaining ${item.remainingQuantity} • ${priceLabel}`;
+    const purchasedQuantity =
+      draft.purchasedQuantity.trim().length > 0
+        ? parseDraftNumber(draft.purchasedQuantity) ?? 0
+        : item.purchasedQuantity;
+    const remainingQuantity = Number(
+      Math.max(0, item.orderedQuantity - purchasedQuantity).toFixed(2),
+    );
+    const unitPrice =
+      draft.unitPrice.trim().length > 0
+        ? parseDraftNumber(draft.unitPrice)
+        : item.unitPrice;
+    const companyUnitPrice =
+      draft.companyUnitPrice.trim().length > 0
+        ? parseDraftNumber(draft.companyUnitPrice)
+        : item.companyUnitPrice;
+
+    const parts = [
+      `Ordered ${item.orderedQuantity}`,
+      `Remaining ${remainingQuantity}`,
+    ];
+
+    if (unitPrice !== null) {
+      const inPersonSpend = Number((purchasedQuantity * unitPrice).toFixed(2));
+      parts.push(
+        purchasedQuantity > 0
+          ? `Spent ${formatMoney(inPersonSpend)}`
+          : `Paid ${formatMoney(unitPrice)}`,
+      );
+    }
+
+    if (companyUnitPrice !== null) {
+      const companySpend = Number(
+        (purchasedQuantity * companyUnitPrice).toFixed(2),
+      );
+      parts.push(
+        purchasedQuantity > 0
+          ? `Company ${formatMoney(companySpend)}`
+          : `Company ${formatMoney(companyUnitPrice)}`,
+      );
+    }
+
+    if (unitPrice !== null && companyUnitPrice !== null) {
+      const savings = Number(
+        ((companyUnitPrice - unitPrice) * purchasedQuantity).toFixed(2),
+      );
+      parts.push(formatSavingsLabel(savings));
+    }
+
+    return parts.join(" • ");
   };
 
   return {

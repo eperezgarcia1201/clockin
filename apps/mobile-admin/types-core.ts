@@ -175,6 +175,7 @@ export type CompanyOrderInPersonItem = {
   purchasedQuantity: number;
   remainingQuantity: number;
   unitPrice: number | null;
+  companyUnitPrice: number | null;
 };
 
 export type CompanyOrderInPersonSupplier = {

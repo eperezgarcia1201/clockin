@@ -10,6 +10,7 @@ type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
 export type CompanyOrderInPersonDraftValue = {
   purchasedQuantity: string;
   unitPrice: string;
+  companyUnitPrice: string;
 };
 
 export type CompanyOrderInPersonDrafts = Record<
@@ -49,6 +50,7 @@ const normalizeInPersonItem = (
       purchasedQuantity: number;
       remainingQuantity: number;
       unitPrice: number | null;
+      companyUnitPrice: number | null;
     }
   | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -65,6 +67,12 @@ const normalizeInPersonItem = (
       : raw.price !== undefined
         ? raw.price
         : null;
+  const rawCompanyUnitPrice =
+    raw.companyUnitPrice !== undefined
+      ? raw.companyUnitPrice
+      : raw.companyPrice !== undefined
+        ? raw.companyPrice
+        : null;
   return {
     nameEs: names.nameEs,
     nameEn: names.nameEn,
@@ -73,6 +81,10 @@ const normalizeInPersonItem = (
     remainingQuantity: normalizeQuantity(raw.remainingQuantity),
     unitPrice:
       rawUnitPrice === null ? null : normalizeUnitPrice(rawUnitPrice),
+    companyUnitPrice:
+      rawCompanyUnitPrice === null
+        ? null
+        : normalizeUnitPrice(rawCompanyUnitPrice),
   };
 };
 
@@ -146,6 +158,10 @@ export const buildCompanyOrderInPersonDrafts = (
         unitPrice:
           item.unitPrice !== null && item.unitPrice !== undefined
             ? item.unitPrice.toFixed(2)
+            : "",
+        companyUnitPrice:
+          item.companyUnitPrice !== null && item.companyUnitPrice !== undefined
+            ? item.companyUnitPrice.toFixed(2)
             : "",
       };
     });
@@ -233,6 +249,7 @@ export const saveCompanyOrderInPersonData = async (params: {
         ] || {
           purchasedQuantity: "",
           unitPrice: "",
+          companyUnitPrice: "",
         };
       const purchasedQuantity = Number(draft.purchasedQuantity || "0");
       const safePurchasedQuantity = Number.isFinite(purchasedQuantity)
@@ -244,8 +261,10 @@ export const saveCompanyOrderInPersonData = async (params: {
         nameEn: item.nameEn,
         purchasedQuantity: safePurchasedQuantity,
         unitPrice: parseMoneyInput(draft.unitPrice),
+        companyUnitPrice: parseMoneyInput(draft.companyUnitPrice),
         currentPurchasedQuantity: item.purchasedQuantity,
         currentUnitPrice: item.unitPrice,
+        currentCompanyUnitPrice: item.companyUnitPrice,
       };
     }),
   );
@@ -259,9 +278,19 @@ export const saveCompanyOrderInPersonData = async (params: {
       item.unitPrice !== null && item.unitPrice !== undefined
         ? Number(item.unitPrice.toFixed(2))
         : null;
+    const currentCompanyUnitPrice =
+      item.currentCompanyUnitPrice !== null &&
+      item.currentCompanyUnitPrice !== undefined
+        ? Number(item.currentCompanyUnitPrice.toFixed(2))
+        : null;
+    const nextCompanyUnitPrice =
+      item.companyUnitPrice !== null && item.companyUnitPrice !== undefined
+        ? Number(item.companyUnitPrice.toFixed(2))
+        : null;
     return (
       item.purchasedQuantity !== item.currentPurchasedQuantity ||
-      nextUnitPrice !== currentUnitPrice
+      nextUnitPrice !== currentUnitPrice ||
+      nextCompanyUnitPrice !== currentCompanyUnitPrice
     );
   });
 
@@ -325,6 +354,7 @@ export const saveCompanyOrderInPersonData = async (params: {
           nameEn: item.nameEn,
           purchasedQuantity: item.purchasedQuantity,
           unitPrice: item.unitPrice,
+          companyUnitPrice: item.companyUnitPrice,
         })),
       }),
     })) as {
@@ -390,6 +420,8 @@ export const updateCompanyOrderInPersonDraftValue = (
       purchasedQuantity:
         previous[supplierName]?.[itemKey]?.purchasedQuantity || "",
       unitPrice: previous[supplierName]?.[itemKey]?.unitPrice || "",
+      companyUnitPrice:
+        previous[supplierName]?.[itemKey]?.companyUnitPrice || "",
       ...patch,
     },
   },

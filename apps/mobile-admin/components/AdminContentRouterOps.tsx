@@ -217,6 +217,9 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
         onCompanyOrderInPersonUnitPriceChange={
           props.handleCompanyOrderInPersonUnitPriceChange
         }
+        onCompanyOrderInPersonCompanyUnitPriceChange={
+          props.handleCompanyOrderInPersonCompanyUnitPriceChange
+        }
         onSaveCompanyOrderInPerson={() => {
           void props.saveCompanyOrderInPerson();
         }}

@@ -72,12 +72,17 @@ export type CompanyOrdersCardProps = {
     purchasedQuantity: number;
     remainingQuantity: number;
     unitPrice: number | null;
+    companyUnitPrice: number | null;
   }>;
   getCompanyOrderInPersonDraftValue: (
     supplierName: string,
     nameEs: string,
     nameEn: string,
-  ) => { purchasedQuantity: string; unitPrice: string };
+  ) => {
+    purchasedQuantity: string;
+    unitPrice: string;
+    companyUnitPrice: string;
+  };
   getCompanyOrderInPersonMetaLine: (
     supplierName: string,
     item: {
@@ -87,6 +92,7 @@ export type CompanyOrdersCardProps = {
       purchasedQuantity: number;
       remainingQuantity: number;
       unitPrice: number | null;
+      companyUnitPrice: number | null;
     },
   ) => string;
   onCompanyOrderInPersonPurchasedQuantityChange: (
@@ -96,6 +102,12 @@ export type CompanyOrdersCardProps = {
     value: string,
   ) => void;
   onCompanyOrderInPersonUnitPriceChange: (
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+    value: string,
+  ) => void;
+  onCompanyOrderInPersonCompanyUnitPriceChange: (
     supplierName: string,
     nameEs: string,
     nameEn: string,

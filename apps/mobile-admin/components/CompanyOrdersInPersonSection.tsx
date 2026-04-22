@@ -32,12 +32,17 @@ type CompanyOrdersInPersonSectionProps = {
     purchasedQuantity: number;
     remainingQuantity: number;
     unitPrice: number | null;
+    companyUnitPrice: number | null;
   }>;
   getDraftValue: (
     supplierName: string,
     nameEs: string,
     nameEn: string,
-  ) => { purchasedQuantity: string; unitPrice: string };
+  ) => {
+    purchasedQuantity: string;
+    unitPrice: string;
+    companyUnitPrice: string;
+  };
   getMetaLine: (
     supplierName: string,
     item: {
@@ -47,6 +52,7 @@ type CompanyOrdersInPersonSectionProps = {
       purchasedQuantity: number;
       remainingQuantity: number;
       unitPrice: number | null;
+      companyUnitPrice: number | null;
     },
   ) => string;
   onPurchasedQuantityChange: (
@@ -56,6 +62,12 @@ type CompanyOrdersInPersonSectionProps = {
     value: string,
   ) => void;
   onUnitPriceChange: (
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+    value: string,
+  ) => void;
+  onCompanyUnitPriceChange: (
     supplierName: string,
     nameEs: string,
     nameEn: string,
@@ -86,6 +98,7 @@ export function CompanyOrdersInPersonSection({
   getMetaLine,
   onPurchasedQuantityChange,
   onUnitPriceChange,
+  onCompanyUnitPriceChange,
   onSave,
   onRefresh,
   onPreviousWeek,
@@ -286,6 +299,22 @@ export function CompanyOrdersInPersonSection({
                     keyboardType="decimal-pad"
                     inputAccessoryViewID={inputAccessoryViewID}
                     placeholder="Price"
+                    placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
+                  />
+                  <TextInput
+                    style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
+                    value={draft.companyUnitPrice}
+                    onChangeText={(value) =>
+                      onCompanyUnitPriceChange(
+                        normalizedSupplierName,
+                        normalizedNames.nameEs,
+                        normalizedNames.nameEn,
+                        value,
+                      )
+                    }
+                    keyboardType="decimal-pad"
+                    inputAccessoryViewID={inputAccessoryViewID}
+                    placeholder="Company"
                     placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                   />
                 </View>
