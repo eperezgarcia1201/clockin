@@ -1,8 +1,11 @@
 import { requestJson } from "./client";
 
+export type CompanyOrderComparisonUnit = "each" | "lb";
+
 export type CompanyOrderCatalogItem = {
   nameEs: string;
   nameEn: string;
+  comparisonUnit?: CompanyOrderComparisonUnit;
 };
 
 export type CompanyOrderCatalogSupplier = {

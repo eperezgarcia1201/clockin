@@ -5,6 +5,7 @@ import { useUiLanguage } from "../../../../lib/ui-language";
 import {
   getCompanyOrderCatalog,
   updateCompanyOrderCatalog,
+  type CompanyOrderComparisonUnit,
   type CompanyOrderCatalogItem,
   type CompanyOrderCatalogSupplier,
 } from "../../../../lib/api/company-orders-admin";
@@ -49,7 +50,7 @@ const sanitizeCatalogForSave = (
     .map((supplier) => {
       const supplierName = supplier.supplierName.trim();
       const items = supplier.items
-        .map((item) => {
+        .map<CompanyOrderCatalogItem | null>((item) => {
           const nameEs = item.nameEs.trim();
           const nameEn = item.nameEn.trim();
           if (!nameEs && !nameEn) {
@@ -58,9 +59,10 @@ const sanitizeCatalogForSave = (
           return {
             nameEs: nameEs || nameEn,
             nameEn: nameEn || nameEs,
+            comparisonUnit: item.comparisonUnit === "lb" ? "lb" : "each",
           };
         })
-        .filter((item): item is CompanyOrderCatalogItem => Boolean(item));
+        .filter((item): item is CompanyOrderCatalogItem => item !== null);
 
       return {
         supplierName,
@@ -86,7 +88,15 @@ export default function AdminCompanyOrdersCatalogPage() {
   );
   const supplierNameInputRef = useRef<HTMLInputElement | null>(null);
   const addItemNameEsRef = useRef<HTMLInputElement | null>(null);
-  const [newItemDraft, setNewItemDraft] = useState({ nameEs: "", nameEn: "" });
+  const [newItemDraft, setNewItemDraft] = useState<{
+    nameEs: string;
+    nameEn: string;
+    comparisonUnit: CompanyOrderComparisonUnit;
+  }>({
+    nameEs: "",
+    nameEn: "",
+    comparisonUnit: "each",
+  });
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [transferTargetSupplierIndex, setTransferTargetSupplierIndex] =
     useState("");
@@ -94,6 +104,14 @@ export default function AdminCompanyOrdersCatalogPage() {
   const selectedSupplier = useMemo(
     () => catalog[selectedSupplierIndex] ?? null,
     [catalog, selectedSupplierIndex],
+  );
+
+  const formatComparisonUnitLabel = useCallback(
+    (value: CompanyOrderComparisonUnit) =>
+      value === "lb"
+        ? tr("Pounds (lb)", "Libras (lb)")
+        : tr("Each item", "Cada unidad"),
+    [tr],
   );
 
   const selectableTransferSuppliers = useMemo(
@@ -117,7 +135,11 @@ export default function AdminCompanyOrdersCatalogPage() {
       setCatalog(toEditableCatalog(suppliers));
       setSelectedItemIds([]);
       setTransferTargetSupplierIndex("");
-      setNewItemDraft({ nameEs: "", nameEn: "" });
+      setNewItemDraft({
+        nameEs: "",
+        nameEn: "",
+        comparisonUnit: "each",
+      });
       setStatusKind("success");
       setStatus(tr("Catalog loaded.", "Catálogo cargado."));
     } catch (error) {
@@ -154,7 +176,11 @@ export default function AdminCompanyOrdersCatalogPage() {
   useEffect(() => {
     setSelectedItemIds([]);
     setTransferTargetSupplierIndex("");
-    setNewItemDraft({ nameEs: "", nameEn: "" });
+    setNewItemDraft({
+      nameEs: "",
+      nameEn: "",
+      comparisonUnit: "each",
+    });
   }, [selectedSupplierIndex]);
 
   const updateSupplier = (
@@ -226,11 +252,17 @@ export default function AdminCompanyOrdersCatalogPage() {
           clientId: createCatalogClientId(),
           nameEs: nameEs || nameEn,
           nameEn: nameEn || nameEs,
+          comparisonUnit:
+            newItemDraft.comparisonUnit === "lb" ? "lb" : "each",
         },
         ...supplier.items,
       ],
     }));
-    setNewItemDraft({ nameEs: "", nameEn: "" });
+    setNewItemDraft({
+      nameEs: "",
+      nameEn: "",
+      comparisonUnit: newItemDraft.comparisonUnit,
+    });
     setStatusKind("info");
     setStatus(
       tr(
@@ -578,7 +610,7 @@ export default function AdminCompanyOrdersCatalogPage() {
 
                   <div className="border rounded p-3 bg-body-tertiary">
                     <div className="row g-2 align-items-end">
-                      <div className="col-12 col-md-5">
+                      <div className="col-12 col-md-4">
                         <label className="form-label mb-1">
                           {tr("Quick Add Spanish Name", "Alta rápida Nombre en Español")}
                         </label>
@@ -601,7 +633,7 @@ export default function AdminCompanyOrdersCatalogPage() {
                           }}
                         />
                       </div>
-                      <div className="col-12 col-md-5">
+                      <div className="col-12 col-md-3">
                         <label className="form-label mb-1">
                           {tr("Quick Add English Name", "Alta rápida Nombre en Inglés")}
                         </label>
@@ -623,6 +655,29 @@ export default function AdminCompanyOrdersCatalogPage() {
                           }}
                         />
                       </div>
+                      <div className="col-12 col-md-3">
+                        <label className="form-label mb-1">
+                          {tr("Measure As", "Medir Como")}
+                        </label>
+                        <select
+                          className="form-select"
+                          value={newItemDraft.comparisonUnit}
+                          onChange={(event) =>
+                            setNewItemDraft((previous) => ({
+                              ...previous,
+                              comparisonUnit:
+                                event.target.value === "lb" ? "lb" : "each",
+                            }))
+                          }
+                        >
+                          <option value="each">
+                            {tr("Each item", "Cada unidad")}
+                          </option>
+                          <option value="lb">
+                            {tr("Pounds (lb)", "Libras (lb)")}
+                          </option>
+                        </select>
+                      </div>
                       <div className="col-12 col-md-2">
                         <button
                           type="button"
@@ -635,8 +690,8 @@ export default function AdminCompanyOrdersCatalogPage() {
                     </div>
                     <div className="form-text">
                       {tr(
-                        "New items are inserted at the top so you stay on the same section.",
-                        "Los artículos nuevos se insertan al inicio para que sigas en la misma sección.",
+                        "Choose whether quantity for this item should mean each item or pounds. New items are inserted at the top so you stay on the same section.",
+                        "Elige si la cantidad de este artículo significa cada unidad o libras. Los artículos nuevos se insertan al inicio para que sigas en la misma sección.",
                       )}
                     </div>
                   </div>
@@ -747,7 +802,7 @@ export default function AdminCompanyOrdersCatalogPage() {
                                 />
                               </div>
                             </div>
-                            <div className="col-12 col-md-5">
+                            <div className="col-12 col-md-4">
                               <label className="form-label mb-1">
                                 {tr("Spanish Name", "Nombre en Español")}
                               </label>
@@ -774,7 +829,7 @@ export default function AdminCompanyOrdersCatalogPage() {
                                 placeholder={tr("nameEs", "nombreEs")}
                               />
                             </div>
-                            <div className="col-12 col-md-4">
+                            <div className="col-12 col-md-3">
                               <label className="form-label mb-1">
                                 {tr("English Name", "Nombre en Inglés")}
                               </label>
@@ -801,7 +856,48 @@ export default function AdminCompanyOrdersCatalogPage() {
                                 placeholder={tr("nameEn", "nombreEn")}
                               />
                             </div>
-                            <div className="col-12 col-md-2">
+                            <div className="col-12 col-md-3">
+                              <label className="form-label mb-1">
+                                {tr("Measure As", "Medir Como")}
+                              </label>
+                              <select
+                                className="form-select"
+                                value={item.comparisonUnit === "lb" ? "lb" : "each"}
+                                onChange={(event) =>
+                                  updateSupplier(
+                                    selectedSupplierIndex,
+                                    (supplier) => ({
+                                      ...supplier,
+                                      items: supplier.items.map(
+                                        (entry, index) =>
+                                          index === itemIndex
+                                            ? {
+                                                ...entry,
+                                                comparisonUnit:
+                                                  event.target.value === "lb"
+                                                    ? "lb"
+                                                    : "each",
+                                              }
+                                            : entry,
+                                      ),
+                                    }),
+                                  )
+                                }
+                              >
+                                <option value="each">
+                                  {tr("Each item", "Cada unidad")}
+                                </option>
+                                <option value="lb">
+                                  {tr("Pounds (lb)", "Libras (lb)")}
+                                </option>
+                              </select>
+                              <div className="form-text">
+                                {formatComparisonUnitLabel(
+                                  item.comparisonUnit === "lb" ? "lb" : "each",
+                                )}
+                              </div>
+                            </div>
+                            <div className="col-12 col-md-1">
                               <button
                                 type="button"
                                 className="btn btn-outline-danger w-100"

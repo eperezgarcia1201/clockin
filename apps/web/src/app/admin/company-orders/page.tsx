@@ -6,6 +6,7 @@ import {
   createCompanyOrder,
   getCompanyOrderCatalog,
   listCompanyOrders,
+  type CompanyOrderComparisonUnit,
   type CompanyOrderCatalogItem,
   type CompanyOrderCatalogSupplier,
   type CompanyOrderRow,
@@ -17,6 +18,12 @@ type CartItem = {
   nameEs: string;
   nameEn: string;
   quantity: number;
+  comparisonUnit: CompanyOrderComparisonUnit;
+};
+
+type QuantityByUnit = {
+  each: number;
+  lb: number;
 };
 
 const companyOrderItemKey = (nameEs: string, nameEn: string) =>
@@ -87,6 +94,46 @@ const buildWeekExportHref = (
   return `/api/company-orders/export?${query.toString()}`;
 };
 
+const normalizeComparisonUnit = (
+  value: CompanyOrderCatalogItem["comparisonUnit"],
+): CompanyOrderComparisonUnit => (value === "lb" ? "lb" : "each");
+
+const createQuantityByUnit = (): QuantityByUnit => ({
+  each: 0,
+  lb: 0,
+});
+
+const addQuantityByUnit = (
+  totals: QuantityByUnit,
+  comparisonUnit: CompanyOrderComparisonUnit,
+  quantity: number,
+) => {
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return totals;
+  }
+  totals[comparisonUnit] = Number((totals[comparisonUnit] + quantity).toFixed(2));
+  return totals;
+};
+
+const formatQuantityWithUnit = (
+  quantity: number,
+  comparisonUnit: CompanyOrderComparisonUnit,
+) =>
+  `${Number(quantity.toFixed(2))} ${
+    comparisonUnit === "lb" ? "lb" : "each"
+  }`;
+
+const formatQuantitySummaryByUnit = (totals: QuantityByUnit) => {
+  const parts: string[] = [];
+  if (totals.each > 0) {
+    parts.push(`${totals.each} each`);
+  }
+  if (totals.lb > 0) {
+    parts.push(`${totals.lb} lb`);
+  }
+  return parts.join(" + ") || "0";
+};
+
 const supplierDraftItems = (
   supplier: CompanyOrderCatalogSupplier,
   draftQuantities: Record<string, string> | undefined,
@@ -103,6 +150,7 @@ const supplierDraftItems = (
         nameEs: item.nameEs,
         nameEn: item.nameEn,
         quantity,
+        comparisonUnit: normalizeComparisonUnit(item.comparisonUnit),
       };
     })
     .filter(
@@ -113,6 +161,7 @@ const supplierDraftItems = (
         nameEs: string;
         nameEn: string;
         quantity: number;
+        comparisonUnit: CompanyOrderComparisonUnit;
       } => Boolean(item),
     );
 
@@ -169,6 +218,7 @@ export default function AdminCompanyOrdersPage() {
             nameEs: item.nameEs,
             nameEn: item.nameEn,
             quantity: item.quantity,
+            comparisonUnit: item.comparisonUnit,
           }),
         ),
       ),
@@ -182,13 +232,13 @@ export default function AdminCompanyOrdersPage() {
     [cartItems],
   );
 
-  const selectedUnitTotal = useMemo(
-    () =>
-      Number(
-        cartItems.reduce((sum, item) => sum + item.quantity, 0).toFixed(2),
-      ),
-    [cartItems],
-  );
+  const selectedQuantitySummary = useMemo(() => {
+    const totals = createQuantityByUnit();
+    cartItems.forEach((item) =>
+      addQuantityByUnit(totals, item.comparisonUnit, item.quantity),
+    );
+    return formatQuantitySummaryByUnit(totals);
+  }, [cartItems]);
 
   const loadCatalog = useCallback(async () => {
     const suppliers = await getCompanyOrderCatalog();
@@ -503,10 +553,20 @@ export default function AdminCompanyOrdersPage() {
                             <div className="text-muted small">
                               {item.nameEn}
                             </div>
+                            <div className="text-muted small">
+                              {tr("Measured as", "Se mide como")}:{" "}
+                              {item.comparisonUnit === "lb"
+                                ? tr("pounds (lb)", "libras (lb)")
+                                : tr("each item", "cada unidad")}
+                            </div>
                           </div>
                           {quantityInCart > 0 ? (
                             <span className="badge text-bg-secondary">
-                              {tr("In cart:", "En carrito:")} {quantityInCart}
+                              {tr("In cart:", "En carrito:")}{" "}
+                              {formatQuantityWithUnit(
+                                quantityInCart,
+                                normalizeComparisonUnit(item.comparisonUnit),
+                              )}
                             </span>
                           ) : null}
                           <button
@@ -543,7 +603,7 @@ export default function AdminCompanyOrdersPage() {
             <div className="text-muted small">
               {selectedSupplierCount} {tr("suppliers", "proveedores")} |{" "}
               {selectedItemCount} {tr("items", "artículos")} |{" "}
-              {tr("total qty", "cantidad total")} {selectedUnitTotal}
+              {tr("total qty", "cantidad total")} {selectedQuantitySummary}
             </div>
 
             {cartItems.length === 0 ? (
@@ -565,6 +625,12 @@ export default function AdminCompanyOrdersPage() {
                     <div className="text-muted small">
                       {tr("Supplier:", "Proveedor:")} {item.supplierName}
                     </div>
+                    <div className="text-muted small">
+                      {tr("Measured as:", "Se mide como:")}{" "}
+                      {item.comparisonUnit === "lb"
+                        ? tr("pounds (lb)", "libras (lb)")
+                        : tr("each item", "cada unidad")}
+                    </div>
                     <div className="d-flex align-items-center gap-2">
                       <button
                         type="button"
@@ -584,6 +650,11 @@ export default function AdminCompanyOrdersPage() {
                         style={{ maxWidth: 90 }}
                         value={String(item.quantity)}
                         inputMode="decimal"
+                        aria-label={
+                          item.comparisonUnit === "lb"
+                            ? tr("Quantity in pounds", "Cantidad en libras")
+                            : tr("Quantity in items", "Cantidad en unidades")
+                        }
                         onChange={(event) =>
                           setDraftQuantity(
                             item.supplierName,
@@ -592,6 +663,9 @@ export default function AdminCompanyOrdersPage() {
                           )
                         }
                       />
+                      <span className="text-muted small">
+                        {item.comparisonUnit === "lb" ? "lb" : tr("each", "cada")}
+                      </span>
                       <button
                         type="button"
                         className="btn btn-outline-secondary btn-sm"
