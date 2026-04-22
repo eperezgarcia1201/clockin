@@ -33,6 +33,10 @@ const toEditableCatalog = (
     supplierName: supplier.supplierName,
     items: supplier.items.map((item) => ({
       ...item,
+      caseSizeLb:
+        typeof item.caseSizeLb === "number" && item.caseSizeLb > 0
+          ? item.caseSizeLb
+          : null,
       clientId: createCatalogClientId(),
     })),
   }));
@@ -42,6 +46,26 @@ const normalizeCatalogName = (value: string) =>
 
 const editableItemKey = (item: CompanyOrderCatalogItem) =>
   `${normalizeCatalogName(item.nameEs)}|${normalizeCatalogName(item.nameEn)}`;
+
+const normalizeCaseSizeLb = (value: unknown) => {
+  const parsed =
+    typeof value === "string" ? Number(value.trim()) : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return Number(parsed.toFixed(2));
+};
+
+const normalizeCaseSizeLbInput = (value: string) => {
+  const sanitized = value.replace(/,/g, ".").replace(/[^\d.]/g, "");
+  if (!sanitized) {
+    return "";
+  }
+  const parts = sanitized.split(".");
+  const integerPart = parts[0] || "0";
+  const decimalPart = parts.slice(1).join("").slice(0, 2);
+  return decimalPart ? `${integerPart}.${decimalPart}` : integerPart;
+};
 
 const sanitizeCatalogForSave = (
   catalog: EditableCatalogSupplier[],
@@ -60,6 +84,10 @@ const sanitizeCatalogForSave = (
             nameEs: nameEs || nameEn,
             nameEn: nameEn || nameEs,
             comparisonUnit: item.comparisonUnit === "lb" ? "lb" : "each",
+            caseSizeLb:
+              item.comparisonUnit === "lb"
+                ? normalizeCaseSizeLb(item.caseSizeLb)
+                : null,
           };
         })
         .filter((item): item is CompanyOrderCatalogItem => item !== null);
@@ -92,10 +120,12 @@ export default function AdminCompanyOrdersCatalogPage() {
     nameEs: string;
     nameEn: string;
     comparisonUnit: CompanyOrderComparisonUnit;
+    caseSizeLb: string;
   }>({
     nameEs: "",
     nameEn: "",
     comparisonUnit: "each",
+    caseSizeLb: "",
   });
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [transferTargetSupplierIndex, setTransferTargetSupplierIndex] =
@@ -109,7 +139,10 @@ export default function AdminCompanyOrdersCatalogPage() {
   const formatComparisonUnitLabel = useCallback(
     (value: CompanyOrderComparisonUnit) =>
       value === "lb"
-        ? tr("Pounds (lb)", "Libras (lb)")
+        ? tr(
+            "Compare by pounds, order by case",
+            "Comparar por libras, ordenar por caja",
+          )
         : tr("Each item", "Cada unidad"),
     [tr],
   );
@@ -139,6 +172,7 @@ export default function AdminCompanyOrdersCatalogPage() {
         nameEs: "",
         nameEn: "",
         comparisonUnit: "each",
+        caseSizeLb: "",
       });
       setStatusKind("success");
       setStatus(tr("Catalog loaded.", "Catálogo cargado."));
@@ -180,6 +214,7 @@ export default function AdminCompanyOrdersCatalogPage() {
       nameEs: "",
       nameEn: "",
       comparisonUnit: "each",
+      caseSizeLb: "",
     });
   }, [selectedSupplierIndex]);
 
@@ -254,6 +289,10 @@ export default function AdminCompanyOrdersCatalogPage() {
           nameEn: nameEn || nameEs,
           comparisonUnit:
             newItemDraft.comparisonUnit === "lb" ? "lb" : "each",
+          caseSizeLb:
+            newItemDraft.comparisonUnit === "lb"
+              ? normalizeCaseSizeLb(newItemDraft.caseSizeLb)
+              : null,
         },
         ...supplier.items,
       ],
@@ -262,6 +301,7 @@ export default function AdminCompanyOrdersCatalogPage() {
       nameEs: "",
       nameEn: "",
       comparisonUnit: newItemDraft.comparisonUnit,
+      caseSizeLb: "",
     });
     setStatusKind("info");
     setStatus(
@@ -655,7 +695,7 @@ export default function AdminCompanyOrdersCatalogPage() {
                           }}
                         />
                       </div>
-                      <div className="col-12 col-md-3">
+                      <div className="col-12 col-md-2">
                         <label className="form-label mb-1">
                           {tr("Measure As", "Medir Como")}
                         </label>
@@ -667,6 +707,10 @@ export default function AdminCompanyOrdersCatalogPage() {
                               ...previous,
                               comparisonUnit:
                                 event.target.value === "lb" ? "lb" : "each",
+                              caseSizeLb:
+                                event.target.value === "lb"
+                                  ? previous.caseSizeLb
+                                  : "",
                             }))
                           }
                         >
@@ -677,6 +721,25 @@ export default function AdminCompanyOrdersCatalogPage() {
                             {tr("Pounds (lb)", "Libras (lb)")}
                           </option>
                         </select>
+                      </div>
+                      <div className="col-12 col-md-2">
+                        <label className="form-label mb-1">
+                          {tr("Lb per Case", "Lb por Caja")}
+                        </label>
+                        <input
+                          className="form-control"
+                          value={newItemDraft.caseSizeLb}
+                          onChange={(event) =>
+                            setNewItemDraft((previous) => ({
+                              ...previous,
+                              caseSizeLb: normalizeCaseSizeLbInput(
+                                event.target.value,
+                              ),
+                            }))
+                          }
+                          placeholder={tr("Example: 40", "Ejemplo: 40")}
+                          disabled={newItemDraft.comparisonUnit !== "lb"}
+                        />
                       </div>
                       <div className="col-12 col-md-2">
                         <button
@@ -690,8 +753,8 @@ export default function AdminCompanyOrdersCatalogPage() {
                     </div>
                     <div className="form-text">
                       {tr(
-                        "Choose whether quantity for this item should mean each item or pounds. New items are inserted at the top so you stay on the same section.",
-                        "Elige si la cantidad de este artículo significa cada unidad o libras. Los artículos nuevos se insertan al inicio para que sigas en la misma sección.",
+                        "Each item orders by unit. Pound items compare by lb in in-person shopping, but the order itself is placed by case. Add lb per case when you know it.",
+                        "Cada unidad se ordena por pieza. Los artículos por libra se comparan por lb en compras en persona, pero la orden se hace por caja. Agrega lb por caja cuando lo sepas.",
                       )}
                     </div>
                   </div>
@@ -856,7 +919,7 @@ export default function AdminCompanyOrdersCatalogPage() {
                                 placeholder={tr("nameEn", "nombreEn")}
                               />
                             </div>
-                            <div className="col-12 col-md-3">
+                            <div className="col-12 col-md-2">
                               <label className="form-label mb-1">
                                 {tr("Measure As", "Medir Como")}
                               </label>
@@ -877,6 +940,10 @@ export default function AdminCompanyOrdersCatalogPage() {
                                                   event.target.value === "lb"
                                                     ? "lb"
                                                     : "each",
+                                                caseSizeLb:
+                                                  event.target.value === "lb"
+                                                    ? entry.caseSizeLb || null
+                                                    : null,
                                               }
                                             : entry,
                                       ),
@@ -895,6 +962,55 @@ export default function AdminCompanyOrdersCatalogPage() {
                                 {formatComparisonUnitLabel(
                                   item.comparisonUnit === "lb" ? "lb" : "each",
                                 )}
+                              </div>
+                            </div>
+                            <div className="col-12 col-md-2">
+                              <label className="form-label mb-1">
+                                {tr("Lb per Case", "Lb por Caja")}
+                              </label>
+                              <input
+                                className="form-control"
+                                value={
+                                  item.caseSizeLb !== null &&
+                                  item.caseSizeLb !== undefined
+                                    ? String(item.caseSizeLb)
+                                    : ""
+                                }
+                                onChange={(event) =>
+                                  updateSupplier(
+                                    selectedSupplierIndex,
+                                    (supplier) => ({
+                                      ...supplier,
+                                      items: supplier.items.map(
+                                        (entry, index) =>
+                                          index === itemIndex
+                                            ? {
+                                                ...entry,
+                                                caseSizeLb:
+                                                  item.comparisonUnit === "lb"
+                                                    ? normalizeCaseSizeLb(
+                                                        event.target.value,
+                                                      )
+                                                    : null,
+                                              }
+                                            : entry,
+                                      ),
+                                    }),
+                                  )
+                                }
+                                placeholder={tr("Example: 40", "Ejemplo: 40")}
+                                disabled={item.comparisonUnit !== "lb"}
+                              />
+                              <div className="form-text">
+                                {item.comparisonUnit === "lb"
+                                  ? tr(
+                                      "Reference only for case-based ordering.",
+                                      "Referencia solo para orden por caja.",
+                                    )
+                                  : tr(
+                                      "Only used for lb items.",
+                                      "Solo se usa para artículos lb.",
+                                    )}
                               </div>
                             </div>
                             <div className="col-12 col-md-1">

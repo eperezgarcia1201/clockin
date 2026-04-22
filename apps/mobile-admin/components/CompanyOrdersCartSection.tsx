@@ -5,7 +5,7 @@ import type { CompanyOrderCartItem } from "./CompanyOrdersCard.types";
 type CompanyOrdersCartSectionProps = {
   isLight: boolean;
   selectedCompanyOrderCount: number;
-  selectedCompanyOrderTotalUnits: number;
+  selectedCompanyOrderTotalUnits: string;
   companyOrderCartItems: CompanyOrderCartItem[];
   onStepCompanyOrderItem: (
     supplierName: string,
@@ -63,7 +63,9 @@ export function CompanyOrdersCartSection({
               <View style={[styles.companyOrderQtyBadge, isLight && styles.companyOrderQtyBadgeLight]}>
                 <Text style={[styles.companyOrderQtyBadgeText, isLight && styles.companyOrderQtyBadgeTextLight]}>
                   {Number(item.quantity.toFixed(2))}
-                  {item.comparisonUnit === "lb" ? " lb" : ""}
+                  {item.comparisonUnit === "lb"
+                    ? ` ${Math.abs(item.quantity - 1) < 0.005 ? "case" : "cases"}`
+                    : ""}
                 </Text>
               </View>
               <TouchableOpacity

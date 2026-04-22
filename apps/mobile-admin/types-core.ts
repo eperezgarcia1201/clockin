@@ -139,9 +139,11 @@ export type CompanyOrderCatalogItem = {
   nameEs: string;
   nameEn: string;
   comparisonUnit?: CompanyOrderComparisonUnit;
+  caseSizeLb?: number | null;
 };
 
 export type CompanyOrderComparisonUnit = "each" | "lb";
+export type CompanyOrderOrderUnit = "each" | "case" | "lb";
 
 export type CompanyOrderCatalogSupplier = {
   supplierName: string;
@@ -177,7 +179,10 @@ export type CompanyOrderInPersonItem = {
   orderedQuantity: number;
   purchasedQuantity: number;
   remainingQuantity: number;
+  orderQuantityUnit: CompanyOrderOrderUnit;
   comparisonUnit: CompanyOrderComparisonUnit;
+  caseSizeLb: number | null;
+  purchasedWeightLb: number | null;
   unitPrice: number | null;
   companyUnitPrice: number | null;
 };
@@ -188,6 +193,7 @@ export type CompanyOrderInPersonSupplier = {
   totalOrderedQuantity: number;
   totalPurchasedQuantity: number;
   totalRemainingQuantity: number;
+  totalPurchasedWeightLb: number;
   items: CompanyOrderInPersonItem[];
 };
 

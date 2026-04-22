@@ -4,6 +4,7 @@ import type {
   CompanyOrderCatalogSupplier,
   CompanyOrderComparisonUnit,
   CompanyOrderInPersonSupplier,
+  CompanyOrderOrderUnit,
   CompanyOrderRow,
 } from "../types";
 
@@ -14,6 +15,7 @@ export type CompanyOrderCartItem = {
   nameEn: string;
   quantity: number;
   comparisonUnit: CompanyOrderComparisonUnit;
+  caseSizeLb?: number | null;
 };
 
 export type CompanyOrdersCardProps = {
@@ -47,7 +49,7 @@ export type CompanyOrdersCardProps = {
   hasMoreCompanyOrderItems: boolean;
   onShowMoreCompanyOrderItems: () => void;
   selectedCompanyOrderCount: number;
-  selectedCompanyOrderTotalUnits: number;
+  selectedCompanyOrderTotalUnits: string;
   companyOrderCartItems: CompanyOrderCartItem[];
   onStepCompanyOrderItem: (
     supplierName: string,
@@ -82,7 +84,10 @@ export type CompanyOrdersCardProps = {
     orderedQuantity: number;
     purchasedQuantity: number;
     remainingQuantity: number;
+    orderQuantityUnit: CompanyOrderOrderUnit;
     comparisonUnit: CompanyOrderComparisonUnit;
+    caseSizeLb: number | null;
+    purchasedWeightLb: number | null;
     unitPrice: number | null;
     companyUnitPrice: number | null;
   }>;
@@ -92,6 +97,7 @@ export type CompanyOrdersCardProps = {
     nameEn: string,
   ) => {
     purchasedQuantity: string;
+    purchasedWeightLb: string;
     unitPrice: string;
     companyUnitPrice: string;
   };
@@ -103,12 +109,21 @@ export type CompanyOrdersCardProps = {
       orderedQuantity: number;
       purchasedQuantity: number;
       remainingQuantity: number;
+      orderQuantityUnit: CompanyOrderOrderUnit;
       comparisonUnit: CompanyOrderComparisonUnit;
+      caseSizeLb: number | null;
+      purchasedWeightLb: number | null;
       unitPrice: number | null;
       companyUnitPrice: number | null;
     },
   ) => string;
   onCompanyOrderInPersonPurchasedQuantityChange: (
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+    value: string,
+  ) => void;
+  onCompanyOrderInPersonPurchasedWeightLbChange: (
     supplierName: string,
     nameEs: string,
     nameEn: string,

@@ -8,9 +8,10 @@ import type { CompanyOrderInPersonDrafts } from "./company-order-in-person-runti
 import type {
   CompanyOrderComparisonUnit,
   CompanyOrderInPersonSupplier,
+  CompanyOrderOrderUnit,
 } from "./types";
 
-type QuantityByUnit = Record<CompanyOrderComparisonUnit, number>;
+type OrderQuantityByUnit = Record<CompanyOrderOrderUnit, number>;
 
 const parseDraftNumber = (value: string) => {
   const parsed = Number(value);
@@ -30,32 +31,43 @@ const formatSavingsLabel = (value: number | null) => {
   return `Over ${formatMoney(Math.abs(value))}`;
 };
 
-const createQuantityByUnit = (): QuantityByUnit => ({
+const createOrderQuantityByUnit = (): OrderQuantityByUnit => ({
   each: 0,
+  case: 0,
   lb: 0,
 });
 
-const addQuantityByUnit = (
-  totals: QuantityByUnit,
-  comparisonUnit: CompanyOrderComparisonUnit,
+const addOrderQuantityByUnit = (
+  totals: OrderQuantityByUnit,
+  orderUnit: CompanyOrderOrderUnit,
   quantity: number,
 ) => {
   if (!Number.isFinite(quantity) || quantity <= 0) {
     return totals;
   }
-  totals[comparisonUnit] = Number((totals[comparisonUnit] + quantity).toFixed(2));
+  totals[orderUnit] = Number((totals[orderUnit] + quantity).toFixed(2));
   return totals;
 };
 
-const formatQuantityWithUnit = (
+const formatOrderQuantityWithUnit = (
   quantity: number,
-  comparisonUnit: CompanyOrderComparisonUnit,
-) => `${Number(quantity.toFixed(2))} ${comparisonUnit === "lb" ? "lb" : "each"}`;
+  orderUnit: CompanyOrderOrderUnit,
+) => {
+  const value = Number(quantity.toFixed(2));
+  if (orderUnit === "case") {
+    return `${value} ${Math.abs(value - 1) < 0.005 ? "case" : "cases"}`;
+  }
+  return `${value} ${orderUnit}`;
+};
 
-const formatQuantitySummaryByUnit = (totals: QuantityByUnit) => {
+const formatOrderQuantitySummaryByUnit = (totals: OrderQuantityByUnit) => {
   const parts: string[] = [];
   if (totals.each > 0) {
     parts.push(`${Number(totals.each.toFixed(2))} each`);
+  }
+  if (totals.case > 0) {
+    const value = Number(totals.case.toFixed(2));
+    parts.push(`${value} ${Math.abs(value - 1) < 0.005 ? "case" : "cases"}`);
   }
   if (totals.lb > 0) {
     parts.push(`${Number(totals.lb.toFixed(2))} lb`);
@@ -67,6 +79,27 @@ const formatPriceWithUnit = (
   value: number,
   comparisonUnit: CompanyOrderComparisonUnit,
 ) => (comparisonUnit === "lb" ? `${formatMoney(value)}/lb` : `${formatMoney(value)} each`);
+
+const getComparisonQuantity = (
+  item: {
+    comparisonUnit: CompanyOrderComparisonUnit;
+    purchasedQuantity: number;
+    purchasedWeightLb: number | null;
+  },
+  draft: {
+    purchasedQuantity: string;
+    purchasedWeightLb: string;
+  },
+) => {
+  if (item.comparisonUnit !== "lb") {
+    return draft.purchasedQuantity.trim().length > 0
+      ? parseDraftNumber(draft.purchasedQuantity) ?? 0
+      : item.purchasedQuantity;
+  }
+  return draft.purchasedWeightLb.trim().length > 0
+    ? parseDraftNumber(draft.purchasedWeightLb) ?? 0
+    : item.purchasedWeightLb || 0;
+};
 
 export const useCompanyOrderInPersonViewState = (params: {
   suppliers: CompanyOrderInPersonSupplier[];
@@ -84,6 +117,7 @@ export const useCompanyOrderInPersonViewState = (params: {
 
   const normalizedSearch =
     typeof params.search === "string" ? params.search.trim().toLowerCase() : "";
+
   const visibleItems = useMemo(() => {
     const baseItems =
       normalizedSearch.length > 0
@@ -114,19 +148,33 @@ export const useCompanyOrderInPersonViewState = (params: {
     });
   }, [normalizedSearch, params.suppliers, selectedSupplier]);
 
+  const getDraftValue = (
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+  ) => {
+    const normalizedNames = normalizeCompanyOrderItemNames(nameEs, nameEn);
+    return (
+      params.drafts[supplierName]?.[
+        companyOrderItemKey(normalizedNames.nameEs, normalizedNames.nameEn)
+      ] || {
+        purchasedQuantity: "",
+        purchasedWeightLb: "",
+        unitPrice: "",
+        companyUnitPrice: "",
+      }
+    );
+  };
+
   const summaryLabel = useMemo(() => {
     const totals = params.suppliers.reduce(
       (acc, supplier) => {
         supplier.items.forEach((item) => {
-          const draft =
-            params.drafts[supplier.supplierName]?.[
-              companyOrderItemKey(item.nameEs, item.nameEn)
-            ] || {
-              purchasedQuantity: "",
-              unitPrice: "",
-              companyUnitPrice: "",
-            };
-          const comparisonUnit = item.comparisonUnit || "each";
+          const draft = getDraftValue(
+            supplier.supplierName,
+            item.nameEs,
+            item.nameEn,
+          );
           const purchasedQuantity =
             draft.purchasedQuantity.trim().length > 0
               ? parseDraftNumber(draft.purchasedQuantity) ?? 0
@@ -142,22 +190,38 @@ export const useCompanyOrderInPersonViewState = (params: {
             draft.companyUnitPrice.trim().length > 0
               ? parseDraftNumber(draft.companyUnitPrice)
               : item.companyUnitPrice;
+          const comparisonQuantity = getComparisonQuantity(item, draft);
           const inPersonSpend =
             unitPrice !== null
-              ? Number((purchasedQuantity * unitPrice).toFixed(2))
+              ? Number((comparisonQuantity * unitPrice).toFixed(2))
               : 0;
           const companySpend =
             companyUnitPrice !== null
-              ? Number((purchasedQuantity * companyUnitPrice).toFixed(2))
+              ? Number((comparisonQuantity * companyUnitPrice).toFixed(2))
               : 0;
           const savings =
             unitPrice !== null && companyUnitPrice !== null
               ? Number((companySpend - inPersonSpend).toFixed(2))
               : 0;
 
-          addQuantityByUnit(acc.ordered, comparisonUnit, item.orderedQuantity);
-          addQuantityByUnit(acc.purchased, comparisonUnit, purchasedQuantity);
-          addQuantityByUnit(acc.remaining, comparisonUnit, remainingQuantity);
+          addOrderQuantityByUnit(
+            acc.ordered,
+            item.orderQuantityUnit || "each",
+            item.orderedQuantity,
+          );
+          addOrderQuantityByUnit(
+            acc.purchased,
+            item.orderQuantityUnit || "each",
+            purchasedQuantity,
+          );
+          addOrderQuantityByUnit(
+            acc.remaining,
+            item.orderQuantityUnit || "each",
+            remainingQuantity,
+          );
+          if (item.comparisonUnit === "lb") {
+            acc.weightLb = Number((acc.weightLb + comparisonQuantity).toFixed(2));
+          }
           acc.inPersonSpend = Number((acc.inPersonSpend + inPersonSpend).toFixed(2));
           acc.companySpend = Number((acc.companySpend + companySpend).toFixed(2));
           acc.savings = Number((acc.savings + savings).toFixed(2));
@@ -165,42 +229,29 @@ export const useCompanyOrderInPersonViewState = (params: {
         return acc;
       },
       {
-        ordered: createQuantityByUnit(),
-        purchased: createQuantityByUnit(),
-        remaining: createQuantityByUnit(),
+        ordered: createOrderQuantityByUnit(),
+        purchased: createOrderQuantityByUnit(),
+        remaining: createOrderQuantityByUnit(),
+        weightLb: 0,
         inPersonSpend: 0,
         companySpend: 0,
         savings: 0,
       },
     );
 
-    return `Ordered ${formatQuantitySummaryByUnit(
-      totals.ordered,
-    )} • Bought ${formatQuantitySummaryByUnit(
-      totals.purchased,
-    )} • Remaining ${formatQuantitySummaryByUnit(
-      totals.remaining,
-    )} • Spent ${formatMoney(totals.inPersonSpend)} • Company ${formatMoney(
-      totals.companySpend,
-    )} • ${formatSavingsLabel(totals.savings)}`;
+    const parts = [
+      `Ordered ${formatOrderQuantitySummaryByUnit(totals.ordered)}`,
+      `Bought ${formatOrderQuantitySummaryByUnit(totals.purchased)}`,
+      `Remaining ${formatOrderQuantitySummaryByUnit(totals.remaining)}`,
+    ];
+    if (totals.weightLb > 0) {
+      parts.push(`Compared ${Number(totals.weightLb.toFixed(2))} lb`);
+    }
+    parts.push(`Spent ${formatMoney(totals.inPersonSpend)}`);
+    parts.push(`Company ${formatMoney(totals.companySpend)}`);
+    parts.push(formatSavingsLabel(totals.savings));
+    return parts.join(" • ");
   }, [params.drafts, params.suppliers]);
-
-  const getDraftValue = (
-    supplierName: string,
-    nameEs: string,
-    nameEn: string,
-  ) => {
-    const normalizedNames = normalizeCompanyOrderItemNames(nameEs, nameEn);
-    return (
-      params.drafts[supplierName]?.[
-        companyOrderItemKey(normalizedNames.nameEs, normalizedNames.nameEn)
-      ] || {
-        purchasedQuantity: "",
-        unitPrice: "",
-        companyUnitPrice: "",
-      }
-    );
-  };
 
   const getItemMetaLine = (
     supplierName: string,
@@ -210,7 +261,10 @@ export const useCompanyOrderInPersonViewState = (params: {
       orderedQuantity: number;
       purchasedQuantity: number;
       remainingQuantity: number;
+      orderQuantityUnit: CompanyOrderOrderUnit;
       comparisonUnit: CompanyOrderComparisonUnit;
+      caseSizeLb: number | null;
+      purchasedWeightLb: number | null;
       unitPrice: number | null;
       companyUnitPrice: number | null;
     },
@@ -224,7 +278,6 @@ export const useCompanyOrderInPersonViewState = (params: {
       normalizedNames.nameEs,
       normalizedNames.nameEn,
     );
-    const comparisonUnit = item.comparisonUnit || "each";
     const purchasedQuantity =
       draft.purchasedQuantity.trim().length > 0
         ? parseDraftNumber(draft.purchasedQuantity) ?? 0
@@ -240,13 +293,14 @@ export const useCompanyOrderInPersonViewState = (params: {
       draft.companyUnitPrice.trim().length > 0
         ? parseDraftNumber(draft.companyUnitPrice)
         : item.companyUnitPrice;
+    const comparisonQuantity = getComparisonQuantity(item, draft);
     const inPersonSpend =
-      purchasedQuantity > 0 && unitPrice !== null
-        ? Number((purchasedQuantity * unitPrice).toFixed(2))
+      comparisonQuantity > 0 && unitPrice !== null
+        ? Number((comparisonQuantity * unitPrice).toFixed(2))
         : null;
     const companySpend =
-      purchasedQuantity > 0 && companyUnitPrice !== null
-        ? Number((purchasedQuantity * companyUnitPrice).toFixed(2))
+      comparisonQuantity > 0 && companyUnitPrice !== null
+        ? Number((comparisonQuantity * companyUnitPrice).toFixed(2))
         : null;
     const savings =
       inPersonSpend !== null && companySpend !== null
@@ -254,19 +308,34 @@ export const useCompanyOrderInPersonViewState = (params: {
         : null;
 
     const parts = [
-      `Ordered ${formatQuantityWithUnit(item.orderedQuantity, comparisonUnit)}`,
-      `Remaining ${formatQuantityWithUnit(remainingQuantity, comparisonUnit)}`,
+      `Ordered ${formatOrderQuantityWithUnit(
+        item.orderedQuantity,
+        item.orderQuantityUnit || "each",
+      )}`,
+      `Remaining ${formatOrderQuantityWithUnit(
+        remainingQuantity,
+        item.orderQuantityUnit || "each",
+      )}`,
     ];
 
+    if (item.caseSizeLb) {
+      parts.push(`Case ${Number(item.caseSizeLb.toFixed(2))} lb`);
+    }
+    if (item.comparisonUnit === "lb" && comparisonQuantity > 0) {
+      parts.push(`Compared ${Number(comparisonQuantity.toFixed(2))} lb`);
+    }
+
     if (unitPrice !== null) {
-      parts.push(`Paid ${formatPriceWithUnit(unitPrice, comparisonUnit)}`);
+      parts.push(`Paid ${formatPriceWithUnit(unitPrice, item.comparisonUnit)}`);
       if (inPersonSpend !== null) {
         parts.push(`Spent ${formatMoney(inPersonSpend)}`);
       }
     }
 
     if (companyUnitPrice !== null) {
-      parts.push(`Company ${formatPriceWithUnit(companyUnitPrice, comparisonUnit)}`);
+      parts.push(
+        `Company ${formatPriceWithUnit(companyUnitPrice, item.comparisonUnit)}`,
+      );
       if (companySpend !== null) {
         parts.push(`Equivalent ${formatMoney(companySpend)}`);
       }

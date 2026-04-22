@@ -11,32 +11,38 @@ import type {
   CompanyOrderCatalogSupplier,
   CompanyOrderComparisonUnit,
   CompanyOrderInPersonSupplier,
+  CompanyOrderOrderUnit,
   CompanyOrderRow,
 } from "../types";
 
-type QuantityByUnit = Record<CompanyOrderComparisonUnit, number>;
+type OrderQuantityByUnit = Record<CompanyOrderOrderUnit, number>;
 
-const createQuantityByUnit = (): QuantityByUnit => ({
+const createOrderQuantityByUnit = (): OrderQuantityByUnit => ({
   each: 0,
+  case: 0,
   lb: 0,
 });
 
-const addQuantityByUnit = (
-  totals: QuantityByUnit,
-  comparisonUnit: CompanyOrderComparisonUnit,
+const addOrderQuantityByUnit = (
+  totals: OrderQuantityByUnit,
+  orderUnit: CompanyOrderOrderUnit,
   quantity: number,
 ) => {
   if (!Number.isFinite(quantity) || quantity <= 0) {
     return totals;
   }
-  totals[comparisonUnit] = Number((totals[comparisonUnit] + quantity).toFixed(2));
+  totals[orderUnit] = Number((totals[orderUnit] + quantity).toFixed(2));
   return totals;
 };
 
-const formatQuantitySummaryByUnit = (totals: QuantityByUnit) => {
+const formatOrderQuantitySummaryByUnit = (totals: OrderQuantityByUnit) => {
   const parts: string[] = [];
   if (totals.each > 0) {
     parts.push(`${Number(totals.each.toFixed(2))} each`);
+  }
+  if (totals.case > 0) {
+    const value = Number(totals.case.toFixed(2));
+    parts.push(`${value} ${Math.abs(value - 1) < 0.005 ? "case" : "cases"}`);
   }
   if (totals.lb > 0) {
     parts.push(`${Number(totals.lb.toFixed(2))} lb`);
@@ -44,24 +50,43 @@ const formatQuantitySummaryByUnit = (totals: QuantityByUnit) => {
   return parts.length ? parts.join(" + ") : "0";
 };
 
+const resolveOrderQuantityUnit = (
+  comparisonUnit: CompanyOrderComparisonUnit,
+): CompanyOrderOrderUnit => (comparisonUnit === "lb" ? "case" : "each");
+
 const normalizeSupplierName = (value: string | null | undefined) =>
   typeof value === "string" ? value.trim() : "";
 
 const buildCatalogComparisonUnitLookup = (
   suppliers: CompanyOrderCatalogSupplier[],
 ) => {
-  const lookup = new Map<string, Map<string, CompanyOrderComparisonUnit>>();
+  const lookup = new Map<
+    string,
+    Map<
+      string,
+      { comparisonUnit: CompanyOrderComparisonUnit; caseSizeLb: number | null }
+    >
+  >();
   suppliers.forEach((supplier) => {
     const supplierName = normalizeSupplierName(supplier.supplierName);
     if (!supplierName) {
       return;
     }
     const supplierKey = supplierName.toLowerCase();
-    const itemLookup = new Map<string, CompanyOrderComparisonUnit>();
+    const itemLookup = new Map<
+      string,
+      { comparisonUnit: CompanyOrderComparisonUnit; caseSizeLb: number | null }
+    >();
     supplier.items.forEach((item) => {
       itemLookup.set(
         companyOrderItemKey(item.nameEs, item.nameEn),
-        item.comparisonUnit === "lb" ? "lb" : "each",
+        {
+          comparisonUnit: item.comparisonUnit === "lb" ? "lb" : "each",
+          caseSizeLb:
+            typeof item.caseSizeLb === "number" && item.caseSizeLb > 0
+              ? item.caseSizeLb
+              : null,
+        },
       );
     });
     lookup.set(supplierKey, itemLookup);
@@ -69,15 +94,26 @@ const buildCatalogComparisonUnitLookup = (
   return lookup;
 };
 
-const resolveComparisonUnit = (
-  lookup: Map<string, Map<string, CompanyOrderComparisonUnit>>,
+const resolveCatalogSettings = (
+  lookup: Map<
+    string,
+    Map<
+      string,
+      { comparisonUnit: CompanyOrderComparisonUnit; caseSizeLb: number | null }
+    >
+  >,
   supplierName: string,
   nameEs: string,
   nameEn: string,
-): CompanyOrderComparisonUnit => {
+): { comparisonUnit: CompanyOrderComparisonUnit; caseSizeLb: number | null } => {
   const supplierKey = normalizeSupplierName(supplierName).toLowerCase();
   const itemKey = companyOrderItemKey(nameEs, nameEn);
-  return lookup.get(supplierKey)?.get(itemKey) || "each";
+  return (
+    lookup.get(supplierKey)?.get(itemKey) || {
+      comparisonUnit: "each",
+      caseSizeLb: null,
+    }
+  );
 };
 
 const formatSavingsValue = (value: number) => {
@@ -215,23 +251,30 @@ const buildScopeSummary = ({
   supplierName: string;
   rows: CompanyOrderRow[];
   inPersonSuppliers: CompanyOrderInPersonSupplier[];
-  comparisonUnitLookup: Map<string, Map<string, CompanyOrderComparisonUnit>>;
+  comparisonUnitLookup: Map<
+    string,
+    Map<
+      string,
+      { comparisonUnit: CompanyOrderComparisonUnit; caseSizeLb: number | null }
+    >
+  >;
 }) => {
-  const orderedTotals = createQuantityByUnit();
+  const orderedTotals = createOrderQuantityByUnit();
   let orderCount = rows.length;
   let itemCount = 0;
 
   rows.forEach((order) => {
     itemCount += order.itemCount || order.items.length;
     order.items.forEach((item) => {
-      addQuantityByUnit(
+      const settings = resolveCatalogSettings(
+        comparisonUnitLookup,
+        order.supplierName,
+        item.nameEs,
+        item.nameEn,
+      );
+      addOrderQuantityByUnit(
         orderedTotals,
-        resolveComparisonUnit(
-          comparisonUnitLookup,
-          order.supplierName,
-          item.nameEs,
-          item.nameEn,
-        ),
+        resolveOrderQuantityUnit(settings.comparisonUnit),
         item.quantity,
       );
     });
@@ -241,43 +284,53 @@ const buildScopeSummary = ({
   let companySpend = 0;
   let savings = 0;
   let shoppingItemCount = 0;
+  let purchasedWeightLb = 0;
 
   inPersonSuppliers.forEach((supplier) => {
     supplier.items.forEach((item) => {
       shoppingItemCount += 1;
       if (itemCount === 0) {
-        addQuantityByUnit(
+        addOrderQuantityByUnit(
           orderedTotals,
-          item.comparisonUnit || "each",
+          item.orderQuantityUnit || resolveOrderQuantityUnit(item.comparisonUnit || "each"),
           item.orderedQuantity,
         );
       }
 
       const purchasedQuantity = Number(item.purchasedQuantity || 0);
+      const comparisonQuantity =
+        item.comparisonUnit === "lb"
+          ? Number(item.purchasedWeightLb || 0)
+          : purchasedQuantity;
       const unitPrice =
         typeof item.unitPrice === "number" ? item.unitPrice : null;
       const companyUnitPrice =
         typeof item.companyUnitPrice === "number" ? item.companyUnitPrice : null;
 
-      if (purchasedQuantity > 0 && unitPrice !== null) {
+      if (comparisonQuantity > 0 && unitPrice !== null) {
         inPersonSpend = Number(
-          (inPersonSpend + purchasedQuantity * unitPrice).toFixed(2),
+          (inPersonSpend + comparisonQuantity * unitPrice).toFixed(2),
         );
       }
-      if (purchasedQuantity > 0 && companyUnitPrice !== null) {
+      if (comparisonQuantity > 0 && companyUnitPrice !== null) {
         companySpend = Number(
-          (companySpend + purchasedQuantity * companyUnitPrice).toFixed(2),
+          (companySpend + comparisonQuantity * companyUnitPrice).toFixed(2),
         );
       }
       if (
-        purchasedQuantity > 0 &&
+        comparisonQuantity > 0 &&
         unitPrice !== null &&
         companyUnitPrice !== null
       ) {
         savings = Number(
-          (savings + purchasedQuantity * (companyUnitPrice - unitPrice)).toFixed(
+          (savings + comparisonQuantity * (companyUnitPrice - unitPrice)).toFixed(
             2,
           ),
+        );
+      }
+      if (item.comparisonUnit === "lb") {
+        purchasedWeightLb = Number(
+          (purchasedWeightLb + comparisonQuantity).toFixed(2),
         );
       }
     });
@@ -287,10 +340,11 @@ const buildScopeSummary = ({
     supplierName,
     orderCount,
     itemCount: itemCount || shoppingItemCount,
-    orderedSummary: formatQuantitySummaryByUnit(orderedTotals),
+    orderedSummary: formatOrderQuantitySummaryByUnit(orderedTotals),
     inPersonSpend,
     companySpend,
     savings,
+    purchasedWeightLb,
     hasShoppingData:
       inPersonSuppliers.length > 0 &&
       (inPersonSpend > 0 || companySpend > 0 || shoppingItemCount > 0),
@@ -350,6 +404,7 @@ export function CompanyOrdersCard({
   getCompanyOrderInPersonDraftValue,
   getCompanyOrderInPersonMetaLine,
   onCompanyOrderInPersonPurchasedQuantityChange,
+  onCompanyOrderInPersonPurchasedWeightLbChange,
   onCompanyOrderInPersonUnitPriceChange,
   onCompanyOrderInPersonCompanyUnitPriceChange,
   onSaveCompanyOrderInPerson,
@@ -784,6 +839,7 @@ export function CompanyOrdersCard({
           getDraftValue={getCompanyOrderInPersonDraftValue}
           getMetaLine={getCompanyOrderInPersonMetaLine}
           onPurchasedQuantityChange={onCompanyOrderInPersonPurchasedQuantityChange}
+          onPurchasedWeightLbChange={onCompanyOrderInPersonPurchasedWeightLbChange}
           onUnitPriceChange={onCompanyOrderInPersonUnitPriceChange}
           onCompanyUnitPriceChange={onCompanyOrderInPersonCompanyUnitPriceChange}
           onSave={onSaveCompanyOrderInPerson}

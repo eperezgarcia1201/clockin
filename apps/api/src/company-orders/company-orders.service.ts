@@ -32,6 +32,8 @@ const MAX_CONTRIBUTORS = 40;
 const MAX_NOTE_LINES = 120;
 const DEFAULT_COMPARISON_UNIT: CompanyOrderComparisonUnit = 'each';
 const LB_COMPARISON_UNIT: CompanyOrderComparisonUnit = 'lb';
+const LEGACY_LB_ORDER_MODE: CompanyOrderLbOrderMode = 'weight';
+const DEFAULT_LB_ORDER_MODE: CompanyOrderLbOrderMode = 'case';
 const DEFAULT_LB_COMPARISON_ITEM_KEYS = new Set<string>([
   supplierCatalogItemKey('JOLIVETTE', 'POLLO', 'CHICKEN'),
   supplierCatalogItemKey('JOLIVETTE', 'CHICKEN MALU', 'CHICKEN MALU'),
@@ -54,18 +56,25 @@ const DEFAULT_LB_COMPARISON_ITEM_KEYS = new Set<string>([
 ]);
 type ExportFormat = 'pdf' | 'csv' | 'excel';
 type CompanyOrderComparisonUnit = 'each' | 'lb';
+type CompanyOrderLbOrderMode = 'weight' | 'case';
+type CompanyOrderOrderUnit = 'each' | 'case' | 'lb';
 type CatalogSupplierWithComparisonUnit = {
   supplierName: string;
   items: Array<{
     nameEs: string;
     nameEn: string;
     comparisonUnit?: CompanyOrderComparisonUnit;
+    caseSizeLb?: number | null;
   }>;
 };
-type QuantityByUnit = Record<CompanyOrderComparisonUnit, number>;
-type CatalogComparisonUnitLookup = Map<
+type OrderQuantityByUnit = Record<CompanyOrderOrderUnit, number>;
+type CatalogItemSettings = {
+  comparisonUnit: CompanyOrderComparisonUnit;
+  caseSizeLb: number | null;
+};
+type CatalogSettingsLookup = Map<
   string,
-  Map<string, CompanyOrderComparisonUnit>
+  Map<string, CatalogItemSettings>
 >;
 
 type CompanyOrderDbRow = {
@@ -91,12 +100,14 @@ type StoredInPersonPurchase = {
   nameEs: string;
   nameEn: string;
   purchasedQuantity: number;
+  purchasedWeightLb: number | null;
   unitPrice: number | null;
   companyUnitPrice: number | null;
 };
 
 type StoredOrderMetadata = {
-  version: 4;
+  version: 5;
+  lbOrderMode: CompanyOrderLbOrderMode;
   weekStart: string;
   weekEnd: string;
   submittedDates: string[];
@@ -106,6 +117,7 @@ type StoredOrderMetadata = {
 };
 
 type ParsedStoredOrderNotes = {
+  lbOrderMode: CompanyOrderLbOrderMode;
   weekStart: string;
   weekEnd: string;
   submittedDates: string[];
@@ -122,6 +134,7 @@ type SerializedCompanyOrder = {
   orderDate: string;
   weekStartDate: string;
   weekEndDate: string;
+  lbOrderMode: CompanyOrderLbOrderMode;
   orderLabel: string;
   submittedDates: string[];
   contributors: string[];
@@ -154,10 +167,14 @@ type SerializedCompanyOrderInPersonSupplier = {
     orderedQuantity: number;
     purchasedQuantity: number;
     remainingQuantity: number;
+    orderQuantityUnit: CompanyOrderOrderUnit;
     comparisonUnit: CompanyOrderComparisonUnit;
+    caseSizeLb: number | null;
+    purchasedWeightLb: number | null;
     unitPrice: number | null;
     companyUnitPrice: number | null;
   }>;
+  totalPurchasedWeightLb: number;
 };
 
 @Injectable()
@@ -331,6 +348,7 @@ export class CompanyOrdersService {
       const submittedDates = new Set<string>();
       const noteLines = new Set<string>();
       const inPersonPurchases = new Map<string, StoredInPersonPurchase>();
+      let lbOrderMode: CompanyOrderLbOrderMode = DEFAULT_LB_ORDER_MODE;
 
       existingOrders.forEach((existingOrder) => {
         existingOrder.items.forEach((item) => {
@@ -343,6 +361,7 @@ export class CompanyOrdersService {
         });
 
         const parsed = this.readStoredOrderNotes(existingOrder.notes);
+        lbOrderMode = parsed.lbOrderMode;
         parsed.contributors.forEach((name) => contributors.add(name));
         parsed.submittedDates.forEach((dateKey) => submittedDates.add(dateKey));
         parsed.noteLines.forEach((line) => noteLines.add(line));
@@ -390,7 +409,8 @@ export class CompanyOrdersService {
       }
 
       const metadata: StoredOrderMetadata = {
-        version: 4,
+        version: 5,
+        lbOrderMode,
         weekStart: week.weekStartKey,
         weekEnd: week.weekEndKey,
         submittedDates: this.normalizeDateKeys(Array.from(submittedDates)),
@@ -537,7 +557,7 @@ export class CompanyOrdersService {
       },
     })) as CompanyOrderDbRow[];
     const serializedOrders = orders.map((order) => this.serializeOrder(order));
-    const comparisonUnitLookup = this.buildCatalogComparisonUnitLookup(
+    const catalogSettingsLookup = this.buildCatalogSettingsLookup(
       await this.getCatalogForTenant(tenantId),
     );
 
@@ -546,7 +566,7 @@ export class CompanyOrdersService {
       weekEndDate: week.weekEndKey,
       suppliers: this.buildInPersonShoppingSuppliers(
         serializedOrders,
-        comparisonUnitLookup,
+        catalogSettingsLookup,
       ),
     };
   }
@@ -654,6 +674,10 @@ export class CompanyOrdersService {
         nameEs: item.nameEs.trim(),
         nameEn: item.nameEn.trim(),
         purchasedQuantity: item.purchasedQuantity,
+        purchasedWeightLb:
+          item.purchasedWeightLb === undefined || item.purchasedWeightLb === null
+            ? null
+            : item.purchasedWeightLb,
         unitPrice:
           item.unitPrice === undefined || item.unitPrice === null
             ? null
@@ -671,7 +695,8 @@ export class CompanyOrdersService {
         const parsed = this.readStoredOrderNotes(order.notes);
         const nextPurchases = purchasesBySupplier.get(supplierKey);
         const metadata: StoredOrderMetadata = {
-          version: 4,
+          version: 5,
+          lbOrderMode: parsed.lbOrderMode,
           weekStart:
             this.normalizeDateKey(parsed.weekStart) || week.weekStartKey,
           weekEnd: this.normalizeDateKey(parsed.weekEnd) || week.weekEndKey,
@@ -781,10 +806,10 @@ export class CompanyOrdersService {
     const serializedOrders = weeklyOrders.length
       ? weeklyOrders.map((entry) => this.serializeOrder(entry))
       : [serialized];
-    const comparisonUnitLookup = this.buildCatalogComparisonUnitLookup(
+    const catalogSettingsLookup = this.buildCatalogSettingsLookup(
       await this.getCatalogForTenant(tenantId),
     );
-    const pdf = this.buildOrdersPdf(serializedOrders, comparisonUnitLookup, {
+    const pdf = this.buildOrdersPdf(serializedOrders, catalogSettingsLookup, {
       weekStartDate,
       weekEndDate,
       locationLabel: this.resolvePdfLocationLabel(serializedOrders),
@@ -854,12 +879,17 @@ export class CompanyOrdersService {
         },
       },
     })) as CompanyOrderDbRow[];
-    const serializedOrders = this.applyInPersonShoppingToOrders(
-      orders.map((order) => this.serializeOrder(order)),
+    const catalogSettingsLookup = this.buildCatalogSettingsLookup(
+      await this.getCatalogForTenant(tenantId),
+    );
+    const serializedOrders = orders.map((order) => this.serializeOrder(order));
+    const exportedOrders = this.applyInPersonShoppingToOrders(
+      serializedOrders,
+      catalogSettingsLookup,
     );
 
     if (options.format === 'csv') {
-      const csv = this.buildWeeklyCsv(serializedOrders, week.weekStartKey);
+      const csv = this.buildWeeklyCsv(exportedOrders, week.weekStartKey);
       return {
         filename: this.buildWeeklyExportFilename(
           week.weekStartKey,
@@ -872,7 +902,7 @@ export class CompanyOrdersService {
     }
     if (options.format === 'excel') {
       const excelHtml = this.buildWeeklyExcelHtml(
-        serializedOrders,
+        exportedOrders,
         week.weekStartKey,
       );
       return {
@@ -886,12 +916,9 @@ export class CompanyOrdersService {
       };
     }
 
-    const comparisonUnitLookup = this.buildCatalogComparisonUnitLookup(
-      await this.getCatalogForTenant(tenantId),
-    );
     const pdf = this.buildOrdersPdf(
-      orders.map((order) => this.serializeOrder(order)),
-      comparisonUnitLookup,
+      serializedOrders,
+      catalogSettingsLookup,
       {
         weekStartDate: week.weekStartKey,
         weekEndDate: week.weekEndKey,
@@ -1162,18 +1189,18 @@ export class CompanyOrdersService {
     this.catalogOverridesTableReady = true;
   }
 
-  private buildCatalogComparisonUnitLookup(
+  private buildCatalogSettingsLookup(
     suppliers: CatalogSupplierWithComparisonUnit[],
   ) {
-    const lookup: CatalogComparisonUnitLookup = new Map();
+    const lookup: CatalogSettingsLookup = new Map();
     suppliers.forEach((supplier) => {
       const supplierKey = supplier.supplierName.trim().toLowerCase();
-      const itemLookup = new Map<string, CompanyOrderComparisonUnit>();
+      const itemLookup = new Map<string, CatalogItemSettings>();
       supplier.items.forEach((item) => {
         itemLookup.set(
           catalogItemKey(item.nameEs, item.nameEn),
-          this.normalizeCatalogComparisonUnit(
-            item.comparisonUnit,
+          this.normalizeCatalogItemSettings(
+            item,
             supplier.supplierName,
             item.nameEs,
             item.nameEn,
@@ -1183,6 +1210,34 @@ export class CompanyOrdersService {
       lookup.set(supplierKey, itemLookup);
     });
     return lookup;
+  }
+
+  private normalizeCatalogItemSettings(
+    rawItem:
+      | {
+          comparisonUnit?: unknown;
+          caseSizeLb?: unknown;
+        }
+      | null
+      | undefined,
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+  ): CatalogItemSettings {
+    const comparisonUnit = this.normalizeCatalogComparisonUnit(
+      rawItem?.comparisonUnit,
+      supplierName,
+      nameEs,
+      nameEn,
+    );
+
+    return {
+      comparisonUnit,
+      caseSizeLb: this.normalizeCatalogCaseSizeLb(
+        rawItem?.caseSizeLb,
+        comparisonUnit,
+      ),
+    };
   }
 
   private normalizeCatalogComparisonUnit(
@@ -1220,47 +1275,73 @@ export class CompanyOrdersService {
     return DEFAULT_COMPARISON_UNIT;
   }
 
-  private resolveComparisonUnit(
-    lookup: CatalogComparisonUnitLookup,
+  private normalizeCatalogCaseSizeLb(
+    rawValue: unknown,
+    comparisonUnit: CompanyOrderComparisonUnit,
+  ) {
+    if (comparisonUnit !== LB_COMPARISON_UNIT) {
+      return null;
+    }
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return null;
+    }
+    return Number(parsed.toFixed(2));
+  }
+
+  private resolveCatalogItemSettings(
+    lookup: CatalogSettingsLookup,
     supplierName: string,
     nameEs: string,
     nameEn: string,
-  ): CompanyOrderComparisonUnit {
+  ): CatalogItemSettings {
     const supplierKey = supplierName.trim().toLowerCase();
     const itemKey = catalogItemKey(nameEs, nameEn);
-    return (
-      lookup.get(supplierKey)?.get(itemKey) ||
-      this.normalizeCatalogComparisonUnit(
-        undefined,
-        supplierName,
-        nameEs,
-        nameEn,
-      )
+    const existing = lookup.get(supplierKey)?.get(itemKey);
+    if (existing) {
+      return existing;
+    }
+    return this.normalizeCatalogItemSettings(
+      undefined,
+      supplierName,
+      nameEs,
+      nameEn,
     );
   }
 
-  private createQuantityByUnit(): QuantityByUnit {
+  private resolveOrderQuantityUnit(
+    comparisonUnit: CompanyOrderComparisonUnit,
+    lbOrderMode: CompanyOrderLbOrderMode,
+  ): CompanyOrderOrderUnit {
+    if (comparisonUnit !== LB_COMPARISON_UNIT) {
+      return 'each';
+    }
+    return lbOrderMode === DEFAULT_LB_ORDER_MODE ? 'case' : 'lb';
+  }
+
+  private createOrderQuantityByUnit(): OrderQuantityByUnit {
     return {
       each: 0,
+      case: 0,
       lb: 0,
     };
   }
 
-  private addQuantityByUnit(
-    bucket: QuantityByUnit,
-    comparisonUnit: CompanyOrderComparisonUnit,
+  private addOrderQuantityByUnit(
+    bucket: OrderQuantityByUnit,
+    orderUnit: CompanyOrderOrderUnit,
     quantity: number,
   ) {
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return bucket;
     }
-    bucket[comparisonUnit] = Number(
-      (bucket[comparisonUnit] + quantity).toFixed(2),
+    bucket[orderUnit] = Number(
+      (bucket[orderUnit] + quantity).toFixed(2),
     );
     return bucket;
   }
 
-  private formatQuantityWithUnit(
+  private formatComparisonQuantityWithUnit(
     quantity: number,
     comparisonUnit: CompanyOrderComparisonUnit,
   ) {
@@ -1269,10 +1350,32 @@ export class CompanyOrdersService {
       : `${this.formatPdfQuantity(quantity)} each`;
   }
 
-  private formatQuantitySummaryByUnit(bucket: QuantityByUnit) {
+  private formatOrderQuantityWithUnit(
+    quantity: number,
+    orderUnit: CompanyOrderOrderUnit,
+  ) {
+    if (orderUnit === 'case') {
+      return `${this.formatPdfQuantity(quantity)} ${
+        Math.abs(quantity - 1) < 0.005 ? 'case' : 'cases'
+      }`;
+    }
+    if (orderUnit === 'lb') {
+      return `${this.formatPdfQuantity(quantity)} lb`;
+    }
+    return `${this.formatPdfQuantity(quantity)} each`;
+  }
+
+  private formatOrderQuantitySummaryByUnit(bucket: OrderQuantityByUnit) {
     const parts: string[] = [];
     if (bucket.each > 0) {
       parts.push(`${this.formatPdfQuantity(bucket.each)} each`);
+    }
+    if (bucket.case > 0) {
+      parts.push(
+        `${this.formatPdfQuantity(bucket.case)} ${
+          Math.abs(bucket.case - 1) < 0.005 ? 'case' : 'cases'
+        }`,
+      );
     }
     if (bucket.lb > 0) {
       parts.push(`${this.formatPdfQuantity(bucket.lb)} lb`);
@@ -1299,6 +1402,7 @@ export class CompanyOrdersService {
             nameEs?: string;
             nameEn?: string;
             comparisonUnit?: unknown;
+            caseSizeLb?: unknown;
           }>;
         }
     >,
@@ -1313,6 +1417,7 @@ export class CompanyOrdersService {
             nameEs: string;
             nameEn: string;
             comparisonUnit: CompanyOrderComparisonUnit;
+            caseSizeLb: number | null;
           }
         >;
       }
@@ -1335,6 +1440,7 @@ export class CompanyOrdersService {
             nameEs: string;
             nameEn: string;
             comparisonUnit: CompanyOrderComparisonUnit;
+            caseSizeLb: number | null;
           }
         >(),
       };
@@ -1360,8 +1466,8 @@ export class CompanyOrdersService {
         existing.itemsByKey.set(catalogItemKey(nameEs, nameEn), {
           nameEs,
           nameEn,
-          comparisonUnit: this.normalizeCatalogComparisonUnit(
-            rawItem?.comparisonUnit,
+          ...this.normalizeCatalogItemSettings(
+            rawItem,
             supplierName,
             nameEs,
             nameEn,
@@ -1411,6 +1517,7 @@ export class CompanyOrdersService {
       orderDate: order.orderDate.toISOString(),
       weekStartDate,
       weekEndDate,
+      lbOrderMode: parsedNotes.lbOrderMode,
       orderLabel: this.formatOrderLabel(weekStartDate, lastSubmittedDate),
       submittedDates,
       contributors,
@@ -1598,6 +1705,7 @@ export class CompanyOrdersService {
           orderDate: orderDate.toISOString(),
           weekStartDate: aggregate.weekStartDate,
           weekEndDate: aggregate.weekEndDate,
+          lbOrderMode: DEFAULT_LB_ORDER_MODE,
           orderLabel: this.formatOrderLabel(
             aggregate.weekStartDate,
             lastSubmittedDate,
@@ -1631,7 +1739,7 @@ export class CompanyOrdersService {
 
   private buildInPersonShoppingSuppliers(
     orders: SerializedCompanyOrder[],
-    comparisonUnitLookup: CatalogComparisonUnitLookup,
+    catalogSettingsLookup: CatalogSettingsLookup,
   ): SerializedCompanyOrderInPersonSupplier[] {
     return orders
       .map((order) => {
@@ -1647,24 +1755,44 @@ export class CompanyOrdersService {
             const purchase = purchasesByKey.get(
               catalogItemKey(item.nameEs, item.nameEn),
             );
+            const settings = this.resolveCatalogItemSettings(
+              catalogSettingsLookup,
+              order.supplierName,
+              item.nameEs,
+              item.nameEn,
+            );
+            const orderQuantityUnit = this.resolveOrderQuantityUnit(
+              settings.comparisonUnit,
+              order.lbOrderMode,
+            );
             const purchasedQuantity = Number(
               Math.max(0, purchase?.purchasedQuantity || 0).toFixed(2),
             );
             const remainingQuantity = Number(
               Math.max(0, item.quantity - purchasedQuantity).toFixed(2),
             );
+            const purchasedWeightLb =
+              settings.comparisonUnit === LB_COMPARISON_UNIT
+                ? Number(
+                    Math.max(
+                      0,
+                      purchase?.purchasedWeightLb ??
+                        (orderQuantityUnit === 'lb'
+                          ? purchase?.purchasedQuantity || 0
+                          : 0),
+                    ).toFixed(2),
+                  )
+                : null;
             return {
               nameEs: item.nameEs,
               nameEn: item.nameEn,
               orderedQuantity: Number(item.quantity.toFixed(2)),
               purchasedQuantity,
               remainingQuantity,
-              comparisonUnit: this.resolveComparisonUnit(
-                comparisonUnitLookup,
-                order.supplierName,
-                item.nameEs,
-                item.nameEn,
-              ),
+              orderQuantityUnit,
+              comparisonUnit: settings.comparisonUnit,
+              caseSizeLb: settings.caseSizeLb,
+              purchasedWeightLb,
               unitPrice:
                 purchase?.unitPrice === null || purchase?.unitPrice === undefined
                   ? null
@@ -1700,13 +1828,24 @@ export class CompanyOrdersService {
               .reduce((total, item) => total + item.remainingQuantity, 0)
               .toFixed(2),
           ),
+          totalPurchasedWeightLb: Number(
+            items
+              .reduce(
+                (total, item) => total + (item.purchasedWeightLb || 0),
+                0,
+              )
+              .toFixed(2),
+          ),
           items,
         };
       })
       .sort((a, b) => a.supplierName.localeCompare(b.supplierName));
   }
 
-  private applyInPersonShoppingToOrders(orders: SerializedCompanyOrder[]) {
+  private applyInPersonShoppingToOrders(
+    orders: SerializedCompanyOrder[],
+    _catalogSettingsLookup: CatalogSettingsLookup,
+  ) {
     return orders
       .map((order) => {
         const purchasesByKey = new Map<string, StoredInPersonPurchase>();
@@ -1763,7 +1902,7 @@ export class CompanyOrdersService {
 
   private buildPdfRemainingOrderRows(
     order: SerializedCompanyOrder,
-    comparisonUnitLookup: CatalogComparisonUnitLookup,
+    catalogSettingsLookup: CatalogSettingsLookup,
   ) {
     const purchasesByKey = new Map<string, StoredInPersonPurchase>();
     order.inPersonPurchases.forEach((purchase) => {
@@ -1781,17 +1920,20 @@ export class CompanyOrdersService {
         if (remainingQuantity <= 0) {
           return null;
         }
-        const comparisonUnit = this.resolveComparisonUnit(
-          comparisonUnitLookup,
-          order.supplierName,
-          item.nameEs,
-          item.nameEn,
+        const orderQuantityUnit = this.resolveOrderQuantityUnit(
+          this.resolveCatalogItemSettings(
+            catalogSettingsLookup,
+            order.supplierName,
+            item.nameEs,
+            item.nameEn,
+          ).comparisonUnit,
+          order.lbOrderMode,
         );
         return {
           nameEs: item.nameEs || item.nameEn || '-',
           nameEn: item.nameEn || item.nameEs || '-',
           quantity: remainingQuantity,
-          comparisonUnit,
+          orderQuantityUnit,
         };
       })
       .filter(
@@ -1801,16 +1943,16 @@ export class CompanyOrdersService {
           nameEs: string;
           nameEn: string;
           quantity: number;
-          comparisonUnit: CompanyOrderComparisonUnit;
+          orderQuantityUnit: CompanyOrderOrderUnit;
         } => item !== null,
       )
       .map((item, index) => ({
         rowNumber: index + 1,
         nameEs: item.nameEs,
         nameEn: item.nameEn,
-        quantity: this.formatQuantityWithUnit(
+        quantity: this.formatOrderQuantityWithUnit(
           item.quantity,
-          item.comparisonUnit,
+          item.orderQuantityUnit,
         ),
       }));
 
@@ -1830,14 +1972,14 @@ export class CompanyOrdersService {
 
   private buildPdfRemainingOrderTotals(
     order: SerializedCompanyOrder,
-    comparisonUnitLookup: CatalogComparisonUnitLookup,
+    catalogSettingsLookup: CatalogSettingsLookup,
   ) {
     const purchasesByKey = new Map<string, StoredInPersonPurchase>();
     order.inPersonPurchases.forEach((purchase) => {
       purchasesByKey.set(catalogItemKey(purchase.nameEs, purchase.nameEn), purchase);
     });
 
-    const quantitiesByUnit = this.createQuantityByUnit();
+    const quantitiesByUnit = this.createOrderQuantityByUnit();
     const remainingItems = order.items.reduce((count, item) => {
       const remainingQuantity = Number(
         Math.max(
@@ -1850,14 +1992,15 @@ export class CompanyOrdersService {
       if (remainingQuantity <= 0) {
         return count;
       }
-      this.addQuantityByUnit(
+      const settings = this.resolveCatalogItemSettings(
+        catalogSettingsLookup,
+        order.supplierName,
+        item.nameEs,
+        item.nameEn,
+      );
+      this.addOrderQuantityByUnit(
         quantitiesByUnit,
-        this.resolveComparisonUnit(
-          comparisonUnitLookup,
-          order.supplierName,
-          item.nameEs,
-          item.nameEn,
-        ),
+        this.resolveOrderQuantityUnit(settings.comparisonUnit, order.lbOrderMode),
         remainingQuantity,
       );
       return count + 1;
@@ -1871,13 +2014,33 @@ export class CompanyOrdersService {
 
   private buildPdfInPersonPurchaseSummary(
     order: SerializedCompanyOrder,
-    comparisonUnitLookup: CatalogComparisonUnitLookup,
+    catalogSettingsLookup: CatalogSettingsLookup,
   ) {
     const items = order.inPersonPurchases
       .map((purchase) => {
+        const settings = this.resolveCatalogItemSettings(
+          catalogSettingsLookup,
+          order.supplierName,
+          purchase.nameEs,
+          purchase.nameEn,
+        );
         const purchasedQuantity = Number(
           Math.max(0, purchase.purchasedQuantity || 0).toFixed(2),
         );
+        const orderQuantityUnit = this.resolveOrderQuantityUnit(
+          settings.comparisonUnit,
+          order.lbOrderMode,
+        );
+        const comparisonQuantity =
+          settings.comparisonUnit === LB_COMPARISON_UNIT
+            ? Number(
+                Math.max(
+                  0,
+                  purchase.purchasedWeightLb ??
+                    (orderQuantityUnit === 'lb' ? purchase.purchasedQuantity || 0 : 0),
+                ).toFixed(2),
+              )
+            : purchasedQuantity;
         const unitPrice =
           purchase.unitPrice === null || purchase.unitPrice === undefined
             ? null
@@ -1888,12 +2051,12 @@ export class CompanyOrdersService {
             ? null
             : Number(purchase.companyUnitPrice.toFixed(2));
         const inPersonSpend =
-          purchasedQuantity > 0 && unitPrice !== null
-            ? Number((purchasedQuantity * unitPrice).toFixed(2))
+          comparisonQuantity > 0 && unitPrice !== null
+            ? Number((comparisonQuantity * unitPrice).toFixed(2))
             : null;
         const companySpend =
-          purchasedQuantity > 0 && companyUnitPrice !== null
-            ? Number((purchasedQuantity * companyUnitPrice).toFixed(2))
+          comparisonQuantity > 0 && companyUnitPrice !== null
+            ? Number((comparisonQuantity * companyUnitPrice).toFixed(2))
             : null;
         const savings =
           inPersonSpend !== null && companySpend !== null
@@ -1902,23 +2065,24 @@ export class CompanyOrdersService {
 
         if (
           purchasedQuantity <= 0 &&
+          comparisonQuantity <= 0 &&
           unitPrice === null &&
           companyUnitPrice === null
         ) {
           return null;
         }
-        const comparisonUnit = this.resolveComparisonUnit(
-          comparisonUnitLookup,
-          order.supplierName,
-          purchase.nameEs,
-          purchase.nameEn,
-        );
 
         return {
           nameEs: purchase.nameEs || purchase.nameEn || '-',
           nameEn: purchase.nameEn || purchase.nameEs || '-',
           purchasedQuantity,
-          comparisonUnit,
+          purchasedWeightLb:
+            settings.comparisonUnit === LB_COMPARISON_UNIT
+              ? comparisonQuantity
+              : null,
+          orderQuantityUnit,
+          comparisonUnit: settings.comparisonUnit,
+          caseSizeLb: settings.caseSizeLb,
           unitPrice,
           companyUnitPrice,
           inPersonSpend,
@@ -1933,7 +2097,10 @@ export class CompanyOrdersService {
           nameEs: string;
           nameEn: string;
           purchasedQuantity: number;
+          purchasedWeightLb: number | null;
+          orderQuantityUnit: CompanyOrderOrderUnit;
           comparisonUnit: CompanyOrderComparisonUnit;
+          caseSizeLb: number | null;
           unitPrice: number | null;
           companyUnitPrice: number | null;
           inPersonSpend: number | null;
@@ -1947,11 +2114,11 @@ export class CompanyOrdersService {
         ),
       );
 
-    const purchasedQuantitiesByUnit = this.createQuantityByUnit();
+    const purchasedQuantitiesByUnit = this.createOrderQuantityByUnit();
     items.forEach((item) => {
-      this.addQuantityByUnit(
+      this.addOrderQuantityByUnit(
         purchasedQuantitiesByUnit,
-        item.comparisonUnit,
+        item.orderQuantityUnit,
         item.purchasedQuantity,
       );
     });
@@ -1959,6 +2126,9 @@ export class CompanyOrdersService {
     return {
       items,
       purchasedQuantitiesByUnit,
+      totalPurchasedWeightLb: Number(
+        items.reduce((total, item) => total + (item.purchasedWeightLb || 0), 0).toFixed(2),
+      ),
       totalInPersonSpend: Number(
         items
           .reduce((total, item) => total + (item.inPersonSpend || 0), 0)
@@ -1977,26 +2147,34 @@ export class CompanyOrdersService {
 
   private buildPdfInPersonTotals(
     orders: SerializedCompanyOrder[],
-    comparisonUnitLookup: CatalogComparisonUnitLookup,
+    catalogSettingsLookup: CatalogSettingsLookup,
   ) {
     return orders.reduce(
       (acc, order) => {
         const summary = this.buildPdfInPersonPurchaseSummary(
           order,
-          comparisonUnitLookup,
+          catalogSettingsLookup,
         );
-        this.addQuantityByUnit(
+        this.addOrderQuantityByUnit(
           acc.purchasedQuantitiesByUnit,
           'each',
           summary.purchasedQuantitiesByUnit.each,
         );
-        this.addQuantityByUnit(
+        this.addOrderQuantityByUnit(
+          acc.purchasedQuantitiesByUnit,
+          'case',
+          summary.purchasedQuantitiesByUnit.case,
+        );
+        this.addOrderQuantityByUnit(
           acc.purchasedQuantitiesByUnit,
           'lb',
           summary.purchasedQuantitiesByUnit.lb,
         );
         return {
           purchasedQuantitiesByUnit: acc.purchasedQuantitiesByUnit,
+          totalPurchasedWeightLb: Number(
+            (acc.totalPurchasedWeightLb + summary.totalPurchasedWeightLb).toFixed(2),
+          ),
           totalInPersonSpend: Number(
             (acc.totalInPersonSpend + summary.totalInPersonSpend).toFixed(2),
           ),
@@ -2010,7 +2188,8 @@ export class CompanyOrdersService {
         };
       },
       {
-        purchasedQuantitiesByUnit: this.createQuantityByUnit(),
+        purchasedQuantitiesByUnit: this.createOrderQuantityByUnit(),
+        totalPurchasedWeightLb: 0,
         totalInPersonSpend: 0,
         totalCompanySpend: 0,
         totalSavings: 0,
@@ -2130,10 +2309,20 @@ export class CompanyOrdersService {
         value.companyUnitPrice === null || value.companyUnitPrice === undefined
           ? null
           : Number(value.companyUnitPrice);
+      const purchasedWeightLbRaw =
+        value.purchasedWeightLb === null || value.purchasedWeightLb === undefined
+          ? null
+          : Number(value.purchasedWeightLb);
       const safePurchasedQuantity =
         Number.isFinite(purchasedQuantity) && purchasedQuantity > 0
           ? Number(purchasedQuantity.toFixed(2))
           : 0;
+      const safePurchasedWeightLb =
+        purchasedWeightLbRaw !== null &&
+        Number.isFinite(purchasedWeightLbRaw) &&
+        purchasedWeightLbRaw > 0
+          ? Number(purchasedWeightLbRaw.toFixed(2))
+          : null;
       const safeUnitPrice =
         unitPriceRaw !== null && Number.isFinite(unitPriceRaw) && unitPriceRaw >= 0
           ? Number(unitPriceRaw.toFixed(2))
@@ -2146,6 +2335,7 @@ export class CompanyOrdersService {
           : null;
       if (
         safePurchasedQuantity <= 0 &&
+        safePurchasedWeightLb === null &&
         safeUnitPrice === null &&
         safeCompanyUnitPrice === null
       ) {
@@ -2155,6 +2345,7 @@ export class CompanyOrdersService {
         nameEs,
         nameEn,
         purchasedQuantity: safePurchasedQuantity,
+        purchasedWeightLb: safePurchasedWeightLb,
         unitPrice: safeUnitPrice,
         companyUnitPrice: safeCompanyUnitPrice,
       });
@@ -2168,7 +2359,11 @@ export class CompanyOrdersService {
 
   private composeStoredOrderNotes(metadata: StoredOrderMetadata) {
     const payload: StoredOrderMetadata = {
-      version: 4,
+      version: 5,
+      lbOrderMode:
+        metadata.lbOrderMode === LEGACY_LB_ORDER_MODE
+          ? LEGACY_LB_ORDER_MODE
+          : DEFAULT_LB_ORDER_MODE,
       weekStart: this.normalizeDateKey(metadata.weekStart),
       weekEnd: this.normalizeDateKey(metadata.weekEnd),
       submittedDates: this.normalizeDateKeys(metadata.submittedDates),
@@ -2189,6 +2384,7 @@ export class CompanyOrdersService {
     const source = rawNotes?.trim() || '';
     if (!source.startsWith(COMPANY_ORDER_META_PREFIX)) {
       return {
+        lbOrderMode: LEGACY_LB_ORDER_MODE,
         weekStart: '',
         weekEnd: '',
         submittedDates: [],
@@ -2211,39 +2407,40 @@ export class CompanyOrdersService {
     try {
       const parsed = JSON.parse(metadataRaw) as Record<string, unknown>;
       const version = Number(parsed.version || 0);
-      if (version === 2) {
-        const weekStart =
-          typeof parsed.weekStart === 'string'
-            ? this.normalizeDateKey(parsed.weekStart)
-            : '';
-        const weekEnd =
-          typeof parsed.weekEnd === 'string'
-            ? this.normalizeDateKey(parsed.weekEnd)
-            : '';
-        const submittedDates = Array.isArray(parsed.submittedDates)
-          ? this.normalizeDateKeys(
-              parsed.submittedDates.filter(
-                (value): value is string => typeof value === 'string',
-              ),
+      const weekStart =
+        typeof parsed.weekStart === 'string'
+          ? this.normalizeDateKey(parsed.weekStart)
+          : '';
+      const weekEnd =
+        typeof parsed.weekEnd === 'string'
+          ? this.normalizeDateKey(parsed.weekEnd)
+          : '';
+      const submittedDates = Array.isArray(parsed.submittedDates)
+        ? this.normalizeDateKeys(
+            parsed.submittedDates.filter(
+              (value): value is string => typeof value === 'string',
+            ),
+          )
+        : [];
+      const contributors = Array.isArray(parsed.contributors)
+        ? this.normalizeContributors(
+            parsed.contributors.filter(
+              (value): value is string => typeof value === 'string',
+            ),
+          )
+        : [];
+      const noteLines = this.normalizeNoteLines([
+        ...(Array.isArray(parsed.noteLines)
+          ? parsed.noteLines.filter(
+              (value): value is string => typeof value === 'string',
             )
-          : [];
-        const contributors = Array.isArray(parsed.contributors)
-          ? this.normalizeContributors(
-              parsed.contributors.filter(
-                (value): value is string => typeof value === 'string',
-              ),
-            )
-          : [];
-        const noteLines = this.normalizeNoteLines([
-          ...(Array.isArray(parsed.noteLines)
-            ? parsed.noteLines.filter(
-                (value): value is string => typeof value === 'string',
-              )
-            : []),
-          ...(legacyNotes ? [legacyNotes] : []),
-        ]);
+          : []),
+        ...(legacyNotes ? [legacyNotes] : []),
+      ]);
 
+      if (version === 2) {
         return {
+          lbOrderMode: LEGACY_LB_ORDER_MODE,
           weekStart,
           weekEnd,
           submittedDates,
@@ -2254,37 +2451,7 @@ export class CompanyOrdersService {
         };
       }
 
-      if (version === 3 || version === 4) {
-        const weekStart =
-          typeof parsed.weekStart === 'string'
-            ? this.normalizeDateKey(parsed.weekStart)
-            : '';
-        const weekEnd =
-          typeof parsed.weekEnd === 'string'
-            ? this.normalizeDateKey(parsed.weekEnd)
-            : '';
-        const submittedDates = Array.isArray(parsed.submittedDates)
-          ? this.normalizeDateKeys(
-              parsed.submittedDates.filter(
-                (value): value is string => typeof value === 'string',
-              ),
-            )
-          : [];
-        const contributors = Array.isArray(parsed.contributors)
-          ? this.normalizeContributors(
-              parsed.contributors.filter(
-                (value): value is string => typeof value === 'string',
-              ),
-            )
-          : [];
-        const noteLines = this.normalizeNoteLines([
-          ...(Array.isArray(parsed.noteLines)
-            ? parsed.noteLines.filter(
-                (value): value is string => typeof value === 'string',
-              )
-            : []),
-          ...(legacyNotes ? [legacyNotes] : []),
-        ]);
+      if (version === 3 || version === 4 || version === 5) {
         const inPersonPurchases = this.normalizeStoredInPersonPurchases(
           Array.isArray(parsed.inPersonPurchases)
             ? parsed.inPersonPurchases
@@ -2295,6 +2462,7 @@ export class CompanyOrdersService {
                     nameEs?: string;
                     nameEn?: string;
                     purchasedQuantity?: number;
+                    purchasedWeightLb?: number | null;
                     unitPrice?: number | null;
                     price?: number | null;
                     companyUnitPrice?: number | null;
@@ -2313,6 +2481,10 @@ export class CompanyOrdersService {
                     typeof value.purchasedQuantity === 'number'
                       ? value.purchasedQuantity
                       : 0,
+                  purchasedWeightLb:
+                    typeof value.purchasedWeightLb === 'number'
+                      ? value.purchasedWeightLb
+                      : null,
                   unitPrice:
                     typeof value.unitPrice === 'number'
                       ? value.unitPrice
@@ -2330,6 +2502,10 @@ export class CompanyOrdersService {
         );
 
         return {
+          lbOrderMode:
+            version >= 5 && parsed.lbOrderMode === DEFAULT_LB_ORDER_MODE
+              ? DEFAULT_LB_ORDER_MODE
+              : LEGACY_LB_ORDER_MODE,
           weekStart,
           weekEnd,
           submittedDates,
@@ -2341,6 +2517,7 @@ export class CompanyOrdersService {
       }
 
       return {
+        lbOrderMode: LEGACY_LB_ORDER_MODE,
         weekStart: '',
         weekEnd: '',
         submittedDates: [],
@@ -2351,6 +2528,7 @@ export class CompanyOrdersService {
       };
     } catch {
       return {
+        lbOrderMode: LEGACY_LB_ORDER_MODE,
         weekStart: '',
         weekEnd: '',
         submittedDates: [],
@@ -2416,7 +2594,7 @@ export class CompanyOrdersService {
 
   private buildOrdersPdf(
     orders: SerializedCompanyOrder[],
-    comparisonUnitLookup: CatalogComparisonUnitLookup,
+    catalogSettingsLookup: CatalogSettingsLookup,
     options: {
       weekStartDate: string;
       weekEndDate: string;
@@ -2510,7 +2688,7 @@ export class CompanyOrdersService {
 
     const overallInPersonTotals = this.buildPdfInPersonTotals(
       orders,
-      comparisonUnitLookup,
+      catalogSettingsLookup,
     );
 
     const drawDocumentHeader = () => {
@@ -2548,8 +2726,31 @@ export class CompanyOrdersService {
       );
       cursorY -= 14;
       if (overallInPersonTotals.itemCount > 0) {
+        const overallParts = [
+          `In-Person: ${this.formatOrderQuantitySummaryByUnit(
+            overallInPersonTotals.purchasedQuantitiesByUnit,
+          )}`,
+        ];
+        if (overallInPersonTotals.totalPurchasedWeightLb > 0) {
+          overallParts.push(
+            `Compared ${this.formatPdfQuantity(
+              overallInPersonTotals.totalPurchasedWeightLb,
+            )} lb`,
+          );
+        }
+        overallParts.push(
+          `Spend: ${this.formatPdfMoney(overallInPersonTotals.totalInPersonSpend)}`,
+        );
+        overallParts.push(
+          `Company Equivalent: ${this.formatPdfMoney(
+            overallInPersonTotals.totalCompanySpend,
+          )}`,
+        );
+        overallParts.push(
+          this.formatPdfSavingsLabel(overallInPersonTotals.totalSavings),
+        );
         drawText(
-          `In-Person: ${this.formatQuantitySummaryByUnit(overallInPersonTotals.purchasedQuantitiesByUnit)} | Spend: ${this.formatPdfMoney(overallInPersonTotals.totalInPersonSpend)} | Company Equivalent: ${this.formatPdfMoney(overallInPersonTotals.totalCompanySpend)} | ${this.formatPdfSavingsLabel(overallInPersonTotals.totalSavings)}`,
+          overallParts.join(' | '),
           LEFT,
           cursorY,
           10,
@@ -2586,14 +2787,14 @@ export class CompanyOrdersService {
       const contributorLabel = order.contributors.length
         ? order.contributors.join(', ')
         : order.createdBy || 'N/A';
-      const rows = this.buildPdfRemainingOrderRows(order, comparisonUnitLookup);
+      const rows = this.buildPdfRemainingOrderRows(order, catalogSettingsLookup);
       const remainingTotals = this.buildPdfRemainingOrderTotals(
         order,
-        comparisonUnitLookup,
+        catalogSettingsLookup,
       );
       const inPersonSummary = this.buildPdfInPersonPurchaseSummary(
         order,
-        comparisonUnitLookup,
+        catalogSettingsLookup,
       );
 
       let rowOffset = 0;
@@ -2697,7 +2898,7 @@ export class CompanyOrdersService {
           );
           cursorY -= 14;
           drawText(
-            `Remaining Quantity: ${this.formatQuantitySummaryByUnit(
+            `Remaining Quantity: ${this.formatOrderQuantitySummaryByUnit(
               remainingTotals.quantitiesByUnit,
             )}`,
             LEFT,
@@ -2718,8 +2919,29 @@ export class CompanyOrdersService {
           }
           if (inPersonSummary.items.length) {
             ensureSpace(26);
+            const inPersonParts = [
+              `In-Person Shopping: Bought ${this.formatOrderQuantitySummaryByUnit(
+                inPersonSummary.purchasedQuantitiesByUnit,
+              )}`,
+            ];
+            if (inPersonSummary.totalPurchasedWeightLb > 0) {
+              inPersonParts.push(
+                `Compared ${this.formatPdfQuantity(
+                  inPersonSummary.totalPurchasedWeightLb,
+                )} lb`,
+              );
+            }
+            inPersonParts.push(
+              `Spent ${this.formatPdfMoney(inPersonSummary.totalInPersonSpend)}`,
+            );
+            inPersonParts.push(
+              `Company ${this.formatPdfMoney(inPersonSummary.totalCompanySpend)}`,
+            );
+            inPersonParts.push(
+              this.formatPdfSavingsLabel(inPersonSummary.totalSavings),
+            );
             drawText(
-              `In-Person Shopping: Bought ${this.formatQuantitySummaryByUnit(inPersonSummary.purchasedQuantitiesByUnit)} | Spent ${this.formatPdfMoney(inPersonSummary.totalInPersonSpend)} | Company ${this.formatPdfMoney(inPersonSummary.totalCompanySpend)} | ${this.formatPdfSavingsLabel(inPersonSummary.totalSavings)}`,
+              inPersonParts.join(' | '),
               LEFT,
               cursorY,
               10,
@@ -2728,28 +2950,55 @@ export class CompanyOrdersService {
             cursorY -= 14;
 
             inPersonSummary.items.forEach((purchase) => {
-              const line = [
+              const lineParts = [
                 `- ${purchase.nameEs}${purchase.nameEn && purchase.nameEn !== purchase.nameEs ? ` / ${purchase.nameEn}` : ''}`,
-                this.formatQuantityWithUnit(
+                this.formatOrderQuantityWithUnit(
                   purchase.purchasedQuantity,
-                  purchase.comparisonUnit,
+                  purchase.orderQuantityUnit,
                 ),
+              ];
+              if (
+                purchase.comparisonUnit === LB_COMPARISON_UNIT &&
+                purchase.purchasedWeightLb !== null &&
+                purchase.purchasedWeightLb > 0
+              ) {
+                lineParts.push(
+                  `Compared ${this.formatComparisonQuantityWithUnit(
+                    purchase.purchasedWeightLb,
+                    purchase.comparisonUnit,
+                  )}`,
+                );
+              }
+              if (
+                purchase.caseSizeLb !== null &&
+                purchase.orderQuantityUnit === 'case'
+              ) {
+                lineParts.push(
+                  `Case Size ${this.formatPdfQuantity(purchase.caseSizeLb)} lb`,
+                );
+              }
+              lineParts.push(
                 purchase.unitPrice !== null
                   ? `Paid ${this.formatPdfUnitPrice(
                       purchase.unitPrice,
                       purchase.comparisonUnit,
                     )}${purchase.inPersonSpend !== null ? ` (${this.formatPdfMoney(purchase.inPersonSpend)})` : ''}`
                   : 'Paid n/a',
+              );
+              lineParts.push(
                 purchase.companyUnitPrice !== null
                   ? `Company ${this.formatPdfUnitPrice(
                       purchase.companyUnitPrice,
                       purchase.comparisonUnit,
                     )}${purchase.companySpend !== null ? ` (${this.formatPdfMoney(purchase.companySpend)})` : ''}`
                   : 'Company n/a',
+              );
+              lineParts.push(
                 purchase.savings !== null
                   ? this.formatPdfSavingsLabel(purchase.savings)
                   : 'Savings n/a',
-              ].join(' | ');
+              );
+              const line = lineParts.join(' | ');
               const wrapped = this.wrapPdfText(line, CONTENT_WIDTH - 18, 10);
               wrapped.forEach((wrappedLine) => {
                 ensureSpace(14);

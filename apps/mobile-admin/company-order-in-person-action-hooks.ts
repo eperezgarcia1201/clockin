@@ -46,6 +46,24 @@ export const useCompanyOrderInPersonActions = (params: {
     [],
   );
 
+  const setPurchasedWeightLb = useCallback(
+    (
+      supplierName: string,
+      nameEs: string,
+      nameEn: string,
+      value: string,
+    ) => {
+      const itemKey = companyOrderItemKey(nameEs, nameEn);
+      const normalized = normalizeCompanyOrderQuantityInput(value);
+      params.setDrafts((previous) =>
+        updateCompanyOrderInPersonDraftValue(previous, supplierName, itemKey, {
+          purchasedWeightLb: normalized,
+        }),
+      );
+    },
+    [],
+  );
+
   const setUnitPrice = useCallback(
     (
       supplierName: string,
@@ -123,6 +141,7 @@ export const useCompanyOrderInPersonActions = (params: {
 
   return {
     setPurchasedQuantity,
+    setPurchasedWeightLb,
     setUnitPrice,
     setCompanyUnitPrice,
     saveInPersonShopping,

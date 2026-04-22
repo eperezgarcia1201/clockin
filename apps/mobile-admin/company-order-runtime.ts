@@ -21,12 +21,18 @@ const normalizeCatalogItem = (
   if (!nameEs || !nameEn) {
     return null;
   }
+  const rawCaseSizeLb = (item as Record<string, unknown>).caseSizeLb;
+  const parsedCaseSizeLb = Number(rawCaseSizeLb);
   return {
     nameEs,
     nameEn,
     comparisonUnit: normalizeComparisonUnit(
       (item as Record<string, unknown>).comparisonUnit,
     ),
+    caseSizeLb:
+      Number.isFinite(parsedCaseSizeLb) && parsedCaseSizeLb > 0
+        ? Number(parsedCaseSizeLb.toFixed(2))
+        : null,
   };
 };
 

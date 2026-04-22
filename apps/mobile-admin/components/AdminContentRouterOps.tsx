@@ -221,6 +221,9 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
         onCompanyOrderInPersonPurchasedQuantityChange={
           props.handleCompanyOrderInPersonPurchasedQuantityChange
         }
+        onCompanyOrderInPersonPurchasedWeightLbChange={
+          props.handleCompanyOrderInPersonPurchasedWeightLbChange
+        }
         onCompanyOrderInPersonUnitPriceChange={
           props.handleCompanyOrderInPersonUnitPriceChange
         }

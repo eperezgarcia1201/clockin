@@ -15,6 +15,7 @@ import {
 import type {
   CompanyOrderComparisonUnit,
   CompanyOrderInPersonSupplier,
+  CompanyOrderOrderUnit,
 } from "../types";
 
 type CompanyOrdersInPersonSectionProps = {
@@ -34,7 +35,10 @@ type CompanyOrdersInPersonSectionProps = {
     orderedQuantity: number;
     purchasedQuantity: number;
     remainingQuantity: number;
+    orderQuantityUnit: CompanyOrderOrderUnit;
     comparisonUnit: CompanyOrderComparisonUnit;
+    caseSizeLb: number | null;
+    purchasedWeightLb: number | null;
     unitPrice: number | null;
     companyUnitPrice: number | null;
   }>;
@@ -44,6 +48,7 @@ type CompanyOrdersInPersonSectionProps = {
     nameEn: string,
   ) => {
     purchasedQuantity: string;
+    purchasedWeightLb: string;
     unitPrice: string;
     companyUnitPrice: string;
   };
@@ -55,12 +60,21 @@ type CompanyOrdersInPersonSectionProps = {
       orderedQuantity: number;
       purchasedQuantity: number;
       remainingQuantity: number;
+      orderQuantityUnit: CompanyOrderOrderUnit;
       comparisonUnit: CompanyOrderComparisonUnit;
+      caseSizeLb: number | null;
+      purchasedWeightLb: number | null;
       unitPrice: number | null;
       companyUnitPrice: number | null;
     },
   ) => string;
   onPurchasedQuantityChange: (
+    supplierName: string,
+    nameEs: string,
+    nameEn: string,
+    value: string,
+  ) => void;
+  onPurchasedWeightLbChange: (
     supplierName: string,
     nameEs: string,
     nameEn: string,
@@ -88,6 +102,13 @@ type CompanyOrdersInPersonSectionProps = {
   formatDisplayDate: (value: string | null | undefined) => string;
 };
 
+const formatOrderUnitLabel = (orderUnit: CompanyOrderOrderUnit) => {
+  if (orderUnit === "case") {
+    return "case";
+  }
+  return orderUnit;
+};
+
 export function CompanyOrdersInPersonSection({
   isLight,
   weekStartDate,
@@ -102,6 +123,7 @@ export function CompanyOrdersInPersonSection({
   getDraftValue,
   getMetaLine,
   onPurchasedQuantityChange,
+  onPurchasedWeightLbChange,
   onUnitPriceChange,
   onCompanyUnitPriceChange,
   onSave,
@@ -126,8 +148,6 @@ export function CompanyOrdersInPersonSection({
     : weekEndLabel
       ? `Week ${weekEndLabel}`
       : "Week not available";
-  const unitPlaceholderLabel = (comparisonUnit: CompanyOrderComparisonUnit) =>
-    comparisonUnit === "lb" ? "lb" : "each";
 
   return (
     <>
@@ -250,6 +270,7 @@ export function CompanyOrdersInPersonSection({
               normalizedNames.nameEs,
               normalizedNames.nameEn,
             );
+            const isLbItem = item.comparisonUnit === "lb";
             return (
               <View
                 key={`in-person-item-${normalizedSupplierName}-${companyOrderItemKey(normalizedNames.nameEs, normalizedNames.nameEn)}`}
@@ -268,7 +289,8 @@ export function CompanyOrdersInPersonSection({
                     </Text>
                   ) : null}
                   <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-                    Compare by {unitPlaceholderLabel(item.comparisonUnit)}
+                    Ordered by {formatOrderUnitLabel(item.orderQuantityUnit)}
+                    {item.caseSizeLb ? ` • ${Number(item.caseSizeLb.toFixed(2))} lb per case` : ""}
                   </Text>
                   <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
                     {getMetaLine(normalizedSupplierName, {
@@ -292,9 +314,33 @@ export function CompanyOrdersInPersonSection({
                     }
                     keyboardType="decimal-pad"
                     inputAccessoryViewID={inputAccessoryViewID}
-                    placeholder={`Bought ${item.comparisonUnit === "lb" ? "(lb)" : ""}`.trim()}
+                    placeholder={
+                      item.orderQuantityUnit === "case"
+                        ? "Bought cases"
+                        : item.orderQuantityUnit === "lb"
+                          ? "Bought lb"
+                          : "Bought each"
+                    }
                     placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                   />
+                  {isLbItem ? (
+                    <TextInput
+                      style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
+                      value={draft.purchasedWeightLb}
+                      onChangeText={(value) =>
+                        onPurchasedWeightLbChange(
+                          normalizedSupplierName,
+                          normalizedNames.nameEs,
+                          normalizedNames.nameEn,
+                          value,
+                        )
+                      }
+                      keyboardType="decimal-pad"
+                      inputAccessoryViewID={inputAccessoryViewID}
+                      placeholder="Compared lb"
+                      placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
+                    />
+                  ) : null}
                   <TextInput
                     style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
                     value={draft.unitPrice}
@@ -308,7 +354,7 @@ export function CompanyOrdersInPersonSection({
                     }
                     keyboardType="decimal-pad"
                     inputAccessoryViewID={inputAccessoryViewID}
-                    placeholder={item.comparisonUnit === "lb" ? "Paid/lb" : "Paid each"}
+                    placeholder={isLbItem ? "Paid/lb" : "Paid each"}
                     placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                   />
                   <TextInput
@@ -324,11 +370,7 @@ export function CompanyOrdersInPersonSection({
                     }
                     keyboardType="decimal-pad"
                     inputAccessoryViewID={inputAccessoryViewID}
-                    placeholder={
-                      item.comparisonUnit === "lb"
-                        ? "Company/lb"
-                        : "Company each"
-                    }
+                    placeholder={isLbItem ? "Company/lb" : "Company each"}
                     placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                   />
                 </View>

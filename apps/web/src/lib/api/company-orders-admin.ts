@@ -6,6 +6,7 @@ export type CompanyOrderCatalogItem = {
   nameEs: string;
   nameEn: string;
   comparisonUnit?: CompanyOrderComparisonUnit;
+  caseSizeLb?: number | null;
 };
 
 export type CompanyOrderCatalogSupplier = {

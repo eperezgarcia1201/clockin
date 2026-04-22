@@ -6,12 +6,14 @@ import {
 import type {
   CompanyOrderComparisonUnit,
   CompanyOrderInPersonSupplier,
+  CompanyOrderOrderUnit,
 } from "./types";
 
 type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
 
 export type CompanyOrderInPersonDraftValue = {
   purchasedQuantity: string;
+  purchasedWeightLb: string;
   unitPrice: string;
   companyUnitPrice: string;
 };
@@ -47,6 +49,11 @@ const normalizeComparisonUnit = (
   value: unknown,
 ): CompanyOrderComparisonUnit => (value === "lb" ? "lb" : "each");
 
+const normalizeOrderQuantityUnit = (
+  value: unknown,
+): CompanyOrderOrderUnit =>
+  value === "case" ? "case" : value === "lb" ? "lb" : "each";
+
 const normalizeInPersonItem = (
   value: unknown,
 ):
@@ -56,7 +63,10 @@ const normalizeInPersonItem = (
       orderedQuantity: number;
       purchasedQuantity: number;
       remainingQuantity: number;
+      orderQuantityUnit: CompanyOrderOrderUnit;
       comparisonUnit: CompanyOrderComparisonUnit;
+      caseSizeLb: number | null;
+      purchasedWeightLb: number | null;
       unitPrice: number | null;
       companyUnitPrice: number | null;
     }
@@ -81,13 +91,31 @@ const normalizeInPersonItem = (
       : raw.companyPrice !== undefined
         ? raw.companyPrice
         : null;
+  const comparisonUnit = normalizeComparisonUnit(raw.comparisonUnit);
+  const rawCaseSizeLb =
+    raw.caseSizeLb !== undefined ? raw.caseSizeLb : null;
+  const rawPurchasedWeightLb =
+    raw.purchasedWeightLb !== undefined ? raw.purchasedWeightLb : null;
   return {
     nameEs: names.nameEs,
     nameEn: names.nameEn,
     orderedQuantity: normalizeQuantity(raw.orderedQuantity),
     purchasedQuantity: normalizeQuantity(raw.purchasedQuantity),
     remainingQuantity: normalizeQuantity(raw.remainingQuantity),
-    comparisonUnit: normalizeComparisonUnit(raw.comparisonUnit),
+    orderQuantityUnit: normalizeOrderQuantityUnit(
+      raw.orderQuantityUnit !== undefined
+        ? raw.orderQuantityUnit
+        : comparisonUnit === "lb"
+          ? "case"
+          : "each",
+    ),
+    comparisonUnit,
+    caseSizeLb:
+      rawCaseSizeLb === null ? null : normalizeQuantity(rawCaseSizeLb),
+    purchasedWeightLb:
+      rawPurchasedWeightLb === null
+        ? null
+        : normalizeQuantity(rawPurchasedWeightLb),
     unitPrice:
       rawUnitPrice === null ? null : normalizeUnitPrice(rawUnitPrice),
     companyUnitPrice:
@@ -133,6 +161,14 @@ const normalizeSupplierList = (payload: {
                 .reduce((total, item) => total + item.remainingQuantity, 0)
                 .toFixed(2),
             ),
+            totalPurchasedWeightLb: Number(
+              items
+                .reduce(
+                  (total, item) => total + (item.purchasedWeightLb || 0),
+                  0,
+                )
+                .toFixed(2),
+            ),
             items,
           };
         })
@@ -164,6 +200,10 @@ export const buildCompanyOrderInPersonDrafts = (
       ] = {
         purchasedQuantity:
           item.purchasedQuantity > 0 ? String(item.purchasedQuantity) : "",
+        purchasedWeightLb:
+          item.purchasedWeightLb !== null && item.purchasedWeightLb !== undefined
+            ? String(item.purchasedWeightLb)
+            : "",
         unitPrice:
           item.unitPrice !== null && item.unitPrice !== undefined
             ? item.unitPrice.toFixed(2)
@@ -257,6 +297,7 @@ export const saveCompanyOrderInPersonData = async (params: {
           companyOrderItemKey(item.nameEs, item.nameEn)
         ] || {
           purchasedQuantity: "",
+          purchasedWeightLb: "",
           unitPrice: "",
           companyUnitPrice: "",
         };
@@ -264,14 +305,20 @@ export const saveCompanyOrderInPersonData = async (params: {
       const safePurchasedQuantity = Number.isFinite(purchasedQuantity)
         ? Number(Math.max(0, purchasedQuantity).toFixed(2))
         : 0;
+      const purchasedWeightLb = Number(draft.purchasedWeightLb || "0");
+      const safePurchasedWeightLb = Number.isFinite(purchasedWeightLb)
+        ? Number(Math.max(0, purchasedWeightLb).toFixed(2))
+        : 0;
       return {
         supplierName: supplier.supplierName,
         nameEs: item.nameEs,
         nameEn: item.nameEn,
         purchasedQuantity: safePurchasedQuantity,
+        purchasedWeightLb: safePurchasedWeightLb,
         unitPrice: parseMoneyInput(draft.unitPrice),
         companyUnitPrice: parseMoneyInput(draft.companyUnitPrice),
         currentPurchasedQuantity: item.purchasedQuantity,
+        currentPurchasedWeightLb: item.purchasedWeightLb,
         currentUnitPrice: item.unitPrice,
         currentCompanyUnitPrice: item.companyUnitPrice,
       };
@@ -296,8 +343,14 @@ export const saveCompanyOrderInPersonData = async (params: {
       item.companyUnitPrice !== null && item.companyUnitPrice !== undefined
         ? Number(item.companyUnitPrice.toFixed(2))
         : null;
+    const currentPurchasedWeightLb =
+      item.currentPurchasedWeightLb !== null &&
+      item.currentPurchasedWeightLb !== undefined
+        ? Number(item.currentPurchasedWeightLb.toFixed(2))
+        : 0;
     return (
       item.purchasedQuantity !== item.currentPurchasedQuantity ||
+      item.purchasedWeightLb !== currentPurchasedWeightLb ||
       nextUnitPrice !== currentUnitPrice ||
       nextCompanyUnitPrice !== currentCompanyUnitPrice
     );
@@ -333,6 +386,7 @@ export const saveCompanyOrderInPersonData = async (params: {
           nameEs: item.nameEs,
           nameEn: item.nameEn,
           purchasedQuantity: item.purchasedQuantity,
+          purchasedWeightLb: item.purchasedWeightLb || undefined,
           price: item.unitPrice ?? undefined,
         }),
       });
@@ -362,6 +416,7 @@ export const saveCompanyOrderInPersonData = async (params: {
           nameEs: item.nameEs,
           nameEn: item.nameEn,
           purchasedQuantity: item.purchasedQuantity,
+          purchasedWeightLb: item.purchasedWeightLb,
           unitPrice: item.unitPrice,
           companyUnitPrice: item.companyUnitPrice,
         })),
@@ -428,6 +483,8 @@ export const updateCompanyOrderInPersonDraftValue = (
     [itemKey]: {
       purchasedQuantity:
         previous[supplierName]?.[itemKey]?.purchasedQuantity || "",
+      purchasedWeightLb:
+        previous[supplierName]?.[itemKey]?.purchasedWeightLb || "",
       unitPrice: previous[supplierName]?.[itemKey]?.unitPrice || "",
       companyUnitPrice:
         previous[supplierName]?.[itemKey]?.companyUnitPrice || "",

@@ -33,6 +33,12 @@ export class UpdateCompanyOrderInPersonItemDto {
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
+  purchasedWeightLb?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
   unitPrice?: number;
 
   @IsOptional()

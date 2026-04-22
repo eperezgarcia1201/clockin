@@ -135,15 +135,28 @@ export function CompanyOrdersCatalogSection({
                     <Text style={[styles.listName, isLight && styles.listNameLight]}>{item.nameEs}</Text>
                     <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>{item.nameEn}</Text>
                     {item.comparisonUnit === "lb" ? (
+                    <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+                        Order by case
+                      </Text>
+                    ) : null}
+                    {item.comparisonUnit === "lb" && item.caseSizeLb ? (
                       <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-                        Quantity in lb
+                        {Number(item.caseSizeLb.toFixed(2))} lb per case
                       </Text>
                     ) : null}
                   </View>
                   {Number(selectedCompanySupplierDraft[key] || "0") > 0 ? (
                     <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
                       Qty {selectedCompanySupplierDraft[key]}
-                      {item.comparisonUnit === "lb" ? " lb" : ""}
+                      {item.comparisonUnit === "lb"
+                        ? ` ${
+                            Math.abs(
+                              Number(selectedCompanySupplierDraft[key] || "0") - 1,
+                            ) < 0.005
+                              ? "case"
+                              : "cases"
+                          }`
+                        : ""}
                     </Text>
                   ) : null}
                   <TouchableOpacity

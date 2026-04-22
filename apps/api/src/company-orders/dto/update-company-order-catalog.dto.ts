@@ -3,9 +3,11 @@ import {
   ArrayMaxSize,
   IsArray,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
@@ -24,6 +26,12 @@ export class CompanyOrderCatalogItemDto {
   @IsOptional()
   @IsIn(['each', 'lb'])
   comparisonUnit?: 'each' | 'lb';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  caseSizeLb?: number;
 }
 
 export class CompanyOrderCatalogSupplierDto {

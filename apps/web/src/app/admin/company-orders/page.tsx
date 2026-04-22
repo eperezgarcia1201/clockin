@@ -19,11 +19,12 @@ type CartItem = {
   nameEn: string;
   quantity: number;
   comparisonUnit: CompanyOrderComparisonUnit;
+  caseSizeLb?: number | null;
 };
 
 type QuantityByUnit = {
   each: number;
-  lb: number;
+  case: number;
 };
 
 const companyOrderItemKey = (nameEs: string, nameEn: string) =>
@@ -100,8 +101,12 @@ const normalizeComparisonUnit = (
 
 const createQuantityByUnit = (): QuantityByUnit => ({
   each: 0,
-  lb: 0,
+  case: 0,
 });
+
+const resolveOrderQuantityUnit = (
+  comparisonUnit: CompanyOrderComparisonUnit,
+) => (comparisonUnit === "lb" ? "case" : "each");
 
 const addQuantityByUnit = (
   totals: QuantityByUnit,
@@ -111,7 +116,8 @@ const addQuantityByUnit = (
   if (!Number.isFinite(quantity) || quantity <= 0) {
     return totals;
   }
-  totals[comparisonUnit] = Number((totals[comparisonUnit] + quantity).toFixed(2));
+  const unit = resolveOrderQuantityUnit(comparisonUnit);
+  totals[unit] = Number((totals[unit] + quantity).toFixed(2));
   return totals;
 };
 
@@ -120,7 +126,11 @@ const formatQuantityWithUnit = (
   comparisonUnit: CompanyOrderComparisonUnit,
 ) =>
   `${Number(quantity.toFixed(2))} ${
-    comparisonUnit === "lb" ? "lb" : "each"
+    comparisonUnit === "lb"
+      ? Math.abs(quantity - 1) < 0.005
+        ? "case"
+        : "cases"
+      : "each"
   }`;
 
 const formatQuantitySummaryByUnit = (totals: QuantityByUnit) => {
@@ -128,8 +138,10 @@ const formatQuantitySummaryByUnit = (totals: QuantityByUnit) => {
   if (totals.each > 0) {
     parts.push(`${totals.each} each`);
   }
-  if (totals.lb > 0) {
-    parts.push(`${totals.lb} lb`);
+  if (totals.case > 0) {
+    parts.push(
+      `${totals.case} ${Math.abs(totals.case - 1) < 0.005 ? "case" : "cases"}`,
+    );
   }
   return parts.join(" + ") || "0";
 };
@@ -151,6 +163,10 @@ const supplierDraftItems = (
         nameEn: item.nameEn,
         quantity,
         comparisonUnit: normalizeComparisonUnit(item.comparisonUnit),
+        caseSizeLb:
+          typeof item.caseSizeLb === "number" && item.caseSizeLb > 0
+            ? item.caseSizeLb
+            : null,
       };
     })
     .filter(
@@ -162,6 +178,7 @@ const supplierDraftItems = (
         nameEn: string;
         quantity: number;
         comparisonUnit: CompanyOrderComparisonUnit;
+        caseSizeLb: number | null;
       } => Boolean(item),
     );
 
@@ -219,6 +236,7 @@ export default function AdminCompanyOrdersPage() {
             nameEn: item.nameEn,
             quantity: item.quantity,
             comparisonUnit: item.comparisonUnit,
+            caseSizeLb: item.caseSizeLb,
           }),
         ),
       ),
@@ -556,9 +574,18 @@ export default function AdminCompanyOrdersPage() {
                             <div className="text-muted small">
                               {tr("Measured as", "Se mide como")}:{" "}
                               {item.comparisonUnit === "lb"
-                                ? tr("pounds (lb)", "libras (lb)")
+                                ? tr(
+                                    "order by case / compare by lb",
+                                    "ordenar por caja / comparar por lb",
+                                  )
                                 : tr("each item", "cada unidad")}
                             </div>
+                            {item.comparisonUnit === "lb" && item.caseSizeLb ? (
+                              <div className="text-muted small">
+                                {tr("Lb per case:", "Lb por caja:")}{" "}
+                                {Number(item.caseSizeLb.toFixed(2))}
+                              </div>
+                            ) : null}
                           </div>
                           {quantityInCart > 0 ? (
                             <span className="badge text-bg-secondary">
@@ -628,9 +655,18 @@ export default function AdminCompanyOrdersPage() {
                     <div className="text-muted small">
                       {tr("Measured as:", "Se mide como:")}{" "}
                       {item.comparisonUnit === "lb"
-                        ? tr("pounds (lb)", "libras (lb)")
+                        ? tr(
+                            "order by case / compare by lb",
+                            "ordenar por caja / comparar por lb",
+                          )
                         : tr("each item", "cada unidad")}
                     </div>
+                    {item.comparisonUnit === "lb" && item.caseSizeLb ? (
+                      <div className="text-muted small">
+                        {tr("Lb per case:", "Lb por caja:")}{" "}
+                        {Number(item.caseSizeLb.toFixed(2))}
+                      </div>
+                    ) : null}
                     <div className="d-flex align-items-center gap-2">
                       <button
                         type="button"
@@ -652,7 +688,7 @@ export default function AdminCompanyOrdersPage() {
                         inputMode="decimal"
                         aria-label={
                           item.comparisonUnit === "lb"
-                            ? tr("Quantity in pounds", "Cantidad en libras")
+                            ? tr("Quantity in cases", "Cantidad en cajas")
                             : tr("Quantity in items", "Cantidad en unidades")
                         }
                         onChange={(event) =>
@@ -664,7 +700,9 @@ export default function AdminCompanyOrdersPage() {
                         }
                       />
                       <span className="text-muted small">
-                        {item.comparisonUnit === "lb" ? "lb" : tr("each", "cada")}
+                        {item.comparisonUnit === "lb"
+                          ? tr("case(s)", "caja(s)")
+                          : tr("each", "cada")}
                       </span>
                       <button
                         type="button"

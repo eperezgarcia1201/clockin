@@ -4,6 +4,7 @@ import type {
   CompanyOrderCatalogItem,
   CompanyOrderComparisonUnit,
   CompanyOrderCatalogSupplier,
+  CompanyOrderOrderUnit,
 } from "./types";
 
 export type CompanyOrderCartItem = {
@@ -13,6 +14,7 @@ export type CompanyOrderCartItem = {
   nameEn: string;
   quantity: number;
   comparisonUnit: CompanyOrderComparisonUnit;
+  caseSizeLb: number | null | undefined;
 };
 
 export type CompanyOrderSupplierPayload = {
@@ -97,7 +99,8 @@ export const buildCompanyOrderCartItems = (
           nameEs: item.nameEs,
           nameEn: item.nameEn,
           quantity,
-          comparisonUnit: item.comparisonUnit,
+          comparisonUnit: item.comparisonUnit === "lb" ? "lb" : "each",
+          caseSizeLb: item.caseSizeLb,
         };
       })
       .filter((entry): entry is CompanyOrderCartItem => Boolean(entry));
@@ -110,10 +113,43 @@ export const countSelectedCompanyOrderDraftItems = (
     .flatMap((draft) => Object.values(draft))
     .filter((value) => Number(value) > 0).length;
 
+type OrderQuantitySummary = Record<CompanyOrderOrderUnit, number>;
+
+const createOrderQuantitySummary = (): OrderQuantitySummary => ({
+  each: 0,
+  case: 0,
+  lb: 0,
+});
+
+export const resolveCompanyOrderOrderUnit = (
+  comparisonUnit: CompanyOrderComparisonUnit | undefined,
+): CompanyOrderOrderUnit => (comparisonUnit === "lb" ? "case" : "each");
+
+export const formatOrderQuantitySummary = (totals: OrderQuantitySummary) => {
+  const parts: string[] = [];
+  if (totals.each > 0) {
+    parts.push(`${Number(totals.each.toFixed(2))} each`);
+  }
+  if (totals.case > 0) {
+    const value = Number(totals.case.toFixed(2));
+    parts.push(`${value} ${Math.abs(value - 1) < 0.005 ? "case" : "cases"}`);
+  }
+  if (totals.lb > 0) {
+    parts.push(`${Number(totals.lb.toFixed(2))} lb`);
+  }
+  return parts.length ? parts.join(" + ") : "0";
+};
+
 export const sumCompanyOrderCartUnits = (
   cartItems: CompanyOrderCartItem[],
-): number =>
-  Number(cartItems.reduce((sum, item) => sum + item.quantity, 0).toFixed(2));
+): string => {
+  const totals = createOrderQuantitySummary();
+  cartItems.forEach((item) => {
+    const unit = resolveCompanyOrderOrderUnit(item.comparisonUnit);
+    totals[unit] = Number((totals[unit] + item.quantity).toFixed(2));
+  });
+  return formatOrderQuantitySummary(totals);
+};
 
 export const countSuppliersWithDraftItems = (
   drafts: CompanyOrderDrafts,
