@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import {
+  companyOrderItemKey,
   normalizeCompanyOrderQuantityInput,
   normalizeExpenseAmountInput,
   shiftWeekStartDateKey,
@@ -28,7 +29,13 @@ export const useCompanyOrderInPersonActions = (params: {
   setSelectedSupplierName: (value: string) => void;
 }) => {
   const setPurchasedQuantity = useCallback(
-    (supplierName: string, itemKey: string, value: string) => {
+    (
+      supplierName: string,
+      nameEs: string,
+      nameEn: string,
+      value: string,
+    ) => {
+      const itemKey = companyOrderItemKey(nameEs, nameEn);
       const normalized = normalizeCompanyOrderQuantityInput(value);
       params.setDrafts((previous) =>
         updateCompanyOrderInPersonDraftValue(previous, supplierName, itemKey, {
@@ -40,7 +47,13 @@ export const useCompanyOrderInPersonActions = (params: {
   );
 
   const setUnitPrice = useCallback(
-    (supplierName: string, itemKey: string, value: string) => {
+    (
+      supplierName: string,
+      nameEs: string,
+      nameEn: string,
+      value: string,
+    ) => {
+      const itemKey = companyOrderItemKey(nameEs, nameEn);
       const normalized = normalizeExpenseAmountInput(value);
       params.setDrafts((previous) =>
         updateCompanyOrderInPersonDraftValue(previous, supplierName, itemKey, {
