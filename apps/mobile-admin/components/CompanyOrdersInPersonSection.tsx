@@ -16,8 +16,8 @@ import type { CompanyOrderInPersonSupplier } from "../types";
 
 type CompanyOrdersInPersonSectionProps = {
   isLight: boolean;
-  weekStartDate: string;
-  weekEndDate: string;
+  weekStartDate?: string | null;
+  weekEndDate?: string | null;
   suppliers: CompanyOrderInPersonSupplier[];
   supplierName: string;
   onSupplierChange: (value: string) => void;
@@ -68,7 +68,7 @@ type CompanyOrdersInPersonSectionProps = {
   loading: boolean;
   saving: boolean;
   status: string | null;
-  formatDisplayDate: (value: string) => string;
+  formatDisplayDate: (value: string | null | undefined) => string;
 };
 
 export function CompanyOrdersInPersonSection({
@@ -98,6 +98,16 @@ export function CompanyOrdersInPersonSection({
   const inputAccessoryViewID =
     Platform.OS === "ios" ? "company-order-in-person-accessory" : undefined;
   const normalizedSearch = typeof search === "string" ? search.trim() : "";
+  const safeSuppliers = Array.isArray(suppliers) ? suppliers : [];
+  const safeItems = Array.isArray(items) ? items : [];
+  const safeSummaryLabel = typeof summaryLabel === "string" ? summaryLabel : "";
+  const weekStartLabel = formatDisplayDate(weekStartDate);
+  const weekEndLabel = formatDisplayDate(weekEndDate);
+  const weekRangeLabel = weekStartLabel
+    ? `Week ${weekStartLabel}${weekEndLabel ? ` - ${weekEndLabel}` : ""}`
+    : weekEndLabel
+      ? `Week ${weekEndLabel}`
+      : "Week not available";
 
   return (
     <>
@@ -131,10 +141,11 @@ export function CompanyOrdersInPersonSection({
         </TouchableOpacity>
       </View>
       <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
-        Week {formatDisplayDate(weekStartDate)}
-        {weekEndDate ? ` - ${formatDisplayDate(weekEndDate)}` : ""}
+        {weekRangeLabel}
       </Text>
-      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>{summaryLabel}</Text>
+      <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
+        {safeSummaryLabel}
+      </Text>
       <View style={styles.companyOrderExportRow}>
         <TouchableOpacity
           style={[
@@ -161,7 +172,7 @@ export function CompanyOrdersInPersonSection({
       </View>
       <Text style={[styles.label, isLight && styles.labelLight]}>Supplier</Text>
       <View style={styles.toggleRow}>
-        {suppliers.map((supplier) => {
+        {safeSuppliers.map((supplier) => {
           const normalizedSupplierName =
             typeof supplier.supplierName === "string" &&
             supplier.supplierName.trim()
@@ -200,12 +211,12 @@ export function CompanyOrdersInPersonSection({
         placeholder="Search supplier or item"
       />
       <View style={styles.companyOrderItemsWrap}>
-        {items.length === 0 ? (
+        {safeItems.length === 0 ? (
           <Text style={[styles.listMeta, isLight && styles.listMetaLight]}>
             No weekly company-order items found for this view.
           </Text>
         ) : (
-          items.map((item) => {
+          safeItems.map((item) => {
             const normalizedNames = normalizeCompanyOrderItemNames(
               item.nameEs,
               item.nameEn,

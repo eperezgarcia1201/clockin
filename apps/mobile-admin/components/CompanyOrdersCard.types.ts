@@ -55,9 +55,9 @@ export type CompanyOrdersCardProps = {
   companyOrderStatus: string | null;
   inlineOrNull: (value: string | null | undefined) => string | null;
   companyOrderRows: CompanyOrderRow[];
-  formatDisplayDate: (value: string) => string;
-  companyOrderInPersonWeekStartDate: string;
-  companyOrderInPersonWeekEndDate: string;
+  formatDisplayDate: (value: string | null | undefined) => string;
+  companyOrderInPersonWeekStartDate: string | null | undefined;
+  companyOrderInPersonWeekEndDate: string | null | undefined;
   companyOrderInPersonSuppliers: CompanyOrderInPersonSupplier[];
   companyOrderInPersonSupplier: string;
   onCompanyOrderInPersonSupplierChange: (value: string) => void;
