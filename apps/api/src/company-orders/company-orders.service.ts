@@ -2528,16 +2528,12 @@ export class CompanyOrdersService {
       );
     });
 
-    const orderedKeys = Array.from(orderedItemsByKey.keys()).sort((a, b) =>
+    const rowKeys = Array.from(orderedItemsByKey.keys()).sort((a, b) =>
       a.localeCompare(b),
     );
-    const purchaseOnlyKeys = Array.from(purchasesByKey.keys())
-      .filter((key) => !orderedItemsByKey.has(key))
-      .sort((a, b) => a.localeCompare(b));
-    const rowKeys = [...orderedKeys, ...purchaseOnlyKeys];
 
     const rows = rowKeys
-      .map((key, index) => {
+      .map((key) => {
         const orderedItem = orderedItemsByKey.get(key);
         const purchase = purchasesByKey.get(key);
         const nameEs = orderedItem?.nameEs || purchase?.nameEs || '-';
@@ -2599,32 +2595,16 @@ export class CompanyOrdersService {
           inPersonSpend !== null && companySpend !== null
             ? Number((companySpend - inPersonSpend).toFixed(2))
             : null;
-        const showCombinedName =
-          purchasedQuantity > 0 ||
-          purchasedWeightLb > 0 ||
-          settings.comparisonUnit === LB_COMPARISON_UNIT;
-
-        if (
-          orderedQuantity <= 0 &&
-          purchasedQuantity <= 0 &&
-          purchasedWeightLb <= 0 &&
-          unitPrice === null &&
-          companyUnitPrice === null
-        ) {
+        if (orderedQuantity <= 0 || remainingQuantity <= 0) {
           return null;
         }
 
         return {
-          rowNumber: index + 1,
-          itemLabel: showCombinedName
-            ? this.formatPdfItemLabel(nameEs, nameEn)
-            : nameEs || nameEn || '-',
-          orderedCount:
-            orderedItem || purchasedQuantity > 0
-              ? this.formatPdfQuantity(remainingQuantity)
-              : '-',
-          boughtCount:
+          itemLabel: this.formatPdfItemLabel(nameEs, nameEn),
+          requestedCount: this.formatPdfQuantity(orderedQuantity),
+          storeCount:
             purchasedQuantity > 0 ? this.formatPdfQuantity(purchasedQuantity) : '-',
+          needCount: this.formatPdfQuantity(remainingQuantity),
           lbs:
             settings.comparisonUnit === LB_COMPARISON_UNIT &&
             purchasedWeightLb > 0
@@ -2642,10 +2622,10 @@ export class CompanyOrdersService {
         (
           row,
         ): row is {
-          rowNumber: number;
           itemLabel: string;
-          orderedCount: string;
-          boughtCount: string;
+          requestedCount: string;
+          storeCount: string;
+          needCount: string;
           lbs: string;
           ourPrice: string;
           supplierPrice: string;
@@ -2654,7 +2634,11 @@ export class CompanyOrdersService {
           save: string;
           saveValue: number | null;
         } => row !== null,
-      );
+      )
+      .map((row, index) => ({
+        rowNumber: index + 1,
+        ...row,
+      }));
 
     if (rows.length) {
       return rows;
@@ -2663,9 +2647,10 @@ export class CompanyOrdersService {
     return [
       {
         rowNumber: 1,
-        itemLabel: 'No remaining company-order items',
-        orderedCount: '-',
-        boughtCount: '-',
+        itemLabel: 'Nothing left to order from supplier',
+        requestedCount: '-',
+        storeCount: '-',
+        needCount: '-',
         lbs: '-',
         ourPrice: '-',
         supplierPrice: '-',
@@ -3095,15 +3080,16 @@ export class CompanyOrdersService {
 
     const tableX = LEFT;
     const colIndexRight = tableX + 20;
-    const colItemRight = colIndexRight + 180;
-    const colOrderedRight = colItemRight + 28;
-    const colBoughtRight = colOrderedRight + 28;
-    const colLbsRight = colBoughtRight + 28;
-    const colOurPriceRight = colLbsRight + 40;
-    const colSupplierPriceRight = colOurPriceRight + 40;
+    const colItemRight = colIndexRight + 150;
+    const colRequestedRight = colItemRight + 26;
+    const colStoreRight = colRequestedRight + 26;
+    const colNeedRight = colStoreRight + 26;
+    const colLbsRight = colNeedRight + 34;
+    const colOurPriceRight = colLbsRight + 42;
+    const colSupplierPriceRight = colOurPriceRight + 42;
     const colOurTotalRight = colSupplierPriceRight + 46;
     const colSupplierTotalRight = colOurTotalRight + 46;
-    const tableRight = colSupplierTotalRight + 30;
+    const tableRight = colSupplierTotalRight + 28;
     const CONTENT_WIDTH = tableRight - LEFT;
     const POSITIVE_RGB: [number, number, number] = [0.063, 0.557, 0.196];
     const NEGATIVE_RGB: [number, number, number] = [0.753, 0.165, 0.184];
@@ -3420,7 +3406,14 @@ export class CompanyOrdersService {
         }
         cursorY = summaryBottom - 34;
 
-        drawText('Items (Combined)', LEFT, cursorY, 11, true);
+        drawText('Still Needed From Supplier', LEFT, cursorY, 11, true);
+        cursorY -= 14;
+        drawText(
+          'Req = requested, Store = bought in person, Need = still to order',
+          LEFT,
+          cursorY,
+          8,
+        );
         cursorY -= 18;
 
         const tableTop = cursorY;
@@ -3452,12 +3445,13 @@ export class CompanyOrdersService {
         );
         drawCenteredText('#', tableX, colIndexRight - tableX, tableTop - 14, 9, false, 1);
         drawText('Item', colIndexRight + 8, tableTop - 14, 9, false, 1);
-        drawCenteredText('Ord', colItemRight, colOrderedRight - colItemRight, tableTop - 14, 9, false, 1);
-        drawCenteredText('Bgt', colOrderedRight, colBoughtRight - colOrderedRight, tableTop - 14, 9, false, 1);
-        drawCenteredText('Lbs', colBoughtRight, colLbsRight - colBoughtRight, tableTop - 14, 9, false, 1);
-        drawCenteredText('Our $', colLbsRight, colOurPriceRight - colLbsRight, tableTop - 14, 9, false, 1);
+        drawCenteredText('Req', colItemRight, colRequestedRight - colItemRight, tableTop - 14, 9, false, 1);
+        drawCenteredText('Store', colRequestedRight, colStoreRight - colRequestedRight, tableTop - 14, 8, false, 1);
+        drawCenteredText('Need', colStoreRight, colNeedRight - colStoreRight, tableTop - 14, 9, false, 1);
+        drawCenteredText('Lbs', colNeedRight, colLbsRight - colNeedRight, tableTop - 14, 9, false, 1);
+        drawCenteredText('Store $', colLbsRight, colOurPriceRight - colLbsRight, tableTop - 14, 8, false, 1);
         drawCenteredText('Sup $', colOurPriceRight, colSupplierPriceRight - colOurPriceRight, tableTop - 14, 9, false, 1);
-        drawCenteredText('Our Tot', colSupplierPriceRight, colOurTotalRight - colSupplierPriceRight, tableTop - 14, 8, false, 1);
+        drawCenteredText('Store Tot', colSupplierPriceRight, colOurTotalRight - colSupplierPriceRight, tableTop - 14, 7, false, 1);
         drawCenteredText('Sup Tot', colOurTotalRight, colSupplierTotalRight - colOurTotalRight, tableTop - 14, 8, false, 1);
         drawCenteredText('Save', colSupplierTotalRight, tableRight - colSupplierTotalRight, tableTop - 14, 9, false, 1);
 
@@ -3471,14 +3465,15 @@ export class CompanyOrdersService {
             9,
           );
           drawText(
-            this.truncatePdfText(row.itemLabel, 170, 9),
+            this.truncatePdfText(row.itemLabel, 145, 9),
             colIndexRight + 6,
             textY,
             9,
           );
-          drawCenteredText(row.orderedCount, colItemRight, colOrderedRight - colItemRight, textY, 9);
-          drawCenteredText(row.boughtCount, colOrderedRight, colBoughtRight - colOrderedRight, textY, 9);
-          drawCenteredText(row.lbs, colBoughtRight, colLbsRight - colBoughtRight, textY, 9);
+          drawCenteredText(row.requestedCount, colItemRight, colRequestedRight - colItemRight, textY, 9);
+          drawCenteredText(row.storeCount, colRequestedRight, colStoreRight - colRequestedRight, textY, 9);
+          drawCenteredText(row.needCount, colStoreRight, colNeedRight - colStoreRight, textY, 9);
+          drawCenteredText(row.lbs, colNeedRight, colLbsRight - colNeedRight, textY, 9);
           drawCenteredText(row.ourPrice, colLbsRight, colOurPriceRight - colLbsRight, textY, 9);
           drawCenteredText(row.supplierPrice, colOurPriceRight, colSupplierPriceRight - colOurPriceRight, textY, 9);
           drawCenteredText(row.ourTotal, colSupplierPriceRight, colOurTotalRight - colSupplierPriceRight, textY, 9);
@@ -3520,8 +3515,9 @@ export class CompanyOrdersService {
         drawLine(tableX, tableBottom, tableX, tableTop);
         drawLine(colIndexRight, tableBottom, colIndexRight, tableTop);
         drawLine(colItemRight, tableBottom, colItemRight, tableTop);
-        drawLine(colOrderedRight, tableBottom, colOrderedRight, tableTop);
-        drawLine(colBoughtRight, tableBottom, colBoughtRight, tableTop);
+        drawLine(colRequestedRight, tableBottom, colRequestedRight, tableTop);
+        drawLine(colStoreRight, tableBottom, colStoreRight, tableTop);
+        drawLine(colNeedRight, tableBottom, colNeedRight, tableTop);
         drawLine(colLbsRight, tableBottom, colLbsRight, tableTop);
         drawLine(colOurPriceRight, tableBottom, colOurPriceRight, tableTop);
         drawLine(
@@ -3554,12 +3550,12 @@ export class CompanyOrdersService {
               ? this.formatPdfWeightLabel(remainingTotals.totalRemainingWeightLb)
               : '0 lb';
           const summaryRows = [
-            ['Items Remaining', this.formatPdfQuantity(remainingTotals.itemCount)],
+            ['Items To Order', this.formatPdfQuantity(remainingTotals.itemCount)],
             [
-              'Remaining Qty',
+              'To Order Qty',
               this.formatOrderQuantitySummaryByUnit(remainingTotals.quantitiesByUnit),
             ],
-            ['Remaining Weight', remainingWeightLabel],
+            ['To Order Weight', remainingWeightLabel],
           ];
 
           drawLine(
