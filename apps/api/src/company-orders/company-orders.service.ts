@@ -2409,7 +2409,7 @@ export class CompanyOrdersService {
           purchase?.companyUnitPrice !== undefined &&
           purchase.companyUnitPrice > 0
             ? Number(purchase.companyUnitPrice.toFixed(2))
-            : settings.companyUnitPrice;
+            : settings.companyUnitPrice ?? null;
         const comparisonQuantity =
           settings.comparisonUnit === LB_COMPARISON_UNIT
             ? purchasedWeightLb
@@ -2428,6 +2428,10 @@ export class CompanyOrdersService {
           inPersonSpend !== null && companySpend !== null
             ? Number((companySpend - inPersonSpend).toFixed(2))
             : null;
+        const showCombinedName =
+          purchasedQuantity > 0 ||
+          purchasedWeightLb > 0 ||
+          settings.comparisonUnit === LB_COMPARISON_UNIT;
 
         if (
           orderedQuantity <= 0 &&
@@ -2441,7 +2445,9 @@ export class CompanyOrdersService {
 
         return {
           rowNumber: index + 1,
-          itemLabel: this.formatPdfItemLabel(nameEs, nameEn),
+          itemLabel: showCombinedName
+            ? this.formatPdfItemLabel(nameEs, nameEn)
+            : nameEs || nameEn || '-',
           orderedCount:
             orderedItem || purchasedQuantity > 0
               ? this.formatPdfQuantity(remainingQuantity)
@@ -2918,15 +2924,15 @@ export class CompanyOrdersService {
 
     const tableX = LEFT;
     const colIndexRight = tableX + 20;
-    const colItemRight = colIndexRight + 126;
-    const colOrderedRight = colItemRight + 34;
-    const colBoughtRight = colOrderedRight + 34;
-    const colLbsRight = colBoughtRight + 34;
-    const colOurPriceRight = colLbsRight + 44;
-    const colSupplierPriceRight = colOurPriceRight + 44;
-    const colOurTotalRight = colSupplierPriceRight + 54;
-    const colSupplierTotalRight = colOurTotalRight + 54;
-    const tableRight = colSupplierTotalRight + 42;
+    const colItemRight = colIndexRight + 180;
+    const colOrderedRight = colItemRight + 28;
+    const colBoughtRight = colOrderedRight + 28;
+    const colLbsRight = colBoughtRight + 28;
+    const colOurPriceRight = colLbsRight + 40;
+    const colSupplierPriceRight = colOurPriceRight + 40;
+    const colOurTotalRight = colSupplierPriceRight + 46;
+    const colSupplierTotalRight = colOurTotalRight + 46;
+    const tableRight = colSupplierTotalRight + 30;
     const CONTENT_WIDTH = tableRight - LEFT;
     const POSITIVE_RGB: [number, number, number] = [0.063, 0.557, 0.196];
     const NEGATIVE_RGB: [number, number, number] = [0.753, 0.165, 0.184];
@@ -3294,7 +3300,7 @@ export class CompanyOrdersService {
             9,
           );
           drawText(
-            this.truncatePdfText(row.itemLabel, 118, 9),
+            this.truncatePdfText(row.itemLabel, 170, 9),
             colIndexRight + 6,
             textY,
             9,
