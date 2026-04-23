@@ -141,6 +141,7 @@ export type CompanyOrdersCardProps = {
     nameEn: string,
     value: string,
   ) => void;
+  onDeleteCompanyOrderInPerson: () => void;
   onSaveCompanyOrderInPerson: () => void;
   onLoadCompanyOrderInPerson: () => void;
   onPreviousCompanyOrderInPersonWeek: () => void;

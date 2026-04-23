@@ -409,6 +409,7 @@ export function CompanyOrdersCard({
   onCompanyOrderInPersonPurchasedWeightLbChange,
   onCompanyOrderInPersonUnitPriceChange,
   onCompanyOrderInPersonCompanyUnitPriceChange,
+  onDeleteCompanyOrderInPerson,
   onSaveCompanyOrderInPerson,
   onLoadCompanyOrderInPerson,
   onPreviousCompanyOrderInPersonWeek,
@@ -844,6 +845,7 @@ export function CompanyOrdersCard({
           onPurchasedWeightLbChange={onCompanyOrderInPersonPurchasedWeightLbChange}
           onUnitPriceChange={onCompanyOrderInPersonUnitPriceChange}
           onCompanyUnitPriceChange={onCompanyOrderInPersonCompanyUnitPriceChange}
+          onDelete={onDeleteCompanyOrderInPerson}
           onSave={onSaveCompanyOrderInPerson}
           onRefresh={onLoadCompanyOrderInPerson}
           onPreviousWeek={onPreviousCompanyOrderInPersonWeek}

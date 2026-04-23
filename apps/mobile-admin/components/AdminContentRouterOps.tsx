@@ -230,6 +230,9 @@ export function renderAdminOperationsContent(props: AdminContentRouterProps) {
         onCompanyOrderInPersonCompanyUnitPriceChange={
           props.handleCompanyOrderInPersonCompanyUnitPriceChange
         }
+        onDeleteCompanyOrderInPerson={() => {
+          void props.clearCompanyOrderInPerson();
+        }}
         onSaveCompanyOrderInPerson={() => {
           void props.saveCompanyOrderInPerson();
         }}

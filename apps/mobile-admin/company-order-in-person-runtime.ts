@@ -478,6 +478,82 @@ export const saveCompanyOrderInPersonData = async (params: {
   }
 };
 
+export const clearCompanyOrderInPersonData = async (params: {
+  fetchJson: FetchJson;
+  weekStartDate: string;
+  officeId: string;
+  supplierName: string;
+}): Promise<
+  | {
+      ok: true;
+      weekStartDate: string;
+      weekEndDate: string;
+      suppliers: CompanyOrderInPersonSupplier[];
+      selectedSupplierName: string;
+      drafts: CompanyOrderInPersonDrafts;
+      clearedSupplierName: string;
+      clearedItemCount: number;
+    }
+  | { ok: false; error: string }
+> => {
+  try {
+    const query = new URLSearchParams();
+    query.set("weekStart", params.weekStartDate);
+    query.set("supplierName", params.supplierName);
+    if (params.officeId) {
+      query.set("officeId", params.officeId);
+    }
+
+    const data = (await params.fetchJson(
+      `/company-orders/in-person?${query.toString()}`,
+      {
+        method: "DELETE",
+      },
+    )) as {
+      weekStartDate?: string;
+      weekEndDate?: string;
+      suppliers?: CompanyOrderInPersonSupplier[];
+      clearedSupplierName?: string;
+      clearedItemCount?: number;
+    };
+
+    const suppliers = normalizeSupplierList(data);
+    return {
+      ok: true,
+      weekStartDate:
+        typeof data.weekStartDate === "string"
+          ? data.weekStartDate
+          : params.weekStartDate,
+      weekEndDate:
+        typeof data.weekEndDate === "string" ? data.weekEndDate : "",
+      suppliers,
+      selectedSupplierName: pickCompanyOrderInPersonSupplier(
+        params.supplierName,
+        suppliers,
+      ),
+      drafts: buildCompanyOrderInPersonDrafts(suppliers),
+      clearedSupplierName:
+        typeof data.clearedSupplierName === "string" &&
+        data.clearedSupplierName.trim()
+          ? data.clearedSupplierName
+          : params.supplierName,
+      clearedItemCount:
+        typeof data.clearedItemCount === "number" &&
+        Number.isFinite(data.clearedItemCount)
+          ? Number(data.clearedItemCount.toFixed(2))
+          : 0,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unable to clear in person shopping.",
+    };
+  }
+};
+
 export const updateCompanyOrderInPersonDraftValue = (
   previous: CompanyOrderInPersonDrafts,
   supplierName: string,

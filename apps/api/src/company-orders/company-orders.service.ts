@@ -638,6 +638,112 @@ export class CompanyOrdersService {
     };
   }
 
+  async deleteInPersonShopping(
+    authUser: AuthUser,
+    options: { weekStart?: string; officeId?: string; supplierName?: string },
+  ) {
+    const access = await this.tenancy.requireCompanyOrdersAccess(authUser);
+    const tenantId = access.tenant.id;
+    const supplierName = options.supplierName?.trim();
+    if (!supplierName) {
+      throw new BadRequestException('Supplier name is required.');
+    }
+
+    const requestedOfficeId = options.officeId?.trim() || undefined;
+    if (
+      access.allowedOfficeId &&
+      requestedOfficeId &&
+      requestedOfficeId !== access.allowedOfficeId
+    ) {
+      throw new BadRequestException(
+        'Kitchen manager can only access orders for their assigned location.',
+      );
+    }
+    const officeId = access.allowedOfficeId || requestedOfficeId;
+    const week = this.getWeekBounds(
+      this.parseWeekStartDate(options.weekStart) || new Date(),
+    );
+
+    const orders = await this.prisma.companyOrder.findMany({
+      where: {
+        tenantId,
+        officeId,
+        orderDate: {
+          gte: week.weekStart,
+          lte: week.weekEnd,
+        },
+      },
+      orderBy: [
+        { supplierName: 'asc' },
+        { orderDate: 'desc' },
+        { createdAt: 'desc' },
+      ],
+      select: {
+        id: true,
+        supplierName: true,
+        orderDate: true,
+        notes: true,
+      },
+    });
+
+    const normalizedSupplierKey = supplierName.toLowerCase();
+    const matchingOrders = orders.filter(
+      (order) => order.supplierName.trim().toLowerCase() === normalizedSupplierKey,
+    );
+
+    if (!matchingOrders.length) {
+      throw new NotFoundException(
+        `Supplier "${supplierName}" has no order for this week.`,
+      );
+    }
+
+    let clearedItemCount = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const order of matchingOrders) {
+        const parsed = this.readStoredOrderNotes(order.notes);
+        clearedItemCount += parsed.inPersonPurchases.length;
+
+        if (!parsed.inPersonPurchases.length) {
+          continue;
+        }
+
+        const metadata: StoredOrderMetadata = {
+          version: 5,
+          lbOrderMode: parsed.lbOrderMode,
+          weekStart:
+            this.normalizeDateKey(parsed.weekStart) || week.weekStartKey,
+          weekEnd: this.normalizeDateKey(parsed.weekEnd) || week.weekEndKey,
+          submittedDates: this.normalizeDateKeys(
+            parsed.submittedDates.length
+              ? parsed.submittedDates
+              : [this.toDateKey(order.orderDate)],
+          ),
+          contributors: this.normalizeContributors(parsed.contributors),
+          noteLines: this.normalizeNoteLines(parsed.noteLines),
+          inPersonPurchases: [],
+        };
+
+        await tx.companyOrder.update({
+          where: { id: order.id },
+          data: {
+            notes: this.composeStoredOrderNotes(metadata),
+          },
+        });
+      }
+    });
+
+    const refreshed = await this.getInPersonShopping(authUser, {
+      weekStart: week.weekStartKey,
+      officeId: officeId || undefined,
+    });
+
+    return {
+      ...refreshed,
+      clearedSupplierName: matchingOrders[0]?.supplierName || supplierName,
+      clearedItemCount,
+    };
+  }
+
   async updateInPersonShopping(
     authUser: AuthUser,
     dto: UpdateCompanyOrderInPersonDto,

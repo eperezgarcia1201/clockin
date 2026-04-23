@@ -75,6 +75,23 @@ export class CompanyOrdersController {
     return this.orders.createOrder(req.user, dto);
   }
 
+  @Delete('in-person')
+  async removeInPerson(
+    @Req() req: RequestWithUser,
+    @Query('weekStart') weekStart?: string,
+    @Query('officeId') officeId?: string,
+    @Query('supplierName') supplierName?: string,
+  ) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+    return this.orders.deleteInPersonShopping(req.user, {
+      weekStart: weekStart?.trim() || undefined,
+      officeId: officeId?.trim() || undefined,
+      supplierName: supplierName?.trim() || undefined,
+    });
+  }
+
   @Delete(':id')
   async remove(@Req() req: RequestWithUser, @Param('id') id: string) {
     if (!req.user) {

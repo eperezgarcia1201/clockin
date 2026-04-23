@@ -6,6 +6,7 @@ import {
   shiftWeekStartDateKey,
 } from "./app-helpers";
 import {
+  clearCompanyOrderInPersonData,
   saveCompanyOrderInPersonData,
   updateCompanyOrderInPersonDraftValue,
   type CompanyOrderInPersonDrafts,
@@ -18,6 +19,7 @@ export const useCompanyOrderInPersonActions = (params: {
   fetchJson: FetchJson;
   officeId: string;
   weekStartDate: string;
+  selectedSupplierName: string;
   suppliers: CompanyOrderInPersonSupplier[];
   drafts: CompanyOrderInPersonDrafts;
   setDrafts: (value: CompanyOrderInPersonDrafts | ((previous: CompanyOrderInPersonDrafts) => CompanyOrderInPersonDrafts)) => void;
@@ -130,6 +132,44 @@ export const useCompanyOrderInPersonActions = (params: {
     params.weekStartDate,
   ]);
 
+  const clearInPersonShopping = useCallback(async () => {
+    const supplierName = params.selectedSupplierName.trim();
+    if (!supplierName) {
+      params.setStatus("Pick a supplier first.");
+      return;
+    }
+
+    params.setSaving(true);
+    params.setStatus(null);
+    const result = await clearCompanyOrderInPersonData({
+      fetchJson: params.fetchJson,
+      weekStartDate: params.weekStartDate,
+      officeId: params.officeId,
+      supplierName,
+    });
+    if (result.ok === false) {
+      params.setStatus(result.error);
+      params.setSaving(false);
+      return;
+    }
+    params.setWeekStartDate(result.weekStartDate);
+    params.setWeekEndDate(result.weekEndDate);
+    params.setSuppliers(result.suppliers);
+    params.setDrafts(result.drafts);
+    params.setSelectedSupplierName(result.selectedSupplierName);
+    params.setStatus(
+      result.clearedItemCount > 0
+        ? `Cleared ${result.clearedItemCount} in-person item${result.clearedItemCount === 1 ? "" : "s"} for ${result.clearedSupplierName}.`
+        : `No saved in-person shopping was found for ${result.clearedSupplierName}.`,
+    );
+    params.setSaving(false);
+  }, [
+    params.fetchJson,
+    params.officeId,
+    params.selectedSupplierName,
+    params.weekStartDate,
+  ]);
+
   const shiftWeek = useCallback(
     (deltaWeeks: number) => {
       params.setWeekStartDate(
@@ -144,6 +184,7 @@ export const useCompanyOrderInPersonActions = (params: {
     setPurchasedWeightLb,
     setUnitPrice,
     setCompanyUnitPrice,
+    clearInPersonShopping,
     saveInPersonShopping,
     goToPreviousWeek: () => shiftWeek(-1),
     goToNextWeek: () => shiftWeek(1),

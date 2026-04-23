@@ -1,4 +1,5 @@
 import {
+  Alert,
   InputAccessoryView,
   Keyboard,
   Platform,
@@ -92,6 +93,7 @@ type CompanyOrdersInPersonSectionProps = {
     nameEn: string,
     value: string,
   ) => void;
+  onDelete: () => void;
   onSave: () => void;
   onRefresh: () => void;
   onPreviousWeek: () => void;
@@ -176,6 +178,7 @@ export function CompanyOrdersInPersonSection({
   onPurchasedWeightLbChange,
   onUnitPriceChange,
   onCompanyUnitPriceChange,
+  onDelete,
   onSave,
   onRefresh,
   onPreviousWeek,
@@ -198,6 +201,27 @@ export function CompanyOrdersInPersonSection({
     : weekEndLabel
       ? `Week ${weekEndLabel}`
       : "Week not available";
+  const canDelete = supplierName.trim().length > 0 && !loading && !saving;
+  const handleDelete = () => {
+    if (!supplierName.trim()) {
+      return;
+    }
+    Alert.alert(
+      "Delete in-person shopping?",
+      `This clears the saved in-person shopping for ${supplierName} for the selected week.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: onDelete,
+        },
+      ],
+    );
+  };
 
   return (
     <>
@@ -257,6 +281,25 @@ export function CompanyOrdersInPersonSection({
         >
           <Text style={[styles.secondaryButtonText, isLight && styles.secondaryButtonTextLight]}>
             Done Editing
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.secondaryButton,
+            isLight && styles.secondaryButtonLight,
+            styles.secondaryButtonDanger,
+            !canDelete && styles.inlineButtonDisabled,
+          ]}
+          onPress={handleDelete}
+          disabled={!canDelete}
+        >
+          <Text
+            style={[
+              styles.secondaryButtonText,
+              styles.secondaryButtonDangerText,
+            ]}
+          >
+            Delete In-Person
           </Text>
         </TouchableOpacity>
       </View>
