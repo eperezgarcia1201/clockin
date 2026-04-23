@@ -1668,10 +1668,10 @@ export class EmployeePunchesService implements OnModuleInit, OnModuleDestroy {
     if (endMinutes <= startMinutes) {
       return null;
     }
-    if (
-      scheduleDay.minutes < startMinutes ||
-      scheduleDay.minutes > endMinutes
-    ) {
+    // Scheduled employees can clock in early without approval.
+    // We still protect unscheduled days and late/out-of-range punches after the
+    // scheduled shift ends.
+    if (scheduleDay.minutes > endMinutes) {
       return {
         reason: ScheduleOverrideReason.OUTSIDE_SCHEDULE_HOURS,
         message: 'You are outside your scheduled hours.',

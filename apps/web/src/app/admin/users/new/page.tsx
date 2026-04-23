@@ -440,8 +440,8 @@ export default function CreateUser() {
             </select>
             <div className="form-text">
               {tr(
-                "Allows this employee to clock in without a fixed daily schedule.",
-                "Permite que este usuario marque sin un horario fijo diario.",
+                "Allows this employee to clock in without any fixed daily schedule. Early clock-ins on a scheduled day are already auto-approved.",
+                "Permite que este usuario marque sin un horario fijo diario. Las entradas tempranas en un día programado ya se aprueban automáticamente.",
               )}
             </div>
           </div>
