@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useUiLanguage } from "../../../lib/ui-language";
 import {
   createCompanyOrder,
+  deleteCompanyOrder,
   getCompanyOrderCatalog,
   listCompanyOrders,
   type CompanyOrderComparisonUnit,
@@ -202,6 +203,7 @@ export default function AdminCompanyOrdersPage() {
   const [exportingFormat, setExportingFormat] = useState<
     "pdf" | "csv" | "excel" | null
   >(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
   const [lastSubmittedWeekStart, setLastSubmittedWeekStart] = useState<string>(
     getCurrentWeekStartDateKey(),
   );
@@ -466,6 +468,48 @@ export default function AdminCompanyOrdersPage() {
       window.open(`/api/company-orders/export?${query.toString()}`, "_blank");
     } finally {
       setExportingFormat(null);
+    }
+  };
+
+  const handleDeleteOrder = async (order: CompanyOrderRow) => {
+    const supplierLabel =
+      Array.isArray(order.supplierNames) && order.supplierNames.length > 0
+        ? order.supplierNames.join(", ")
+        : order.supplierName;
+    const locationLabel =
+      order.officeName || tr("All locations", "Todas las ubicaciones");
+    const confirmed = window.confirm(
+      tr(
+        `Delete the weekly company order for ${supplierLabel} in ${locationLabel}? This removes the full week block for that location.`,
+        `¿Eliminar la orden semanal de empresa para ${supplierLabel} en ${locationLabel}? Esto borra el bloque completo de esa semana para esa ubicación.`,
+      ),
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingOrderId(order.id);
+    setStatus(null);
+    try {
+      const deleted = await deleteCompanyOrder(order.id);
+      await loadOrders();
+      setStatus(
+        tr(
+          `Deleted ${deleted.deletedCount || 0} company order records for the selected week.`,
+          `Se eliminaron ${deleted.deletedCount || 0} registros de órdenes de empresa para la semana seleccionada.`,
+        ),
+      );
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : tr(
+              "Unable to delete company order.",
+              "No se pudo eliminar la orden de empresa.",
+            ),
+      );
+    } finally {
+      setDeletingOrderId(null);
     }
   };
 
@@ -842,6 +886,18 @@ export default function AdminCompanyOrdersPage() {
                     className="d-flex flex-column gap-2 ms-md-auto"
                     style={{ minWidth: 220 }}
                   >
+                    <button
+                      type="button"
+                      className="btn btn-outline-danger btn-sm text-nowrap"
+                      onClick={() => {
+                        void handleDeleteOrder(order);
+                      }}
+                      disabled={deletingOrderId === order.id}
+                    >
+                      {deletingOrderId === order.id
+                        ? tr("Deleting...", "Eliminando...")
+                        : tr("Delete Week Order", "Eliminar Orden Semanal")}
+                    </button>
                     <a
                       className="btn btn-primary btn-sm text-nowrap"
                       href={`/api/company-orders/${encodeURIComponent(order.id)}/pdf`}

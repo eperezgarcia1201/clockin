@@ -509,6 +509,71 @@ export class CompanyOrdersService {
     return this.serializeOrder(order);
   }
 
+  async deleteOrder(authUser: AuthUser, orderId: string) {
+    const access = await this.tenancy.requireCompanyOrdersAccess(authUser);
+    const tenantId = access.tenant.id;
+    const normalizedOrderId = orderId.trim();
+    if (!normalizedOrderId) {
+      throw new BadRequestException('Order id is required.');
+    }
+
+    const anchorOrder = (await this.prisma.companyOrder.findFirst({
+      where: {
+        tenantId,
+        id: normalizedOrderId,
+      },
+      include: {
+        office: { select: { name: true } },
+        createdByEmployee: { select: { fullName: true, displayName: true } },
+        items: {
+          orderBy: [{ createdAt: 'asc' }],
+          select: {
+            id: true,
+            nameEs: true,
+            nameEn: true,
+            quantity: true,
+          },
+        },
+      },
+    })) as CompanyOrderDbRow | null;
+
+    if (!anchorOrder) {
+      throw new NotFoundException('Company order not found.');
+    }
+
+    if (
+      access.allowedOfficeId &&
+      anchorOrder.officeId !== access.allowedOfficeId
+    ) {
+      throw new BadRequestException(
+        'Kitchen manager can only delete orders for their assigned location.',
+      );
+    }
+
+    const serializedOrder = this.serializeOrder(anchorOrder);
+    const weekStartDate = serializedOrder.weekStartDate;
+    const weekEndDate = serializedOrder.weekEndDate;
+    const officeId = anchorOrder.officeId || null;
+
+    const deleted = await this.prisma.companyOrder.deleteMany({
+      where: {
+        tenantId,
+        officeId,
+        orderDate: {
+          gte: dateKeyToUtc(weekStartDate),
+          lte: new Date(`${weekEndDate}T23:59:59.999Z`),
+        },
+      },
+    });
+
+    return {
+      deletedCount: deleted.count,
+      weekStartDate,
+      weekEndDate,
+      officeName: anchorOrder.office?.name || null,
+    };
+  }
+
   async getInPersonShopping(
     authUser: AuthUser,
     options: { weekStart?: string; officeId?: string },

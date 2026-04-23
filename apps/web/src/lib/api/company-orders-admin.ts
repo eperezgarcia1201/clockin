@@ -64,6 +64,13 @@ type CreateCompanyOrderResponse = {
   weekStartDate?: string;
 };
 
+type DeleteCompanyOrderResponse = {
+  deletedCount?: number;
+  weekStartDate?: string;
+  weekEndDate?: string;
+  officeName?: string | null;
+};
+
 export async function getCompanyOrderCatalog(): Promise<
   CompanyOrderCatalogSupplier[]
 > {
@@ -102,4 +109,15 @@ export async function createCompanyOrder(
     method: "POST",
     body: input,
   });
+}
+
+export async function deleteCompanyOrder(
+  orderId: string,
+): Promise<DeleteCompanyOrderResponse> {
+  return requestJson<DeleteCompanyOrderResponse>(
+    `/api/company-orders/${encodeURIComponent(orderId)}`,
+    {
+      method: "DELETE",
+    },
+  );
 }

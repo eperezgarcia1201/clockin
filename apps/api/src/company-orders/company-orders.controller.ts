@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   BadRequestException,
+  Delete,
   Get,
   Param,
   Post,
@@ -72,6 +73,14 @@ export class CompanyOrdersController {
       throw new UnauthorizedException();
     }
     return this.orders.createOrder(req.user, dto);
+  }
+
+  @Delete(':id')
+  async remove(@Req() req: RequestWithUser, @Param('id') id: string) {
+    if (!req.user) {
+      throw new UnauthorizedException();
+    }
+    return this.orders.deleteOrder(req.user, id);
   }
 
   @Get('in-person')
