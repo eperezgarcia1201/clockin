@@ -192,51 +192,93 @@ export const adminAppStylesListing = {
   companyOrderInputGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 10,
   },
   companyOrderInputField: {
     flexGrow: 1,
-    flexBasis: 150,
-    minWidth: 132,
-    gap: 4,
+    flexBasis: 156,
+    minWidth: 144,
+    gap: 6,
   },
   companyOrderInputFieldWide: {
     flexBasis: 220,
   },
   companyOrderInputLabel: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: "700",
-    letterSpacing: 0.6,
-    textTransform: "uppercase",
-    color: "#cbd5f5",
+    letterSpacing: 0.1,
+    color: "#dbe7ff",
   },
   companyOrderInputLabelLight: {
-    color: "#475569",
+    color: "#334155",
   },
-  companyOrderReadOnlyRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 2,
+  companyOrderFieldHelp: {
+    color: "#94a3b8",
+    fontSize: 11,
+    lineHeight: 15,
   },
-  companyOrderReadOnlyPill: {
+  companyOrderFieldHelpLight: {
+    color: "#64748b",
+  },
+  companyOrderReadOnlyField: {
     borderWidth: 1,
     borderColor: "rgba(148, 163, 184, 0.22)",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: 14,
+    minHeight: 56,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     backgroundColor: "rgba(15, 23, 42, 0.18)",
+    justifyContent: "center",
   },
-  companyOrderReadOnlyPillLight: {
+  companyOrderReadOnlyFieldLight: {
     borderColor: "rgba(15, 23, 42, 0.12)",
     backgroundColor: "#f8fafc",
   },
-  companyOrderReadOnlyText: {
+  companyOrderReadOnlyValue: {
     color: "#e2e8f0",
-    fontSize: 12,
+    fontSize: 18,
     fontWeight: "600",
   },
-  companyOrderReadOnlyTextLight: {
+  companyOrderReadOnlyValueLight: {
+    color: "#0f172a",
+  },
+  companyOrderMathGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 6,
+  },
+  companyOrderMathCard: {
+    flexGrow: 1,
+    flexBasis: 150,
+    minWidth: 132,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.22)",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: "rgba(15, 23, 42, 0.18)",
+    gap: 4,
+  },
+  companyOrderMathCardLight: {
+    borderColor: "rgba(15, 23, 42, 0.12)",
+    backgroundColor: "#f8fafc",
+  },
+  companyOrderMathLabel: {
+    color: "#94a3b8",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
+  companyOrderMathLabelLight: {
+    color: "#64748b",
+  },
+  companyOrderMathValue: {
+    color: "#f8fafc",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  companyOrderMathValueLight: {
     color: "#0f172a",
   },
   companyOrderStepButton: {
@@ -314,16 +356,16 @@ export const adminAppStylesListing = {
   },
   companyOrderQtyInput: {
     width: "100%",
-    height: 46,
-    borderRadius: 12,
+    height: 56,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(148, 163, 184, 0.25)",
-    backgroundColor: "rgba(15, 23, 42, 0.2)",
-    color: "#e2e8f0",
-    paddingHorizontal: 12,
+    borderColor: "rgba(148, 163, 184, 0.32)",
+    backgroundColor: "rgba(15, 23, 42, 0.28)",
+    color: "#f8fafc",
+    paddingHorizontal: 14,
     textAlign: "left",
     fontWeight: "700",
-    fontSize: 18,
+    fontSize: 20,
   },
   companyOrderAddButton: {
     borderWidth: 1,

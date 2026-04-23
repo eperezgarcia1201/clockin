@@ -109,17 +109,37 @@ const formatOrderUnitLabel = (orderUnit: CompanyOrderOrderUnit) => {
   return orderUnit;
 };
 
-const formatComparisonPriceLabel = (comparisonUnit: CompanyOrderComparisonUnit) =>
-  comparisonUnit === "lb" ? "Paid / lb" : "Paid each";
-
-const formatBoughtLabel = (orderUnit: CompanyOrderOrderUnit) => {
+const formatQuantityLabel = (
+  orderUnit: CompanyOrderOrderUnit,
+  comparisonUnit: CompanyOrderComparisonUnit,
+) => {
+  if (comparisonUnit === "lb" && orderUnit === "case") {
+    return "Cases Bought";
+  }
   if (orderUnit === "case") {
-    return "Bought cases";
+    return "Cases Bought";
   }
-  if (orderUnit === "lb") {
-    return "Bought lb";
+  if (comparisonUnit === "lb") {
+    return "Quantity Bought";
   }
-  return "Bought each";
+  return "Units Bought";
+};
+
+const formatWeightLabel = () => "Total Pounds";
+
+const formatInPersonPriceLabel = (
+  comparisonUnit: CompanyOrderComparisonUnit,
+) => (comparisonUnit === "lb" ? "In-Person Price / lb" : "In-Person Price Each");
+
+const formatSupplierPriceLabel = (
+  comparisonUnit: CompanyOrderComparisonUnit,
+) => (comparisonUnit === "lb" ? "Supplier Price / lb" : "Supplier Price Each");
+
+const normalizeSupplierPrice = (value: number | null | undefined) => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Number(value.toFixed(2));
 };
 
 const parseInputNumber = (value: string) => {
@@ -148,7 +168,6 @@ export function CompanyOrdersInPersonSection({
   onPurchasedQuantityChange,
   onPurchasedWeightLbChange,
   onUnitPriceChange,
-  onCompanyUnitPriceChange,
   onSave,
   onRefresh,
   onPreviousWeek,
@@ -308,36 +327,46 @@ export function CompanyOrdersInPersonSection({
               draft.unitPrice.trim().length > 0
                 ? parseInputNumber(draft.unitPrice)
                 : item.unitPrice;
+            const supplierUnitPriceValue = normalizeSupplierPrice(
+              item.companyUnitPrice,
+            );
             const companySpend =
-              item.companyUnitPrice !== null && comparisonQuantity > 0
+              supplierUnitPriceValue !== null && comparisonQuantity > 0
                 ? Number(
-                    (item.companyUnitPrice * comparisonQuantity).toFixed(2),
+                    (supplierUnitPriceValue * comparisonQuantity).toFixed(2),
                   )
                 : null;
             const inPersonSpend =
               unitPriceValue !== null && comparisonQuantity > 0
                 ? Number((unitPriceValue * comparisonQuantity).toFixed(2))
                 : null;
-            const savingsLabel =
+            const savingsValue =
               companySpend !== null && inPersonSpend !== null
-                ? companySpend - inPersonSpend > 0.004
-                  ? `Saved ${formatMoney(
-                      Number((companySpend - inPersonSpend).toFixed(2)),
-                    )}`
-                  : inPersonSpend - companySpend > 0.004
-                    ? `Over ${formatMoney(
-                        Number((inPersonSpend - companySpend).toFixed(2)),
-                      )}`
+                ? Number((companySpend - inPersonSpend).toFixed(2))
+                : null;
+            const savingsLabel =
+              savingsValue !== null
+                ? savingsValue > 0.004
+                  ? `Saved ${formatMoney(savingsValue)}`
+                  : savingsValue < -0.004
+                    ? `Over ${formatMoney(Math.abs(savingsValue))}`
                     : "Difference $0.00"
                 : null;
-            const companyPriceLabel =
-              item.companyUnitPrice !== null
-                ? `Company ${
-                    item.comparisonUnit === "lb"
-                      ? `${formatMoney(item.companyUnitPrice)}/lb`
-                      : `${formatMoney(item.companyUnitPrice)} each`
-                  }`
-                : "No company price";
+            const supplierPriceLabel =
+              supplierUnitPriceValue !== null
+                ? item.comparisonUnit === "lb"
+                  ? `${formatMoney(supplierUnitPriceValue)}/lb`
+                  : `${formatMoney(supplierUnitPriceValue)} each`
+                : "Set in catalog";
+            const expectedWeightLb =
+              isLbItem &&
+              item.caseSizeLb !== null &&
+              item.caseSizeLb > 0 &&
+              purchasedQuantityValue > 0
+                ? Number(
+                    (purchasedQuantityValue * item.caseSizeLb).toFixed(2),
+                  )
+                : null;
             return (
               <View
                 key={`in-person-item-${normalizedSupplierName}-${companyOrderItemKey(normalizedNames.nameEs, normalizedNames.nameEn)}`}
@@ -375,7 +404,10 @@ export function CompanyOrdersInPersonSection({
                         isLight && styles.companyOrderInputLabelLight,
                       ]}
                     >
-                      {formatBoughtLabel(item.orderQuantityUnit)}
+                      {formatQuantityLabel(
+                        item.orderQuantityUnit,
+                        item.comparisonUnit,
+                      )}
                     </Text>
                     <TextInput
                       style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
@@ -402,7 +434,7 @@ export function CompanyOrdersInPersonSection({
                           isLight && styles.companyOrderInputLabelLight,
                         ]}
                       >
-                        Compared lb
+                        {formatWeightLabel()}
                       </Text>
                       <TextInput
                         style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
@@ -420,6 +452,16 @@ export function CompanyOrdersInPersonSection({
                         placeholder="0"
                         placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                       />
+                      <Text
+                        style={[
+                          styles.companyOrderFieldHelp,
+                          isLight && styles.companyOrderFieldHelpLight,
+                        ]}
+                      >
+                        {expectedWeightLb !== null
+                          ? `Case size says about ${expectedWeightLb} lb. Enter the actual total pounds you bought.`
+                          : "Enter the real total pounds for the cases you bought."}
+                      </Text>
                     </View>
                   ) : null}
                   <View
@@ -434,7 +476,7 @@ export function CompanyOrdersInPersonSection({
                         isLight && styles.companyOrderInputLabelLight,
                       ]}
                     >
-                      {formatComparisonPriceLabel(item.comparisonUnit)}
+                      {formatInPersonPriceLabel(item.comparisonUnit)}
                     </Text>
                     <TextInput
                       style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
@@ -453,40 +495,117 @@ export function CompanyOrdersInPersonSection({
                       placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                     />
                   </View>
-                </View>
-                <View style={styles.companyOrderReadOnlyRow}>
                   <View
                     style={[
-                      styles.companyOrderReadOnlyPill,
-                      isLight && styles.companyOrderReadOnlyPillLight,
+                      styles.companyOrderInputField,
+                      !isLbItem && styles.companyOrderInputFieldWide,
                     ]}
                   >
                     <Text
                       style={[
-                        styles.companyOrderReadOnlyText,
-                        isLight && styles.companyOrderReadOnlyTextLight,
+                        styles.companyOrderInputLabel,
+                        isLight && styles.companyOrderInputLabelLight,
                       ]}
                     >
-                      {companyPriceLabel}
+                      {formatSupplierPriceLabel(item.comparisonUnit)}
                     </Text>
-                  </View>
-                  {savingsLabel ? (
                     <View
                       style={[
-                        styles.companyOrderReadOnlyPill,
-                        isLight && styles.companyOrderReadOnlyPillLight,
+                        styles.companyOrderReadOnlyField,
+                        isLight && styles.companyOrderReadOnlyFieldLight,
                       ]}
                     >
                       <Text
                         style={[
-                          styles.companyOrderReadOnlyText,
-                          isLight && styles.companyOrderReadOnlyTextLight,
+                          styles.companyOrderReadOnlyValue,
+                          isLight && styles.companyOrderReadOnlyValueLight,
                         ]}
                       >
-                        {savingsLabel}
+                        {supplierPriceLabel}
                       </Text>
                     </View>
-                  ) : null}
+                  </View>
+                </View>
+                <View style={styles.companyOrderMathGrid}>
+                  <View
+                    style={[
+                      styles.companyOrderMathCard,
+                      isLight && styles.companyOrderMathCardLight,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.companyOrderMathLabel,
+                        isLight && styles.companyOrderMathLabelLight,
+                      ]}
+                    >
+                      In-Person Total
+                    </Text>
+                    <Text
+                      style={[
+                        styles.companyOrderMathValue,
+                        isLight && styles.companyOrderMathValueLight,
+                      ]}
+                    >
+                      {inPersonSpend !== null ? formatMoney(inPersonSpend) : "—"}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.companyOrderMathCard,
+                      isLight && styles.companyOrderMathCardLight,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.companyOrderMathLabel,
+                        isLight && styles.companyOrderMathLabelLight,
+                      ]}
+                    >
+                      Supplier Total
+                    </Text>
+                    <Text
+                      style={[
+                        styles.companyOrderMathValue,
+                        isLight && styles.companyOrderMathValueLight,
+                      ]}
+                    >
+                      {companySpend !== null ? formatMoney(companySpend) : "—"}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.companyOrderMathCard,
+                      isLight && styles.companyOrderMathCardLight,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.companyOrderMathLabel,
+                        isLight && styles.companyOrderMathLabelLight,
+                      ]}
+                    >
+                      {savingsValue !== null && savingsValue < -0.004
+                        ? "Over"
+                        : "Saved"}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.companyOrderMathValue,
+                        isLight && styles.companyOrderMathValueLight,
+                        savingsValue !== null && savingsValue > 0.004
+                          ? styles.liquorDeltaPositive
+                          : null,
+                        savingsValue !== null && savingsValue < -0.004
+                          ? styles.liquorDeltaNegative
+                          : null,
+                      ]}
+                    >
+                      {savingsLabel
+                        ? savingsLabel.replace(/^Saved |^Over /, "")
+                        : "—"}
+                    </Text>
+                  </View>
                 </View>
               </View>
             );

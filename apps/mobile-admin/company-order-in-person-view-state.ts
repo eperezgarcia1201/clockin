@@ -21,6 +21,13 @@ const parseDraftNumber = (value: string) => {
   return Number(parsed.toFixed(2));
 };
 
+const normalizeSupplierUnitPrice = (value: number | null | undefined) => {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Number(value.toFixed(2));
+};
+
 const formatSavingsLabel = (value: number | null) => {
   if (value === null || Math.abs(value) < 0.005) {
     return "Difference $0.00";
@@ -186,7 +193,9 @@ export const useCompanyOrderInPersonViewState = (params: {
             draft.unitPrice.trim().length > 0
               ? parseDraftNumber(draft.unitPrice)
               : item.unitPrice;
-          const companyUnitPrice = item.companyUnitPrice;
+          const companyUnitPrice = normalizeSupplierUnitPrice(
+            item.companyUnitPrice,
+          );
           const comparisonQuantity = getComparisonQuantity(item, draft);
           const inPersonSpend =
             unitPrice !== null
@@ -242,10 +251,10 @@ export const useCompanyOrderInPersonViewState = (params: {
       `Remaining ${formatOrderQuantitySummaryByUnit(totals.remaining)}`,
     ];
     if (totals.weightLb > 0) {
-      parts.push(`Compared ${Number(totals.weightLb.toFixed(2))} lb`);
+      parts.push(`Total Weight ${Number(totals.weightLb.toFixed(2))} lb`);
     }
-    parts.push(`In Person ${formatMoney(totals.inPersonSpend)}`);
-    parts.push(`Company Cost ${formatMoney(totals.companySpend)}`);
+    parts.push(`In-Person Total ${formatMoney(totals.inPersonSpend)}`);
+    parts.push(`Supplier Total ${formatMoney(totals.companySpend)}`);
     parts.push(formatSavingsLabel(totals.savings));
     return parts.join(" • ");
   }, [params.drafts, params.suppliers]);
@@ -286,7 +295,7 @@ export const useCompanyOrderInPersonViewState = (params: {
       draft.unitPrice.trim().length > 0
         ? parseDraftNumber(draft.unitPrice)
         : item.unitPrice;
-    const companyUnitPrice = item.companyUnitPrice;
+    const companyUnitPrice = normalizeSupplierUnitPrice(item.companyUnitPrice);
     const comparisonQuantity = getComparisonQuantity(item, draft);
     const inPersonSpend =
       comparisonQuantity > 0 && unitPrice !== null
@@ -313,25 +322,27 @@ export const useCompanyOrderInPersonViewState = (params: {
     ];
 
     if (item.caseSizeLb) {
-      parts.push(`Case ${Number(item.caseSizeLb.toFixed(2))} lb`);
+      parts.push(`1 case = ${Number(item.caseSizeLb.toFixed(2))} lb`);
     }
     if (item.comparisonUnit === "lb" && comparisonQuantity > 0) {
-      parts.push(`Compared ${Number(comparisonQuantity.toFixed(2))} lb`);
+      parts.push(`Total Weight ${Number(comparisonQuantity.toFixed(2))} lb`);
     }
 
     if (unitPrice !== null) {
-      parts.push(`Paid ${formatPriceWithUnit(unitPrice, item.comparisonUnit)}`);
+      parts.push(
+        `In-Person ${formatPriceWithUnit(unitPrice, item.comparisonUnit)}`,
+      );
       if (inPersonSpend !== null) {
-        parts.push(`In Person ${formatMoney(inPersonSpend)}`);
+        parts.push(`In-Person Total ${formatMoney(inPersonSpend)}`);
       }
     }
 
     if (companyUnitPrice !== null) {
       parts.push(
-        `Company ${formatPriceWithUnit(companyUnitPrice, item.comparisonUnit)}`,
+        `Supplier ${formatPriceWithUnit(companyUnitPrice, item.comparisonUnit)}`,
       );
       if (companySpend !== null) {
-        parts.push(`Company Cost ${formatMoney(companySpend)}`);
+        parts.push(`Supplier Total ${formatMoney(companySpend)}`);
       }
     }
 

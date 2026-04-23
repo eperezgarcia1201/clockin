@@ -305,7 +305,9 @@ const buildScopeSummary = ({
       const unitPrice =
         typeof item.unitPrice === "number" ? item.unitPrice : null;
       const companyUnitPrice =
-        typeof item.companyUnitPrice === "number" ? item.companyUnitPrice : null;
+        typeof item.companyUnitPrice === "number" && item.companyUnitPrice > 0
+          ? item.companyUnitPrice
+          : null;
 
       if (comparisonQuantity > 0 && unitPrice !== null) {
         inPersonSpend = Number(
@@ -641,7 +643,7 @@ export function CompanyOrdersCard({
         </View>
         <View style={[styles.summaryTile, isLight && styles.summaryTileLight]}>
           <Text style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}>
-            {language === "es" ? "En persona" : "In Person"}
+            {language === "es" ? "Total en persona" : "In-Person Total"}
           </Text>
           <Text style={[styles.summaryValue, isLight && styles.summaryValueLight]}>
             {exportSummary.hasShoppingData
@@ -651,7 +653,7 @@ export function CompanyOrdersCard({
         </View>
         <View style={[styles.summaryTile, isLight && styles.summaryTileLight]}>
           <Text style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}>
-            {language === "es" ? "Costo compañía" : "Company Cost"}
+            {language === "es" ? "Total proveedor" : "Supplier Total"}
           </Text>
           <Text style={[styles.summaryValue, isLight && styles.summaryValueLight]}>
             {exportSummary.hasShoppingData
@@ -661,7 +663,7 @@ export function CompanyOrdersCard({
         </View>
         <View style={[styles.summaryTile, isLight && styles.summaryTileLight]}>
           <Text style={[styles.summaryLabel, isLight && styles.summaryLabelLight]}>
-            {language === "es" ? "Ahorro" : "Saved"}
+            {language === "es" ? "Ahorro / extra" : "Saved / Over"}
           </Text>
           <Text
             style={[

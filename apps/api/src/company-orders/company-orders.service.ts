@@ -2074,7 +2074,8 @@ export class CompanyOrdersService {
             : Number(purchase.unitPrice.toFixed(2));
         const companyUnitPrice =
           purchase.companyUnitPrice === null ||
-          purchase.companyUnitPrice === undefined
+          purchase.companyUnitPrice === undefined ||
+          purchase.companyUnitPrice <= 0
             ? null
             : Number(purchase.companyUnitPrice.toFixed(2));
         const inPersonSpend =
@@ -2760,16 +2761,16 @@ export class CompanyOrdersService {
         ];
         if (overallInPersonTotals.totalPurchasedWeightLb > 0) {
           overallParts.push(
-            `Compared ${this.formatPdfQuantity(
+            `Total Weight ${this.formatPdfQuantity(
               overallInPersonTotals.totalPurchasedWeightLb,
             )} lb`,
           );
         }
         overallParts.push(
-          `Spend: ${this.formatPdfMoney(overallInPersonTotals.totalInPersonSpend)}`,
+          `In-Person Total: ${this.formatPdfMoney(overallInPersonTotals.totalInPersonSpend)}`,
         );
         overallParts.push(
-          `Company Equivalent: ${this.formatPdfMoney(
+          `Supplier Total: ${this.formatPdfMoney(
             overallInPersonTotals.totalCompanySpend,
           )}`,
         );
@@ -2953,16 +2954,16 @@ export class CompanyOrdersService {
             ];
             if (inPersonSummary.totalPurchasedWeightLb > 0) {
               inPersonParts.push(
-                `Compared ${this.formatPdfQuantity(
+                `Total Weight ${this.formatPdfQuantity(
                   inPersonSummary.totalPurchasedWeightLb,
                 )} lb`,
               );
             }
             inPersonParts.push(
-              `Spent ${this.formatPdfMoney(inPersonSummary.totalInPersonSpend)}`,
+              `In-Person Total ${this.formatPdfMoney(inPersonSummary.totalInPersonSpend)}`,
             );
             inPersonParts.push(
-              `Company ${this.formatPdfMoney(inPersonSummary.totalCompanySpend)}`,
+              `Supplier Total ${this.formatPdfMoney(inPersonSummary.totalCompanySpend)}`,
             );
             inPersonParts.push(
               this.formatPdfSavingsLabel(inPersonSummary.totalSavings),
@@ -2990,7 +2991,7 @@ export class CompanyOrdersService {
                 purchase.purchasedWeightLb > 0
               ) {
                 lineParts.push(
-                  `Compared ${this.formatComparisonQuantityWithUnit(
+                  `Total Weight ${this.formatComparisonQuantityWithUnit(
                     purchase.purchasedWeightLb,
                     purchase.comparisonUnit,
                   )}`,
@@ -3006,19 +3007,19 @@ export class CompanyOrdersService {
               }
               lineParts.push(
                 purchase.unitPrice !== null
-                  ? `Paid ${this.formatPdfUnitPrice(
+                  ? `In-Person ${this.formatPdfUnitPrice(
                       purchase.unitPrice,
                       purchase.comparisonUnit,
                     )}${purchase.inPersonSpend !== null ? ` (${this.formatPdfMoney(purchase.inPersonSpend)})` : ''}`
-                  : 'Paid n/a',
+                  : 'In-Person n/a',
               );
               lineParts.push(
                 purchase.companyUnitPrice !== null
-                  ? `Company ${this.formatPdfUnitPrice(
+                  ? `Supplier ${this.formatPdfUnitPrice(
                       purchase.companyUnitPrice,
                       purchase.comparisonUnit,
                     )}${purchase.companySpend !== null ? ` (${this.formatPdfMoney(purchase.companySpend)})` : ''}`
-                  : 'Company n/a',
+                  : 'Supplier n/a',
               );
               lineParts.push(
                 purchase.savings !== null

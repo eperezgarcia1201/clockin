@@ -201,15 +201,21 @@ export const buildCompanyOrderInPersonDrafts = (
         purchasedQuantity:
           item.purchasedQuantity > 0 ? String(item.purchasedQuantity) : "",
         purchasedWeightLb:
-          item.purchasedWeightLb !== null && item.purchasedWeightLb !== undefined
+          item.purchasedWeightLb !== null &&
+          item.purchasedWeightLb !== undefined &&
+          item.purchasedWeightLb > 0
             ? String(item.purchasedWeightLb)
             : "",
         unitPrice:
-          item.unitPrice !== null && item.unitPrice !== undefined
+          item.unitPrice !== null &&
+          item.unitPrice !== undefined &&
+          item.unitPrice > 0
             ? item.unitPrice.toFixed(2)
             : "",
         companyUnitPrice:
-          item.companyUnitPrice !== null && item.companyUnitPrice !== undefined
+          item.companyUnitPrice !== null &&
+          item.companyUnitPrice !== undefined &&
+          item.companyUnitPrice > 0
             ? item.companyUnitPrice.toFixed(2)
             : "",
       };
