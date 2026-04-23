@@ -32,6 +32,12 @@ export class CompanyOrderCatalogItemDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   caseSizeLb?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  companyUnitPrice?: number;
 }
 
 export class CompanyOrderCatalogSupplierDto {

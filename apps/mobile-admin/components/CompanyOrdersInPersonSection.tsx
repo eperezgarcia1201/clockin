@@ -109,6 +109,29 @@ const formatOrderUnitLabel = (orderUnit: CompanyOrderOrderUnit) => {
   return orderUnit;
 };
 
+const formatComparisonPriceLabel = (comparisonUnit: CompanyOrderComparisonUnit) =>
+  comparisonUnit === "lb" ? "Paid / lb" : "Paid each";
+
+const formatBoughtLabel = (orderUnit: CompanyOrderOrderUnit) => {
+  if (orderUnit === "case") {
+    return "Bought cases";
+  }
+  if (orderUnit === "lb") {
+    return "Bought lb";
+  }
+  return "Bought each";
+};
+
+const parseInputNumber = (value: string) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+  return Number(parsed.toFixed(2));
+};
+
+const formatMoney = (value: number) => `$${value.toFixed(2)}`;
+
 export function CompanyOrdersInPersonSection({
   isLight,
   weekStartDate,
@@ -271,6 +294,50 @@ export function CompanyOrdersInPersonSection({
               normalizedNames.nameEn,
             );
             const isLbItem = item.comparisonUnit === "lb";
+            const purchasedQuantityValue =
+              draft.purchasedQuantity.trim().length > 0
+                ? parseInputNumber(draft.purchasedQuantity) ?? 0
+                : item.purchasedQuantity;
+            const comparisonQuantity =
+              isLbItem
+                ? draft.purchasedWeightLb.trim().length > 0
+                  ? parseInputNumber(draft.purchasedWeightLb) ?? 0
+                  : item.purchasedWeightLb || 0
+                : purchasedQuantityValue;
+            const unitPriceValue =
+              draft.unitPrice.trim().length > 0
+                ? parseInputNumber(draft.unitPrice)
+                : item.unitPrice;
+            const companySpend =
+              item.companyUnitPrice !== null && comparisonQuantity > 0
+                ? Number(
+                    (item.companyUnitPrice * comparisonQuantity).toFixed(2),
+                  )
+                : null;
+            const inPersonSpend =
+              unitPriceValue !== null && comparisonQuantity > 0
+                ? Number((unitPriceValue * comparisonQuantity).toFixed(2))
+                : null;
+            const savingsLabel =
+              companySpend !== null && inPersonSpend !== null
+                ? companySpend - inPersonSpend > 0.004
+                  ? `Saved ${formatMoney(
+                      Number((companySpend - inPersonSpend).toFixed(2)),
+                    )}`
+                  : inPersonSpend - companySpend > 0.004
+                    ? `Over ${formatMoney(
+                        Number((inPersonSpend - companySpend).toFixed(2)),
+                      )}`
+                    : "Difference $0.00"
+                : null;
+            const companyPriceLabel =
+              item.companyUnitPrice !== null
+                ? `Company ${
+                    item.comparisonUnit === "lb"
+                      ? `${formatMoney(item.companyUnitPrice)}/lb`
+                      : `${formatMoney(item.companyUnitPrice)} each`
+                  }`
+                : "No company price";
             return (
               <View
                 key={`in-person-item-${normalizedSupplierName}-${companyOrderItemKey(normalizedNames.nameEs, normalizedNames.nameEn)}`}
@@ -300,35 +367,21 @@ export function CompanyOrdersInPersonSection({
                     })}
                   </Text>
                 </View>
-                <View style={styles.companyOrderCartActions}>
-                  <TextInput
-                    style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
-                    value={draft.purchasedQuantity}
-                    onChangeText={(value) =>
-                      onPurchasedQuantityChange(
-                        normalizedSupplierName,
-                        normalizedNames.nameEs,
-                        normalizedNames.nameEn,
-                        value,
-                      )
-                    }
-                    keyboardType="decimal-pad"
-                    inputAccessoryViewID={inputAccessoryViewID}
-                    placeholder={
-                      item.orderQuantityUnit === "case"
-                        ? "Bought cases"
-                        : item.orderQuantityUnit === "lb"
-                          ? "Bought lb"
-                          : "Bought each"
-                    }
-                    placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
-                  />
-                  {isLbItem ? (
+                <View style={styles.companyOrderInputGrid}>
+                  <View style={styles.companyOrderInputField}>
+                    <Text
+                      style={[
+                        styles.companyOrderInputLabel,
+                        isLight && styles.companyOrderInputLabelLight,
+                      ]}
+                    >
+                      {formatBoughtLabel(item.orderQuantityUnit)}
+                    </Text>
                     <TextInput
                       style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
-                      value={draft.purchasedWeightLb}
+                      value={draft.purchasedQuantity}
                       onChangeText={(value) =>
-                        onPurchasedWeightLbChange(
+                        onPurchasedQuantityChange(
                           normalizedSupplierName,
                           normalizedNames.nameEs,
                           normalizedNames.nameEn,
@@ -337,42 +390,103 @@ export function CompanyOrdersInPersonSection({
                       }
                       keyboardType="decimal-pad"
                       inputAccessoryViewID={inputAccessoryViewID}
-                      placeholder="Compared lb"
+                      placeholder="0"
                       placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
                     />
+                  </View>
+                  {isLbItem ? (
+                    <View style={styles.companyOrderInputField}>
+                      <Text
+                        style={[
+                          styles.companyOrderInputLabel,
+                          isLight && styles.companyOrderInputLabelLight,
+                        ]}
+                      >
+                        Compared lb
+                      </Text>
+                      <TextInput
+                        style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
+                        value={draft.purchasedWeightLb}
+                        onChangeText={(value) =>
+                          onPurchasedWeightLbChange(
+                            normalizedSupplierName,
+                            normalizedNames.nameEs,
+                            normalizedNames.nameEn,
+                            value,
+                          )
+                        }
+                        keyboardType="decimal-pad"
+                        inputAccessoryViewID={inputAccessoryViewID}
+                        placeholder="0"
+                        placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
+                      />
+                    </View>
                   ) : null}
-                  <TextInput
-                    style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
-                    value={draft.unitPrice}
-                    onChangeText={(value) =>
-                      onUnitPriceChange(
-                        normalizedSupplierName,
-                        normalizedNames.nameEs,
-                        normalizedNames.nameEn,
-                        value,
-                      )
-                    }
-                    keyboardType="decimal-pad"
-                    inputAccessoryViewID={inputAccessoryViewID}
-                    placeholder={isLbItem ? "Paid/lb" : "Paid each"}
-                    placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
-                  />
-                  <TextInput
-                    style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
-                    value={draft.companyUnitPrice}
-                    onChangeText={(value) =>
-                      onCompanyUnitPriceChange(
-                        normalizedSupplierName,
-                        normalizedNames.nameEs,
-                        normalizedNames.nameEn,
-                        value,
-                      )
-                    }
-                    keyboardType="decimal-pad"
-                    inputAccessoryViewID={inputAccessoryViewID}
-                    placeholder={isLbItem ? "Company/lb" : "Company each"}
-                    placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
-                  />
+                  <View
+                    style={[
+                      styles.companyOrderInputField,
+                      !isLbItem && styles.companyOrderInputFieldWide,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.companyOrderInputLabel,
+                        isLight && styles.companyOrderInputLabelLight,
+                      ]}
+                    >
+                      {formatComparisonPriceLabel(item.comparisonUnit)}
+                    </Text>
+                    <TextInput
+                      style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
+                      value={draft.unitPrice}
+                      onChangeText={(value) =>
+                        onUnitPriceChange(
+                          normalizedSupplierName,
+                          normalizedNames.nameEs,
+                          normalizedNames.nameEn,
+                          value,
+                        )
+                      }
+                      keyboardType="decimal-pad"
+                      inputAccessoryViewID={inputAccessoryViewID}
+                      placeholder="0.00"
+                      placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
+                    />
+                  </View>
+                </View>
+                <View style={styles.companyOrderReadOnlyRow}>
+                  <View
+                    style={[
+                      styles.companyOrderReadOnlyPill,
+                      isLight && styles.companyOrderReadOnlyPillLight,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.companyOrderReadOnlyText,
+                        isLight && styles.companyOrderReadOnlyTextLight,
+                      ]}
+                    >
+                      {companyPriceLabel}
+                    </Text>
+                  </View>
+                  {savingsLabel ? (
+                    <View
+                      style={[
+                        styles.companyOrderReadOnlyPill,
+                        isLight && styles.companyOrderReadOnlyPillLight,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.companyOrderReadOnlyText,
+                          isLight && styles.companyOrderReadOnlyTextLight,
+                        ]}
+                      >
+                        {savingsLabel}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
               </View>
             );

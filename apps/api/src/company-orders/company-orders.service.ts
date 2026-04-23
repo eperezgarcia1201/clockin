@@ -65,12 +65,14 @@ type CatalogSupplierWithComparisonUnit = {
     nameEn: string;
     comparisonUnit?: CompanyOrderComparisonUnit;
     caseSizeLb?: number | null;
+    companyUnitPrice?: number | null;
   }>;
 };
 type OrderQuantityByUnit = Record<CompanyOrderOrderUnit, number>;
 type CatalogItemSettings = {
   comparisonUnit: CompanyOrderComparisonUnit;
   caseSizeLb: number | null;
+  companyUnitPrice: number | null;
 };
 type CatalogSettingsLookup = Map<
   string,
@@ -645,6 +647,10 @@ export class CompanyOrdersService {
       );
     }
 
+    const catalogSettingsLookup = this.buildCatalogSettingsLookup(
+      await this.getCatalogForTenant(tenantId),
+    );
+
     const purchasesBySupplier = new Map<
       string,
       Map<string, StoredInPersonPurchase>
@@ -665,6 +671,12 @@ export class CompanyOrdersService {
           `Item "${item.nameEs}" is not part of supplier ${order.supplierName}'s weekly order.`,
         );
       }
+      const settings = this.resolveCatalogItemSettings(
+        catalogSettingsLookup,
+        order.supplierName,
+        item.nameEs,
+        item.nameEn,
+      );
 
       const supplierBucket =
         purchasesBySupplier.get(supplierKey) ||
@@ -684,7 +696,7 @@ export class CompanyOrdersService {
             : item.unitPrice,
         companyUnitPrice:
           item.companyUnitPrice === undefined || item.companyUnitPrice === null
-            ? null
+            ? settings.companyUnitPrice
             : item.companyUnitPrice,
       });
     });
@@ -1217,6 +1229,7 @@ export class CompanyOrdersService {
       | {
           comparisonUnit?: unknown;
           caseSizeLb?: unknown;
+          companyUnitPrice?: unknown;
         }
       | null
       | undefined,
@@ -1236,6 +1249,9 @@ export class CompanyOrdersService {
       caseSizeLb: this.normalizeCatalogCaseSizeLb(
         rawItem?.caseSizeLb,
         comparisonUnit,
+      ),
+      companyUnitPrice: this.normalizeCatalogCompanyUnitPrice(
+        rawItem?.companyUnitPrice,
       ),
     };
   }
@@ -1284,6 +1300,14 @@ export class CompanyOrdersService {
     }
     const parsed = Number(rawValue);
     if (!Number.isFinite(parsed) || parsed <= 0) {
+      return null;
+    }
+    return Number(parsed.toFixed(2));
+  }
+
+  private normalizeCatalogCompanyUnitPrice(rawValue: unknown) {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
       return null;
     }
     return Number(parsed.toFixed(2));
@@ -1403,6 +1427,7 @@ export class CompanyOrdersService {
             nameEn?: string;
             comparisonUnit?: unknown;
             caseSizeLb?: unknown;
+            companyUnitPrice?: unknown;
           }>;
         }
     >,
@@ -1418,6 +1443,7 @@ export class CompanyOrdersService {
             nameEn: string;
             comparisonUnit: CompanyOrderComparisonUnit;
             caseSizeLb: number | null;
+            companyUnitPrice: number | null;
           }
         >;
       }
@@ -1441,6 +1467,7 @@ export class CompanyOrdersService {
             nameEn: string;
             comparisonUnit: CompanyOrderComparisonUnit;
             caseSizeLb: number | null;
+            companyUnitPrice: number | null;
           }
         >(),
       };
@@ -1800,7 +1827,7 @@ export class CompanyOrdersService {
               companyUnitPrice:
                 purchase?.companyUnitPrice === null ||
                 purchase?.companyUnitPrice === undefined
-                  ? null
+                  ? settings.companyUnitPrice
                   : Number(purchase.companyUnitPrice.toFixed(2)),
             };
           })

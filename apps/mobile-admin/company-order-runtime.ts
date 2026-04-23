@@ -23,6 +23,8 @@ const normalizeCatalogItem = (
   }
   const rawCaseSizeLb = (item as Record<string, unknown>).caseSizeLb;
   const parsedCaseSizeLb = Number(rawCaseSizeLb);
+  const rawCompanyUnitPrice = (item as Record<string, unknown>).companyUnitPrice;
+  const parsedCompanyUnitPrice = Number(rawCompanyUnitPrice);
   return {
     nameEs,
     nameEn,
@@ -32,6 +34,10 @@ const normalizeCatalogItem = (
     caseSizeLb:
       Number.isFinite(parsedCaseSizeLb) && parsedCaseSizeLb > 0
         ? Number(parsedCaseSizeLb.toFixed(2))
+        : null,
+    companyUnitPrice:
+      Number.isFinite(parsedCompanyUnitPrice) && parsedCompanyUnitPrice >= 0
+        ? Number(parsedCompanyUnitPrice.toFixed(2))
         : null,
   };
 };

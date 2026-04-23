@@ -140,6 +140,7 @@ export type CompanyOrderCatalogItem = {
   nameEn: string;
   comparisonUnit?: CompanyOrderComparisonUnit;
   caseSizeLb?: number | null;
+  companyUnitPrice?: number | null;
 };
 
 export type CompanyOrderComparisonUnit = "each" | "lb";

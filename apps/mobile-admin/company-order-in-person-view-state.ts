@@ -186,10 +186,7 @@ export const useCompanyOrderInPersonViewState = (params: {
             draft.unitPrice.trim().length > 0
               ? parseDraftNumber(draft.unitPrice)
               : item.unitPrice;
-          const companyUnitPrice =
-            draft.companyUnitPrice.trim().length > 0
-              ? parseDraftNumber(draft.companyUnitPrice)
-              : item.companyUnitPrice;
+          const companyUnitPrice = item.companyUnitPrice;
           const comparisonQuantity = getComparisonQuantity(item, draft);
           const inPersonSpend =
             unitPrice !== null
@@ -247,8 +244,8 @@ export const useCompanyOrderInPersonViewState = (params: {
     if (totals.weightLb > 0) {
       parts.push(`Compared ${Number(totals.weightLb.toFixed(2))} lb`);
     }
-    parts.push(`Spent ${formatMoney(totals.inPersonSpend)}`);
-    parts.push(`Company ${formatMoney(totals.companySpend)}`);
+    parts.push(`In Person ${formatMoney(totals.inPersonSpend)}`);
+    parts.push(`Company Cost ${formatMoney(totals.companySpend)}`);
     parts.push(formatSavingsLabel(totals.savings));
     return parts.join(" • ");
   }, [params.drafts, params.suppliers]);
@@ -289,10 +286,7 @@ export const useCompanyOrderInPersonViewState = (params: {
       draft.unitPrice.trim().length > 0
         ? parseDraftNumber(draft.unitPrice)
         : item.unitPrice;
-    const companyUnitPrice =
-      draft.companyUnitPrice.trim().length > 0
-        ? parseDraftNumber(draft.companyUnitPrice)
-        : item.companyUnitPrice;
+    const companyUnitPrice = item.companyUnitPrice;
     const comparisonQuantity = getComparisonQuantity(item, draft);
     const inPersonSpend =
       comparisonQuantity > 0 && unitPrice !== null
@@ -328,7 +322,7 @@ export const useCompanyOrderInPersonViewState = (params: {
     if (unitPrice !== null) {
       parts.push(`Paid ${formatPriceWithUnit(unitPrice, item.comparisonUnit)}`);
       if (inPersonSpend !== null) {
-        parts.push(`Spent ${formatMoney(inPersonSpend)}`);
+        parts.push(`In Person ${formatMoney(inPersonSpend)}`);
       }
     }
 
@@ -337,7 +331,7 @@ export const useCompanyOrderInPersonViewState = (params: {
         `Company ${formatPriceWithUnit(companyUnitPrice, item.comparisonUnit)}`,
       );
       if (companySpend !== null) {
-        parts.push(`Equivalent ${formatMoney(companySpend)}`);
+        parts.push(`Company Cost ${formatMoney(companySpend)}`);
       }
     }
 

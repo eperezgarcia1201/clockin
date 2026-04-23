@@ -37,6 +37,10 @@ const toEditableCatalog = (
         typeof item.caseSizeLb === "number" && item.caseSizeLb > 0
           ? item.caseSizeLb
           : null,
+      companyUnitPrice:
+        typeof item.companyUnitPrice === "number" && item.companyUnitPrice >= 0
+          ? item.companyUnitPrice
+          : null,
       clientId: createCatalogClientId(),
     })),
   }));
@@ -56,7 +60,27 @@ const normalizeCaseSizeLb = (value: unknown) => {
   return Number(parsed.toFixed(2));
 };
 
+const normalizeCompanyUnitPrice = (value: unknown) => {
+  const parsed =
+    typeof value === "string" ? Number(value.trim()) : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+  return Number(parsed.toFixed(2));
+};
+
 const normalizeCaseSizeLbInput = (value: string) => {
+  const sanitized = value.replace(/,/g, ".").replace(/[^\d.]/g, "");
+  if (!sanitized) {
+    return "";
+  }
+  const parts = sanitized.split(".");
+  const integerPart = parts[0] || "0";
+  const decimalPart = parts.slice(1).join("").slice(0, 2);
+  return decimalPart ? `${integerPart}.${decimalPart}` : integerPart;
+};
+
+const normalizeCompanyUnitPriceInput = (value: string) => {
   const sanitized = value.replace(/,/g, ".").replace(/[^\d.]/g, "");
   if (!sanitized) {
     return "";
@@ -88,6 +112,7 @@ const sanitizeCatalogForSave = (
               item.comparisonUnit === "lb"
                 ? normalizeCaseSizeLb(item.caseSizeLb)
                 : null,
+            companyUnitPrice: normalizeCompanyUnitPrice(item.companyUnitPrice),
           };
         })
         .filter((item): item is CompanyOrderCatalogItem => item !== null);
@@ -121,11 +146,13 @@ export default function AdminCompanyOrdersCatalogPage() {
     nameEn: string;
     comparisonUnit: CompanyOrderComparisonUnit;
     caseSizeLb: string;
+    companyUnitPrice: string;
   }>({
     nameEs: "",
     nameEn: "",
     comparisonUnit: "each",
     caseSizeLb: "",
+    companyUnitPrice: "",
   });
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [transferTargetSupplierIndex, setTransferTargetSupplierIndex] =
@@ -144,6 +171,14 @@ export default function AdminCompanyOrdersCatalogPage() {
             "Comparar por libras, ordenar por caja",
           )
         : tr("Each item", "Cada unidad"),
+    [tr],
+  );
+
+  const formatCompanyPriceLabel = useCallback(
+    (value: CompanyOrderComparisonUnit) =>
+      value === "lb"
+        ? tr("Company Price / lb", "Precio de Compañía / lb")
+        : tr("Company Price each", "Precio de Compañía c/u"),
     [tr],
   );
 
@@ -173,6 +208,7 @@ export default function AdminCompanyOrdersCatalogPage() {
         nameEn: "",
         comparisonUnit: "each",
         caseSizeLb: "",
+        companyUnitPrice: "",
       });
       setStatusKind("success");
       setStatus(tr("Catalog loaded.", "Catálogo cargado."));
@@ -215,6 +251,7 @@ export default function AdminCompanyOrdersCatalogPage() {
       nameEn: "",
       comparisonUnit: "each",
       caseSizeLb: "",
+      companyUnitPrice: "",
     });
   }, [selectedSupplierIndex]);
 
@@ -293,6 +330,9 @@ export default function AdminCompanyOrdersCatalogPage() {
             newItemDraft.comparisonUnit === "lb"
               ? normalizeCaseSizeLb(newItemDraft.caseSizeLb)
               : null,
+          companyUnitPrice: normalizeCompanyUnitPrice(
+            newItemDraft.companyUnitPrice,
+          ),
         },
         ...supplier.items,
       ],
@@ -302,6 +342,7 @@ export default function AdminCompanyOrdersCatalogPage() {
       nameEn: "",
       comparisonUnit: newItemDraft.comparisonUnit,
       caseSizeLb: "",
+      companyUnitPrice: "",
     });
     setStatusKind("info");
     setStatus(
@@ -742,6 +783,24 @@ export default function AdminCompanyOrdersCatalogPage() {
                         />
                       </div>
                       <div className="col-12 col-md-2">
+                        <label className="form-label mb-1">
+                          {formatCompanyPriceLabel(newItemDraft.comparisonUnit)}
+                        </label>
+                        <input
+                          className="form-control"
+                          value={newItemDraft.companyUnitPrice}
+                          onChange={(event) =>
+                            setNewItemDraft((previous) => ({
+                              ...previous,
+                              companyUnitPrice: normalizeCompanyUnitPriceInput(
+                                event.target.value,
+                              ),
+                            }))
+                          }
+                          placeholder={tr("Example: 3.25", "Ejemplo: 3.25")}
+                        />
+                      </div>
+                      <div className="col-12 col-md-1">
                         <button
                           type="button"
                           className="btn btn-outline-primary w-100"
@@ -753,8 +812,8 @@ export default function AdminCompanyOrdersCatalogPage() {
                     </div>
                     <div className="form-text">
                       {tr(
-                        "Each item orders by unit. Pound items compare by lb in in-person shopping, but the order itself is placed by case. Add lb per case when you know it.",
-                        "Cada unidad se ordena por pieza. Los artículos por libra se comparan por lb en compras en persona, pero la orden se hace por caja. Agrega lb por caja cuando lo sepas.",
+                        "Each item orders by unit. Pound items compare by lb in in-person shopping, but the order itself is placed by case. Set the company price here so mobile can compare supplier cost against what you paid in person.",
+                        "Cada unidad se ordena por pieza. Los artículos por libra se comparan por lb en compras en persona, pero la orden se hace por caja. Define aquí el precio de compañía para que móvil compare el costo del proveedor contra lo que pagaste en persona.",
                       )}
                     </div>
                   </div>
@@ -1011,6 +1070,49 @@ export default function AdminCompanyOrdersCatalogPage() {
                                       "Only used for lb items.",
                                       "Solo se usa para artículos lb.",
                                     )}
+                              </div>
+                            </div>
+                            <div className="col-12 col-md-2">
+                              <label className="form-label mb-1">
+                                {formatCompanyPriceLabel(
+                                  item.comparisonUnit === "lb" ? "lb" : "each",
+                                )}
+                              </label>
+                              <input
+                                className="form-control"
+                                value={
+                                  item.companyUnitPrice !== null &&
+                                  item.companyUnitPrice !== undefined
+                                    ? String(item.companyUnitPrice)
+                                    : ""
+                                }
+                                onChange={(event) =>
+                                  updateSupplier(
+                                    selectedSupplierIndex,
+                                    (supplier) => ({
+                                      ...supplier,
+                                      items: supplier.items.map(
+                                        (entry, index) =>
+                                          index === itemIndex
+                                            ? {
+                                                ...entry,
+                                                companyUnitPrice:
+                                                  normalizeCompanyUnitPrice(
+                                                    event.target.value,
+                                                  ),
+                                              }
+                                            : entry,
+                                      ),
+                                    }),
+                                  )
+                                }
+                                placeholder={tr("Example: 3.25", "Ejemplo: 3.25")}
+                              />
+                              <div className="form-text">
+                                {tr(
+                                  "Used automatically for in-person savings comparison.",
+                                  "Se usa automáticamente para la comparación de ahorro en compras en persona.",
+                                )}
                               </div>
                             </div>
                             <div className="col-12 col-md-1">
