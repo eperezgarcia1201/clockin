@@ -38,6 +38,12 @@ const formatSavingsLabel = (value: number | null) => {
   return `Over ${formatMoney(Math.abs(value))}`;
 };
 
+const resolveDisplayOrderUnit = (
+  orderUnit: CompanyOrderOrderUnit,
+  comparisonUnit: CompanyOrderComparisonUnit,
+): CompanyOrderOrderUnit =>
+  comparisonUnit === "lb" ? "case" : orderUnit;
+
 const createOrderQuantityByUnit = (): OrderQuantityByUnit => ({
   each: 0,
   case: 0,
@@ -193,10 +199,15 @@ export const useCompanyOrderInPersonViewState = (params: {
             draft.unitPrice.trim().length > 0
               ? parseDraftNumber(draft.unitPrice)
               : item.unitPrice;
-          const companyUnitPrice = normalizeSupplierUnitPrice(
-            item.companyUnitPrice,
-          );
+          const companyUnitPrice =
+            draft.companyUnitPrice.trim().length > 0
+              ? parseDraftNumber(draft.companyUnitPrice)
+              : normalizeSupplierUnitPrice(item.companyUnitPrice);
           const comparisonQuantity = getComparisonQuantity(item, draft);
+          const displayOrderUnit = resolveDisplayOrderUnit(
+            item.orderQuantityUnit || "each",
+            item.comparisonUnit,
+          );
           const inPersonSpend =
             unitPrice !== null
               ? Number((comparisonQuantity * unitPrice).toFixed(2))
@@ -212,17 +223,17 @@ export const useCompanyOrderInPersonViewState = (params: {
 
           addOrderQuantityByUnit(
             acc.ordered,
-            item.orderQuantityUnit || "each",
+            displayOrderUnit,
             item.orderedQuantity,
           );
           addOrderQuantityByUnit(
             acc.purchased,
-            item.orderQuantityUnit || "each",
+            displayOrderUnit,
             purchasedQuantity,
           );
           addOrderQuantityByUnit(
             acc.remaining,
-            item.orderQuantityUnit || "each",
+            displayOrderUnit,
             remainingQuantity,
           );
           if (item.comparisonUnit === "lb") {
@@ -295,8 +306,15 @@ export const useCompanyOrderInPersonViewState = (params: {
       draft.unitPrice.trim().length > 0
         ? parseDraftNumber(draft.unitPrice)
         : item.unitPrice;
-    const companyUnitPrice = normalizeSupplierUnitPrice(item.companyUnitPrice);
+    const companyUnitPrice =
+      draft.companyUnitPrice.trim().length > 0
+        ? parseDraftNumber(draft.companyUnitPrice)
+        : normalizeSupplierUnitPrice(item.companyUnitPrice);
     const comparisonQuantity = getComparisonQuantity(item, draft);
+    const displayOrderUnit = resolveDisplayOrderUnit(
+      item.orderQuantityUnit || "each",
+      item.comparisonUnit,
+    );
     const inPersonSpend =
       comparisonQuantity > 0 && unitPrice !== null
         ? Number((comparisonQuantity * unitPrice).toFixed(2))
@@ -313,11 +331,11 @@ export const useCompanyOrderInPersonViewState = (params: {
     const parts = [
       `Ordered ${formatOrderQuantityWithUnit(
         item.orderedQuantity,
-        item.orderQuantityUnit || "each",
+        displayOrderUnit,
       )}`,
       `Remaining ${formatOrderQuantityWithUnit(
         remainingQuantity,
-        item.orderQuantityUnit || "each",
+        displayOrderUnit,
       )}`,
     ];
 

@@ -322,9 +322,11 @@ export const saveCompanyOrderInPersonData = async (params: {
         purchasedQuantity: safePurchasedQuantity,
         purchasedWeightLb: safePurchasedWeightLb,
         unitPrice: parseMoneyInput(draft.unitPrice),
+        companyUnitPrice: parseMoneyInput(draft.companyUnitPrice),
         currentPurchasedQuantity: item.purchasedQuantity,
         currentPurchasedWeightLb: item.purchasedWeightLb,
         currentUnitPrice: item.unitPrice,
+        currentCompanyUnitPrice: item.companyUnitPrice,
       };
     }),
   );
@@ -338,6 +340,15 @@ export const saveCompanyOrderInPersonData = async (params: {
       item.unitPrice !== null && item.unitPrice !== undefined
         ? Number(item.unitPrice.toFixed(2))
         : null;
+    const currentCompanyUnitPrice =
+      item.currentCompanyUnitPrice !== null &&
+      item.currentCompanyUnitPrice !== undefined
+        ? Number(item.currentCompanyUnitPrice.toFixed(2))
+        : null;
+    const nextCompanyUnitPrice =
+      item.companyUnitPrice !== null && item.companyUnitPrice !== undefined
+        ? Number(item.companyUnitPrice.toFixed(2))
+        : null;
     const currentPurchasedWeightLb =
       item.currentPurchasedWeightLb !== null &&
       item.currentPurchasedWeightLb !== undefined
@@ -346,7 +357,8 @@ export const saveCompanyOrderInPersonData = async (params: {
     return (
       item.purchasedQuantity !== item.currentPurchasedQuantity ||
       item.purchasedWeightLb !== currentPurchasedWeightLb ||
-      nextUnitPrice !== currentUnitPrice
+      nextUnitPrice !== currentUnitPrice ||
+      nextCompanyUnitPrice !== currentCompanyUnitPrice
     );
   });
 
@@ -382,6 +394,7 @@ export const saveCompanyOrderInPersonData = async (params: {
           purchasedQuantity: item.purchasedQuantity,
           purchasedWeightLb: item.purchasedWeightLb || undefined,
           price: item.unitPrice ?? undefined,
+          companyUnitPrice: item.companyUnitPrice ?? undefined,
         }),
       });
     }
@@ -412,6 +425,7 @@ export const saveCompanyOrderInPersonData = async (params: {
           purchasedQuantity: item.purchasedQuantity,
           purchasedWeightLb: item.purchasedWeightLb,
           unitPrice: item.unitPrice,
+          companyUnitPrice: item.companyUnitPrice,
         })),
       }),
     })) as {

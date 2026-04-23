@@ -106,6 +106,9 @@ const formatOrderUnitLabel = (orderUnit: CompanyOrderOrderUnit) => {
   if (orderUnit === "case") {
     return "case";
   }
+  if (orderUnit === "lb") {
+    return "case";
+  }
   return orderUnit;
 };
 
@@ -113,14 +116,8 @@ const formatQuantityLabel = (
   orderUnit: CompanyOrderOrderUnit,
   comparisonUnit: CompanyOrderComparisonUnit,
 ) => {
-  if (comparisonUnit === "lb" && orderUnit === "case") {
+  if (comparisonUnit === "lb" || orderUnit === "case") {
     return "Cases Bought";
-  }
-  if (orderUnit === "case") {
-    return "Cases Bought";
-  }
-  if (comparisonUnit === "lb") {
-    return "Quantity Bought";
   }
   return "Units Bought";
 };
@@ -152,6 +149,16 @@ const parseInputNumber = (value: string) => {
 
 const formatMoney = (value: number) => `$${value.toFixed(2)}`;
 
+const formatSignedMoney = (value: number) => {
+  if (Math.abs(value) < 0.005) {
+    return "$0.00";
+  }
+  if (value > 0) {
+    return `+${formatMoney(value)}`;
+  }
+  return `-${formatMoney(Math.abs(value))}`;
+};
+
 export function CompanyOrdersInPersonSection({
   isLight,
   weekStartDate,
@@ -168,6 +175,7 @@ export function CompanyOrdersInPersonSection({
   onPurchasedQuantityChange,
   onPurchasedWeightLbChange,
   onUnitPriceChange,
+  onCompanyUnitPriceChange,
   onSave,
   onRefresh,
   onPreviousWeek,
@@ -327,9 +335,10 @@ export function CompanyOrdersInPersonSection({
               draft.unitPrice.trim().length > 0
                 ? parseInputNumber(draft.unitPrice)
                 : item.unitPrice;
-            const supplierUnitPriceValue = normalizeSupplierPrice(
-              item.companyUnitPrice,
-            );
+            const supplierUnitPriceValue =
+              draft.companyUnitPrice.trim().length > 0
+                ? parseInputNumber(draft.companyUnitPrice)
+                : normalizeSupplierPrice(item.companyUnitPrice);
             const companySpend =
               supplierUnitPriceValue !== null && comparisonQuantity > 0
                 ? Number(
@@ -344,20 +353,6 @@ export function CompanyOrdersInPersonSection({
               companySpend !== null && inPersonSpend !== null
                 ? Number((companySpend - inPersonSpend).toFixed(2))
                 : null;
-            const savingsLabel =
-              savingsValue !== null
-                ? savingsValue > 0.004
-                  ? `Saved ${formatMoney(savingsValue)}`
-                  : savingsValue < -0.004
-                    ? `Over ${formatMoney(Math.abs(savingsValue))}`
-                    : "Difference $0.00"
-                : null;
-            const supplierPriceLabel =
-              supplierUnitPriceValue !== null
-                ? item.comparisonUnit === "lb"
-                  ? `${formatMoney(supplierUnitPriceValue)}/lb`
-                  : `${formatMoney(supplierUnitPriceValue)} each`
-                : "Set in catalog";
             const expectedWeightLb =
               isLbItem &&
               item.caseSizeLb !== null &&
@@ -509,21 +504,22 @@ export function CompanyOrdersInPersonSection({
                     >
                       {formatSupplierPriceLabel(item.comparisonUnit)}
                     </Text>
-                    <View
-                      style={[
-                        styles.companyOrderReadOnlyField,
-                        isLight && styles.companyOrderReadOnlyFieldLight,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.companyOrderReadOnlyValue,
-                          isLight && styles.companyOrderReadOnlyValueLight,
-                        ]}
-                      >
-                        {supplierPriceLabel}
-                      </Text>
-                    </View>
+                    <TextInput
+                      style={[styles.companyOrderQtyInput, isLight && styles.inputLight]}
+                      value={draft.companyUnitPrice}
+                      onChangeText={(value) =>
+                        onCompanyUnitPriceChange(
+                          normalizedSupplierName,
+                          normalizedNames.nameEs,
+                          normalizedNames.nameEn,
+                          value,
+                        )
+                      }
+                      keyboardType="decimal-pad"
+                      inputAccessoryViewID={inputAccessoryViewID}
+                      placeholder="0.00"
+                      placeholderTextColor={isLight ? "#94a3b8" : "#64748b"}
+                    />
                   </View>
                 </View>
                 <View style={styles.companyOrderMathGrid}>
@@ -585,9 +581,7 @@ export function CompanyOrdersInPersonSection({
                         isLight && styles.companyOrderMathLabelLight,
                       ]}
                     >
-                      {savingsValue !== null && savingsValue < -0.004
-                        ? "Over"
-                        : "Saved"}
+                      Difference
                     </Text>
                     <Text
                       style={[
@@ -601,8 +595,8 @@ export function CompanyOrdersInPersonSection({
                           : null,
                       ]}
                     >
-                      {savingsLabel
-                        ? savingsLabel.replace(/^Saved |^Over /, "")
+                      {savingsValue !== null
+                        ? formatSignedMoney(savingsValue)
                         : "—"}
                     </Text>
                   </View>
