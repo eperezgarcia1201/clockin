@@ -1378,29 +1378,56 @@ export class CompanyOrdersService {
     return `${this.formatPdfQuantity(quantity)} lbs`;
   }
 
-  private formatPdfRemainingOrderQuantity(
+  private formatPdfRemainingOrderCaseCount(
+    quantity: number,
+    orderQuantityUnit: CompanyOrderOrderUnit,
+  ) {
+    if (orderQuantityUnit === 'lb') {
+      return '-';
+    }
+    return this.formatPdfQuantity(quantity);
+  }
+
+  private formatPdfRemainingOrderLbs(
     quantity: number,
     orderQuantityUnit: CompanyOrderOrderUnit,
     comparisonUnit: CompanyOrderComparisonUnit,
     caseSizeLb: number | null,
   ) {
+    if (comparisonUnit !== LB_COMPARISON_UNIT) {
+      return '-';
+    }
     if (
-      comparisonUnit === LB_COMPARISON_UNIT &&
-      orderQuantityUnit === 'case'
+      orderQuantityUnit === 'case' &&
+      caseSizeLb !== null &&
+      caseSizeLb > 0
     ) {
-      const caseLabel = `${this.formatPdfQuantity(quantity)} ${
-        Math.abs(quantity - 1) < 0.005 ? 'case' : 'cases'
-      }`;
-      if (caseSizeLb !== null && caseSizeLb > 0) {
-        const totalWeight = Number((quantity * caseSizeLb).toFixed(2));
-        return `${caseLabel} / ${this.formatPdfWeightWithUnit(totalWeight)}`;
-      }
-      return caseLabel;
+      const totalWeight = Number((quantity * caseSizeLb).toFixed(2));
+      return this.formatPdfWeightWithUnit(totalWeight);
     }
     if (orderQuantityUnit === 'lb') {
       return this.formatPdfWeightWithUnit(quantity);
     }
-    return this.formatOrderQuantityWithUnit(quantity, orderQuantityUnit);
+    return '-';
+  }
+
+  private formatPdfUnitPriceShort(
+    value: number | null,
+    comparisonUnit: CompanyOrderComparisonUnit,
+  ) {
+    if (value === null || !Number.isFinite(value) || value <= 0) {
+      return '-';
+    }
+    return comparisonUnit === LB_COMPARISON_UNIT
+      ? `${this.formatPdfMoney(value)}/lb`
+      : `${this.formatPdfMoney(value)} ea`;
+  }
+
+  private formatPdfItemLabel(nameEs: string, nameEn: string) {
+    if (!nameEn || nameEn === nameEs) {
+      return nameEs || '-';
+    }
+    return `${nameEs} / ${nameEn}`;
   }
 
   private formatOrderQuantityWithUnit(
@@ -1986,6 +2013,16 @@ export class CompanyOrdersService {
           settings.comparisonUnit,
           order.lbOrderMode,
         );
+        const unitPrice =
+          purchase?.unitPrice === null || purchase?.unitPrice === undefined
+            ? null
+            : Number(purchase.unitPrice.toFixed(2));
+        const companyUnitPrice =
+          purchase?.companyUnitPrice === null ||
+          purchase?.companyUnitPrice === undefined ||
+          purchase.companyUnitPrice <= 0
+            ? settings.companyUnitPrice
+            : Number(purchase.companyUnitPrice.toFixed(2));
         return {
           nameEs: item.nameEs || item.nameEn || '-',
           nameEn: item.nameEn || item.nameEs || '-',
@@ -1993,6 +2030,8 @@ export class CompanyOrdersService {
           orderQuantityUnit,
           comparisonUnit: settings.comparisonUnit,
           caseSizeLb: settings.caseSizeLb,
+          unitPrice,
+          companyUnitPrice,
         };
       })
       .filter(
@@ -2005,17 +2044,30 @@ export class CompanyOrdersService {
           orderQuantityUnit: CompanyOrderOrderUnit;
           comparisonUnit: CompanyOrderComparisonUnit;
           caseSizeLb: number | null;
+          unitPrice: number | null;
+          companyUnitPrice: number | null;
         } => item !== null,
       )
       .map((item, index) => ({
         rowNumber: index + 1,
-        nameEs: item.nameEs,
-        nameEn: item.nameEn,
-        quantity: this.formatPdfRemainingOrderQuantity(
+        itemLabel: this.formatPdfItemLabel(item.nameEs, item.nameEn),
+        caseCount: this.formatPdfRemainingOrderCaseCount(
+          item.quantity,
+          item.orderQuantityUnit,
+        ),
+        lbs: this.formatPdfRemainingOrderLbs(
           item.quantity,
           item.orderQuantityUnit,
           item.comparisonUnit,
           item.caseSizeLb,
+        ),
+        storePrice: this.formatPdfUnitPriceShort(
+          item.unitPrice,
+          item.comparisonUnit,
+        ),
+        supplierPrice: this.formatPdfUnitPriceShort(
+          item.companyUnitPrice,
+          item.comparisonUnit,
         ),
       }));
 
@@ -2026,9 +2078,11 @@ export class CompanyOrdersService {
     return [
       {
         rowNumber: 1,
-        nameEs: 'No remaining company-order items',
-        nameEn: '',
-        quantity: '-',
+        itemLabel: 'No remaining company-order items',
+        caseCount: '-',
+        lbs: '-',
+        storePrice: '-',
+        supplierPrice: '-',
       },
     ];
   }
@@ -2698,9 +2752,11 @@ export class CompanyOrdersService {
 
     const tableX = LEFT;
     const tableRight = tableX + TABLE_WIDTH;
-    const colIndexRight = tableX + 36;
-    const colItemRight = tableX + 194.4;
-    const colDescriptionRight = tableX + 306;
+    const colIndexRight = tableX + 24;
+    const colItemRight = tableX + 192;
+    const colCaseCountRight = tableX + 250;
+    const colLbsRight = tableX + 308;
+    const colStorePriceRight = tableX + 356;
     const numberFormat = (value: number, precision = 2) =>
       Number(value.toFixed(precision)).toString();
     const grayValue = (value: number) => Number(value.toFixed(6)).toString();
@@ -2919,32 +2975,56 @@ export class CompanyOrdersService {
           TABLE_HEADER_GRAY,
         );
         drawText('#', tableX + 6, tableTop - 13, 10);
-        drawText('Item Name', tableX + 42, tableTop - 13, 10);
-        drawText('Description', tableX + 200.4, tableTop - 13, 10);
-        drawText('Case Count / Lbs', colDescriptionRight + 8, tableTop - 13, 9);
+        drawText('Item', colIndexRight + 8, tableTop - 13, 10);
+        drawText('Case Count', colItemRight + 6, tableTop - 13, 8);
+        drawText('Lbs', colCaseCountRight + 18, tableTop - 13, 10);
+        drawText('Store $', colLbsRight + 8, tableTop - 13, 8);
+        drawText('Supplier $', colStorePriceRight + 4, tableTop - 13, 8);
 
         chunkRows.forEach((row, rowIndex) => {
           const textY = tableTop - 13 - TABLE_ROW_HEIGHT * (rowIndex + 1);
           drawText(String(row.rowNumber), tableX + 6, textY, 10);
           drawText(
-            this.truncatePdfText(row.nameEs, 146, 10),
-            tableX + 42,
+            this.truncatePdfText(row.itemLabel, 156, 10),
+            colIndexRight + 8,
             textY,
             10,
           );
-          drawText(
-            this.truncatePdfText(row.nameEn, 96, 10),
-            tableX + 200.4,
-            textY,
-            10,
+          const caseCountText = this.truncatePdfText(row.caseCount, 48, 10);
+          const caseCountWidth = this.estimatePdfTextWidth(caseCountText, 10);
+          const caseCountX = Math.max(
+            colItemRight + 6,
+            colCaseCountRight - 6 - caseCountWidth,
           );
-          const qtyText = this.truncatePdfText(row.quantity, 92, 10);
-          const qtyWidth = this.estimatePdfTextWidth(qtyText, 10);
-          const qtyX = Math.max(
-            colDescriptionRight + 6,
-            tableRight - 6 - qtyWidth,
+          drawText(caseCountText, caseCountX, textY, 10);
+          const lbsText = this.truncatePdfText(row.lbs, 50, 10);
+          const lbsWidth = this.estimatePdfTextWidth(lbsText, 10);
+          const lbsX = Math.max(
+            colCaseCountRight + 6,
+            colLbsRight - 6 - lbsWidth,
           );
-          drawText(qtyText, qtyX, textY, 10);
+          drawText(lbsText, lbsX, textY, 10);
+          const storePriceText = this.truncatePdfText(row.storePrice, 44, 9);
+          const storePriceWidth = this.estimatePdfTextWidth(storePriceText, 9);
+          const storePriceX = Math.max(
+            colLbsRight + 6,
+            colStorePriceRight - 6 - storePriceWidth,
+          );
+          drawText(storePriceText, storePriceX, textY + 1, 9);
+          const supplierPriceText = this.truncatePdfText(
+            row.supplierPrice,
+            46,
+            9,
+          );
+          const supplierPriceWidth = this.estimatePdfTextWidth(
+            supplierPriceText,
+            9,
+          );
+          const supplierPriceX = Math.max(
+            colStorePriceRight + 6,
+            tableRight - 6 - supplierPriceWidth,
+          );
+          drawText(supplierPriceText, supplierPriceX, textY + 1, 9);
         });
 
         const tableHeight =
@@ -2958,10 +3038,12 @@ export class CompanyOrdersService {
         drawLine(tableX, tableBottom, tableX, tableTop);
         drawLine(colIndexRight, tableBottom, colIndexRight, tableTop);
         drawLine(colItemRight, tableBottom, colItemRight, tableTop);
+        drawLine(colCaseCountRight, tableBottom, colCaseCountRight, tableTop);
+        drawLine(colLbsRight, tableBottom, colLbsRight, tableTop);
         drawLine(
-          colDescriptionRight,
+          colStorePriceRight,
           tableBottom,
-          colDescriptionRight,
+          colStorePriceRight,
           tableTop,
         );
         drawLine(tableRight, tableBottom, tableRight, tableTop);
@@ -3045,10 +3127,10 @@ export class CompanyOrdersService {
             inPersonSummary.items.forEach((purchase) => {
               const lineParts = [
                 `- ${purchase.nameEs}${purchase.nameEn && purchase.nameEn !== purchase.nameEs ? ` / ${purchase.nameEn}` : ''}`,
-                this.formatOrderQuantityWithUnit(
+                `Case Count ${this.formatPdfRemainingOrderCaseCount(
                   purchase.purchasedQuantity,
                   purchase.orderQuantityUnit,
-                ),
+                )}`,
               ];
               if (
                 purchase.comparisonUnit === LB_COMPARISON_UNIT &&
@@ -3056,9 +3138,8 @@ export class CompanyOrdersService {
                 purchase.purchasedWeightLb > 0
               ) {
                 lineParts.push(
-                  `Total Weight ${this.formatComparisonQuantityWithUnit(
+                  `Lbs ${this.formatPdfWeightWithUnit(
                     purchase.purchasedWeightLb,
-                    purchase.comparisonUnit,
                   )}`,
                 );
               }
@@ -3072,15 +3153,15 @@ export class CompanyOrdersService {
               }
               lineParts.push(
                 purchase.unitPrice !== null
-                  ? `In-Person ${this.formatPdfUnitPrice(
+                  ? `Store ${this.formatPdfUnitPriceShort(
                       purchase.unitPrice,
                       purchase.comparisonUnit,
                     )}${purchase.inPersonSpend !== null ? ` (${this.formatPdfMoney(purchase.inPersonSpend)})` : ''}`
-                  : 'In-Person n/a',
+                  : 'Store n/a',
               );
               lineParts.push(
                 purchase.companyUnitPrice !== null
-                  ? `Supplier ${this.formatPdfUnitPrice(
+                  ? `Supplier ${this.formatPdfUnitPriceShort(
                       purchase.companyUnitPrice,
                       purchase.comparisonUnit,
                     )}${purchase.companySpend !== null ? ` (${this.formatPdfMoney(purchase.companySpend)})` : ''}`
