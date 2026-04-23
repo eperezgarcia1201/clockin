@@ -1374,6 +1374,35 @@ export class CompanyOrdersService {
       : `${this.formatPdfQuantity(quantity)} each`;
   }
 
+  private formatPdfWeightWithUnit(quantity: number) {
+    return `${this.formatPdfQuantity(quantity)} lbs`;
+  }
+
+  private formatPdfRemainingOrderQuantity(
+    quantity: number,
+    orderQuantityUnit: CompanyOrderOrderUnit,
+    comparisonUnit: CompanyOrderComparisonUnit,
+    caseSizeLb: number | null,
+  ) {
+    if (
+      comparisonUnit === LB_COMPARISON_UNIT &&
+      orderQuantityUnit === 'case'
+    ) {
+      const caseLabel = `${this.formatPdfQuantity(quantity)} ${
+        Math.abs(quantity - 1) < 0.005 ? 'case' : 'cases'
+      }`;
+      if (caseSizeLb !== null && caseSizeLb > 0) {
+        const totalWeight = Number((quantity * caseSizeLb).toFixed(2));
+        return `${caseLabel} / ${this.formatPdfWeightWithUnit(totalWeight)}`;
+      }
+      return caseLabel;
+    }
+    if (orderQuantityUnit === 'lb') {
+      return this.formatPdfWeightWithUnit(quantity);
+    }
+    return this.formatOrderQuantityWithUnit(quantity, orderQuantityUnit);
+  }
+
   private formatOrderQuantityWithUnit(
     quantity: number,
     orderUnit: CompanyOrderOrderUnit,
@@ -1947,13 +1976,14 @@ export class CompanyOrdersService {
         if (remainingQuantity <= 0) {
           return null;
         }
+        const settings = this.resolveCatalogItemSettings(
+          catalogSettingsLookup,
+          order.supplierName,
+          item.nameEs,
+          item.nameEn,
+        );
         const orderQuantityUnit = this.resolveOrderQuantityUnit(
-          this.resolveCatalogItemSettings(
-            catalogSettingsLookup,
-            order.supplierName,
-            item.nameEs,
-            item.nameEn,
-          ).comparisonUnit,
+          settings.comparisonUnit,
           order.lbOrderMode,
         );
         return {
@@ -1961,6 +1991,8 @@ export class CompanyOrdersService {
           nameEn: item.nameEn || item.nameEs || '-',
           quantity: remainingQuantity,
           orderQuantityUnit,
+          comparisonUnit: settings.comparisonUnit,
+          caseSizeLb: settings.caseSizeLb,
         };
       })
       .filter(
@@ -1971,15 +2003,19 @@ export class CompanyOrdersService {
           nameEn: string;
           quantity: number;
           orderQuantityUnit: CompanyOrderOrderUnit;
+          comparisonUnit: CompanyOrderComparisonUnit;
+          caseSizeLb: number | null;
         } => item !== null,
       )
       .map((item, index) => ({
         rowNumber: index + 1,
         nameEs: item.nameEs,
         nameEn: item.nameEn,
-        quantity: this.formatOrderQuantityWithUnit(
+        quantity: this.formatPdfRemainingOrderQuantity(
           item.quantity,
           item.orderQuantityUnit,
+          item.comparisonUnit,
+          item.caseSizeLb,
         ),
       }));
 
@@ -2007,6 +2043,7 @@ export class CompanyOrdersService {
     });
 
     const quantitiesByUnit = this.createOrderQuantityByUnit();
+    let totalRemainingWeightLb = 0;
     const remainingItems = order.items.reduce((count, item) => {
       const remainingQuantity = Number(
         Math.max(
@@ -2030,12 +2067,28 @@ export class CompanyOrdersService {
         this.resolveOrderQuantityUnit(settings.comparisonUnit, order.lbOrderMode),
         remainingQuantity,
       );
+      if (settings.comparisonUnit === LB_COMPARISON_UNIT) {
+        const orderQuantityUnit = this.resolveOrderQuantityUnit(
+          settings.comparisonUnit,
+          order.lbOrderMode,
+        );
+        if (orderQuantityUnit === 'case' && settings.caseSizeLb && settings.caseSizeLb > 0) {
+          totalRemainingWeightLb = Number(
+            (totalRemainingWeightLb + remainingQuantity * settings.caseSizeLb).toFixed(2),
+          );
+        } else if (orderQuantityUnit === 'lb') {
+          totalRemainingWeightLb = Number(
+            (totalRemainingWeightLb + remainingQuantity).toFixed(2),
+          );
+        }
+      }
       return count + 1;
     }, 0);
 
     return {
       itemCount: remainingItems,
       quantitiesByUnit,
+      totalRemainingWeightLb,
     };
   }
 
@@ -2647,7 +2700,7 @@ export class CompanyOrdersService {
     const tableRight = tableX + TABLE_WIDTH;
     const colIndexRight = tableX + 36;
     const colItemRight = tableX + 194.4;
-    const colDescriptionRight = tableX + 352.8;
+    const colDescriptionRight = tableX + 306;
     const numberFormat = (value: number, precision = 2) =>
       Number(value.toFixed(precision)).toString();
     const grayValue = (value: number) => Number(value.toFixed(6)).toString();
@@ -2868,7 +2921,7 @@ export class CompanyOrdersService {
         drawText('#', tableX + 6, tableTop - 13, 10);
         drawText('Item Name', tableX + 42, tableTop - 13, 10);
         drawText('Description', tableX + 200.4, tableTop - 13, 10);
-        drawText('Qty', tableX + 358.8, tableTop - 13, 10);
+        drawText('Case Count / Lbs', colDescriptionRight + 8, tableTop - 13, 9);
 
         chunkRows.forEach((row, rowIndex) => {
           const textY = tableTop - 13 - TABLE_ROW_HEIGHT * (rowIndex + 1);
@@ -2880,12 +2933,12 @@ export class CompanyOrdersService {
             10,
           );
           drawText(
-            this.truncatePdfText(row.nameEn, 146, 10),
+            this.truncatePdfText(row.nameEn, 96, 10),
             tableX + 200.4,
             textY,
             10,
           );
-          const qtyText = this.truncatePdfText(row.quantity, 44, 10);
+          const qtyText = this.truncatePdfText(row.quantity, 92, 10);
           const qtyWidth = this.estimatePdfTextWidth(qtyText, 10);
           const qtyX = Math.max(
             colDescriptionRight + 6,
@@ -2935,6 +2988,18 @@ export class CompanyOrdersService {
             true,
           );
           cursorY -= 14;
+          if (remainingTotals.totalRemainingWeightLb > 0) {
+            drawText(
+              `Remaining Weight: ${this.formatPdfWeightWithUnit(
+                remainingTotals.totalRemainingWeightLb,
+              )}`,
+              LEFT,
+              cursorY,
+              10,
+              true,
+            );
+            cursorY -= 14;
+          }
           const notes = this.normalizePdfText(order.notes || '');
           if (notes) {
             drawText(
