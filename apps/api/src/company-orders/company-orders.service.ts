@@ -2333,6 +2333,173 @@ export class CompanyOrdersService {
     );
   }
 
+  private buildPdfCombinedOrderRows(
+    order: SerializedCompanyOrder,
+    catalogSettingsLookup: CatalogSettingsLookup,
+  ) {
+    const orderedItemsByKey = new Map<
+      string,
+      { nameEs: string; nameEn: string; quantity: number }
+    >();
+    order.items.forEach((item) => {
+      orderedItemsByKey.set(catalogItemKey(item.nameEs, item.nameEn), {
+        nameEs: item.nameEs,
+        nameEn: item.nameEn,
+        quantity: Number(item.quantity.toFixed(2)),
+      });
+    });
+
+    const purchasesByKey = new Map<string, StoredInPersonPurchase>();
+    order.inPersonPurchases.forEach((purchase) => {
+      purchasesByKey.set(
+        catalogItemKey(purchase.nameEs, purchase.nameEn),
+        purchase,
+      );
+    });
+
+    const orderedKeys = Array.from(orderedItemsByKey.keys()).sort((a, b) =>
+      a.localeCompare(b),
+    );
+    const purchaseOnlyKeys = Array.from(purchasesByKey.keys())
+      .filter((key) => !orderedItemsByKey.has(key))
+      .sort((a, b) => a.localeCompare(b));
+    const rowKeys = [...orderedKeys, ...purchaseOnlyKeys];
+
+    const rows = rowKeys
+      .map((key, index) => {
+        const orderedItem = orderedItemsByKey.get(key);
+        const purchase = purchasesByKey.get(key);
+        const nameEs = orderedItem?.nameEs || purchase?.nameEs || '-';
+        const nameEn = orderedItem?.nameEn || purchase?.nameEn || '';
+        const settings = this.resolveCatalogItemSettings(
+          catalogSettingsLookup,
+          order.supplierName,
+          nameEs,
+          nameEn,
+        );
+        const orderQuantityUnit = this.resolveOrderQuantityUnit(
+          settings.comparisonUnit,
+          order.lbOrderMode,
+        );
+        const orderedQuantity = Number((orderedItem?.quantity || 0).toFixed(2));
+        const purchasedQuantity = Number(
+          Math.max(0, purchase?.purchasedQuantity || 0).toFixed(2),
+        );
+        const remainingQuantity = Number(
+          Math.max(0, orderedQuantity - purchasedQuantity).toFixed(2),
+        );
+        const purchasedWeightLb =
+          settings.comparisonUnit === LB_COMPARISON_UNIT
+            ? Number(
+                Math.max(
+                  0,
+                  purchase?.purchasedWeightLb ??
+                    (orderQuantityUnit === 'lb'
+                      ? purchase?.purchasedQuantity || 0
+                      : 0),
+                ).toFixed(2),
+              )
+            : 0;
+        const unitPrice =
+          purchase?.unitPrice === null || purchase?.unitPrice === undefined
+            ? null
+            : Number(purchase.unitPrice.toFixed(2));
+        const companyUnitPrice =
+          purchase?.companyUnitPrice !== null &&
+          purchase?.companyUnitPrice !== undefined &&
+          purchase.companyUnitPrice > 0
+            ? Number(purchase.companyUnitPrice.toFixed(2))
+            : settings.companyUnitPrice;
+        const comparisonQuantity =
+          settings.comparisonUnit === LB_COMPARISON_UNIT
+            ? purchasedWeightLb
+            : purchasedQuantity;
+        const inPersonSpend =
+          comparisonQuantity > 0 && unitPrice !== null
+            ? Number((comparisonQuantity * unitPrice).toFixed(2))
+            : null;
+        const companySpend =
+          comparisonQuantity > 0 &&
+          companyUnitPrice !== null &&
+          companyUnitPrice > 0
+            ? Number((comparisonQuantity * companyUnitPrice).toFixed(2))
+            : null;
+        const savings =
+          inPersonSpend !== null && companySpend !== null
+            ? Number((companySpend - inPersonSpend).toFixed(2))
+            : null;
+
+        if (
+          orderedQuantity <= 0 &&
+          purchasedQuantity <= 0 &&
+          purchasedWeightLb <= 0 &&
+          unitPrice === null &&
+          companyUnitPrice === null
+        ) {
+          return null;
+        }
+
+        return {
+          rowNumber: index + 1,
+          itemLabel: this.formatPdfItemLabel(nameEs, nameEn),
+          orderedCount:
+            orderedItem || purchasedQuantity > 0
+              ? this.formatPdfQuantity(remainingQuantity)
+              : '-',
+          boughtCount:
+            purchasedQuantity > 0 ? this.formatPdfQuantity(purchasedQuantity) : '-',
+          lbs:
+            settings.comparisonUnit === LB_COMPARISON_UNIT &&
+            purchasedWeightLb > 0
+              ? this.formatPdfQuantity(purchasedWeightLb)
+              : '-',
+          ourPrice: this.formatPdfCompactMoney(unitPrice),
+          supplierPrice: this.formatPdfCompactMoney(companyUnitPrice),
+          ourTotal: this.formatPdfCompactMoney(inPersonSpend),
+          supplierTotal: this.formatPdfCompactMoney(companySpend),
+          save: this.formatPdfCompactDifference(savings),
+          saveValue: savings,
+        };
+      })
+      .filter(
+        (
+          row,
+        ): row is {
+          rowNumber: number;
+          itemLabel: string;
+          orderedCount: string;
+          boughtCount: string;
+          lbs: string;
+          ourPrice: string;
+          supplierPrice: string;
+          ourTotal: string;
+          supplierTotal: string;
+          save: string;
+          saveValue: number | null;
+        } => row !== null,
+      );
+
+    if (rows.length) {
+      return rows;
+    }
+
+    return [
+      {
+        rowNumber: 1,
+        itemLabel: 'No remaining company-order items',
+        orderedCount: '-',
+        boughtCount: '-',
+        lbs: '-',
+        ourPrice: '-',
+        supplierPrice: '-',
+        ourTotal: '-',
+        supplierTotal: '-',
+        save: '-',
+        saveValue: null,
+      },
+    ];
+  }
+
   private formatOrderLabel(weekStartDate: string, submittedDate: string) {
     return `Order for week of ${this.formatDateKeyUs(weekStartDate)} (submitted ${this.formatDateKeyUs(submittedDate)})`;
   }
@@ -2740,23 +2907,29 @@ export class CompanyOrdersService {
   ) {
     const PAGE_WIDTH = 595;
     const PAGE_HEIGHT = 842;
-    const LEFT = 78;
-    const TOP = 800;
+    const LEFT = 58;
+    const TOP = 790;
     const BOTTOM = 56;
-    const CONTENT_WIDTH = 439.2;
-    const TABLE_WIDTH = 403.2;
-    const TABLE_HEADER_HEIGHT = 18;
+    const TABLE_WIDTH = 486;
+    const TABLE_HEADER_HEIGHT = 20;
     const TABLE_ROW_HEIGHT = 18;
-    const TABLE_BORDER_GRAY = 0.501961;
-    const TABLE_HEADER_GRAY = 0.827451;
+    const TABLE_BORDER_GRAY = 0.65098;
+    const TABLE_HEADER_GRAY = 0;
 
     const tableX = LEFT;
-    const tableRight = tableX + TABLE_WIDTH;
-    const colIndexRight = tableX + 24;
-    const colItemRight = tableX + 192;
-    const colCaseCountRight = tableX + 250;
-    const colLbsRight = tableX + 308;
-    const colStorePriceRight = tableX + 356;
+    const colIndexRight = tableX + 20;
+    const colItemRight = colIndexRight + 126;
+    const colOrderedRight = colItemRight + 34;
+    const colBoughtRight = colOrderedRight + 34;
+    const colLbsRight = colBoughtRight + 34;
+    const colOurPriceRight = colLbsRight + 44;
+    const colSupplierPriceRight = colOurPriceRight + 44;
+    const colOurTotalRight = colSupplierPriceRight + 54;
+    const colSupplierTotalRight = colOurTotalRight + 54;
+    const tableRight = colSupplierTotalRight + 42;
+    const CONTENT_WIDTH = tableRight - LEFT;
+    const POSITIVE_RGB: [number, number, number] = [0.063, 0.557, 0.196];
+    const NEGATIVE_RGB: [number, number, number] = [0.753, 0.165, 0.184];
     const numberFormat = (value: number, precision = 2) =>
       Number(value.toFixed(precision)).toString();
     const grayValue = (value: number) => Number(value.toFixed(6)).toString();
@@ -2792,6 +2965,23 @@ export class CompanyOrdersService {
       );
     };
 
+    const drawTextRgb = (
+      value: string,
+      x: number,
+      y: number,
+      size: number,
+      rgb: [number, number, number],
+      bold = false,
+    ) => {
+      const normalized = this.normalizePdfText(value);
+      if (!normalized) {
+        return;
+      }
+      commands.push(
+        `${numberFormat(rgb[0], 3)} ${numberFormat(rgb[1], 3)} ${numberFormat(rgb[2], 3)} rg BT /${bold ? 'F2' : 'F1'} ${numberFormat(size)} Tf 1 0 0 1 ${numberFormat(x)} ${numberFormat(y)} Tm (${this.escapePdfText(normalized)}) Tj ET`,
+      );
+    };
+
     const drawLine = (
       x1: number,
       y1: number,
@@ -2823,108 +3013,84 @@ export class CompanyOrdersService {
       }
     };
 
-    const overallInPersonTotals = this.buildPdfInPersonTotals(
-      orders,
-      catalogSettingsLookup,
-    );
-
-    const drawDocumentHeader = () => {
-      drawText('COMPANY PURCHASE ORDERS', LEFT, cursorY, 18, true);
-      cursorY -= 24;
-      drawText(
-        `Week: ${this.formatPdfWeekLabel(
-          options.weekStartDate,
-          options.weekEndDate,
-        )}`,
-        LEFT,
-        cursorY,
-        10,
-      );
-      cursorY -= 14;
-      drawText(
-        `Location: ${options.locationLabel || 'All locations'}`,
-        LEFT,
-        cursorY,
-        10,
-      );
-      cursorY -= 14;
-      drawText(
-        `Supplier: ${this.normalizePdfText(options.supplierLabel || 'All companies')}`,
-        LEFT,
-        cursorY,
-        10,
-      );
-      cursorY -= 14;
-      drawText(
-        `Generated: ${this.formatDateUs(options.generatedAt)}`,
-        LEFT,
-        cursorY,
-        10,
-      );
-      cursorY -= 14;
-      if (overallInPersonTotals.itemCount > 0) {
-        const overallParts = [
-          `In-Person: ${this.formatOrderQuantitySummaryByUnit(
-            overallInPersonTotals.purchasedQuantitiesByUnit,
-          )}`,
-        ];
-        if (overallInPersonTotals.totalPurchasedWeightLb > 0) {
-          overallParts.push(
-            `Total Weight ${this.formatPdfQuantity(
-              overallInPersonTotals.totalPurchasedWeightLb,
-            )} lb`,
-          );
-        }
-        overallParts.push(
-          `In-Person Total: ${this.formatPdfMoney(overallInPersonTotals.totalInPersonSpend)}`,
-        );
-        overallParts.push(
-          `Supplier Total: ${this.formatPdfMoney(
-            overallInPersonTotals.totalCompanySpend,
-          )}`,
-        );
-        overallParts.push(
-          this.formatPdfSavingsLabel(overallInPersonTotals.totalSavings),
-        );
-        drawText(
-          overallParts.join(' | '),
-          LEFT,
-          cursorY,
-          10,
-          true,
-        );
-        cursorY -= 16;
-      } else {
-        cursorY -= 2;
+    const drawCenteredText = (
+      value: string,
+      left: number,
+      width: number,
+      y: number,
+      size: number,
+      bold = false,
+      gray = 0,
+    ) => {
+      const normalized = this.normalizePdfText(value);
+      if (!normalized) {
+        return;
       }
-      drawLine(
-        LEFT,
-        cursorY,
-        LEFT + CONTENT_WIDTH,
-        cursorY,
-        1,
-        TABLE_BORDER_GRAY,
+      const textWidth = this.estimatePdfTextWidth(normalized, size, bold);
+      drawText(
+        normalized,
+        left + Math.max(0, (width - textWidth) / 2),
+        y,
+        size,
+        bold,
+        gray,
       );
-      cursorY -= 18;
     };
 
-    drawDocumentHeader();
+    const drawCenteredTextRgb = (
+      value: string,
+      left: number,
+      width: number,
+      y: number,
+      size: number,
+      rgb: [number, number, number],
+      bold = false,
+    ) => {
+      const normalized = this.normalizePdfText(value);
+      if (!normalized) {
+        return;
+      }
+      const textWidth = this.estimatePdfTextWidth(normalized, size, bold);
+      drawTextRgb(
+        normalized,
+        left + Math.max(0, (width - textWidth) / 2),
+        y,
+        size,
+        rgb,
+        bold,
+      );
+    };
 
     if (!orders.length) {
+      drawCenteredText(
+        'COMPANY PURCHASE ORDERS',
+        LEFT,
+        CONTENT_WIDTH,
+        cursorY,
+        18,
+        true,
+      );
+      cursorY -= 32;
       drawText('No supplier orders for this week.', LEFT, cursorY, 11);
-      cursorY -= 16;
+      pages.push(commands.join('\n'));
+      return this.buildPdfDocument(pages, PAGE_WIDTH, PAGE_HEIGHT);
     }
 
-    orders.forEach((order) => {
+    orders.forEach((order, orderIndex) => {
       const submittedDates =
         order.submittedDates.length > 0
           ? order.submittedDates
           : [this.toDateKey(new Date(order.orderDate))];
       const submittedLabel = this.formatPdfSubmittedDates(submittedDates);
-      const contributorLabel = order.contributors.length
-        ? order.contributors.join(', ')
-        : order.createdBy || 'N/A';
-      const rows = this.buildPdfRemainingOrderRows(order, catalogSettingsLookup);
+      const contributorLabel = this.normalizePdfText(
+        order.contributors.length
+          ? order.contributors.join(', ')
+          : order.createdBy || 'N/A',
+      );
+      const combinedRows = this.buildPdfCombinedOrderRows(
+        order,
+        catalogSettingsLookup,
+      );
       const remainingTotals = this.buildPdfRemainingOrderTotals(
         order,
         catalogSettingsLookup,
@@ -2935,38 +3101,171 @@ export class CompanyOrdersService {
       );
 
       let rowOffset = 0;
-      while (rowOffset < rows.length) {
-        ensureSpace(140);
+      let pageIndexForOrder = 0;
+      while (rowOffset < combinedRows.length) {
+        if (orderIndex > 0 || pageIndexForOrder > 0) {
+          pushPage();
+        }
 
-        const supplierLabel = `SUPPLIER: ${this.normalizePdfText(order.supplierName).toUpperCase()}${rowOffset > 0 ? ' (CONTINUED)' : ''}`;
-        drawText(supplierLabel, LEFT, cursorY, 14, true);
-        cursorY -= 20;
-        drawText(`Submitted: ${submittedLabel}`, LEFT, cursorY, 10);
-        cursorY -= 14;
-        drawText(`Contributors: ${contributorLabel}`, LEFT, cursorY, 10);
+        const titleSupplier = this.normalizePdfText(
+          options.supplierLabel || order.supplierName || '',
+        );
+        drawCenteredText(
+          titleSupplier
+            ? `COMPANY PURCHASE ORDER - ${titleSupplier}`
+            : 'COMPANY PURCHASE ORDERS',
+          LEFT,
+          CONTENT_WIDTH,
+          cursorY,
+          18,
+          true,
+        );
+        cursorY -= 30;
+
+        const locationLabel = this.normalizePdfText(
+          order.officeName || options.locationLabel || 'All Locations',
+        );
+        drawText(
+          `Week: ${this.formatPdfWeekLabelLong(
+            options.weekStartDate,
+            options.weekEndDate,
+          )} | Location: ${locationLabel}`,
+          LEFT,
+          cursorY,
+          10,
+        );
         cursorY -= 16;
+        drawText(
+          `Generated: ${this.formatDateUs(options.generatedAt)} | Submitted: ${submittedLabel} | Contributor: ${contributorLabel}`,
+          LEFT,
+          cursorY,
+          10,
+        );
+        cursorY -= 26;
+
+        const summaryX = LEFT + 28;
+        const summaryWidth = TABLE_WIDTH - 56;
+        const summaryColWidth = summaryWidth / 3;
+        const summaryTop = cursorY;
+        const summaryHeaderBottom = summaryTop - 20;
+        const summaryBottom = summaryTop - 44;
+
+        fillRect(
+          summaryX,
+          summaryHeaderBottom,
+          summaryWidth,
+          TABLE_HEADER_HEIGHT,
+          TABLE_HEADER_GRAY,
+        );
+        drawLine(summaryX, summaryTop, summaryX + summaryWidth, summaryTop);
+        drawLine(
+          summaryX,
+          summaryHeaderBottom,
+          summaryX + summaryWidth,
+          summaryHeaderBottom,
+        );
+        drawLine(summaryX, summaryBottom, summaryX + summaryWidth, summaryBottom);
+        drawLine(summaryX, summaryBottom, summaryX, summaryTop);
+        drawLine(
+          summaryX + summaryColWidth,
+          summaryBottom,
+          summaryX + summaryColWidth,
+          summaryTop,
+        );
+        drawLine(
+          summaryX + summaryColWidth * 2,
+          summaryBottom,
+          summaryX + summaryColWidth * 2,
+          summaryTop,
+        );
+        drawLine(
+          summaryX + summaryWidth,
+          summaryBottom,
+          summaryX + summaryWidth,
+          summaryTop,
+        );
+        drawCenteredText('In-Person', summaryX, summaryColWidth, summaryTop - 14, 10, false, 1);
+        drawCenteredText(
+          'Supplier',
+          summaryX + summaryColWidth,
+          summaryColWidth,
+          summaryTop - 14,
+          10,
+          false,
+          1,
+        );
+        drawCenteredText(
+          'Savings',
+          summaryX + summaryColWidth * 2,
+          summaryColWidth,
+          summaryTop - 14,
+          10,
+          false,
+          1,
+        );
+        drawCenteredText(
+          this.formatPdfMoney(inPersonSummary.totalInPersonSpend),
+          summaryX,
+          summaryColWidth,
+          summaryTop - 36,
+          12,
+        );
+        drawCenteredText(
+          this.formatPdfMoney(inPersonSummary.totalCompanySpend),
+          summaryX + summaryColWidth,
+          summaryColWidth,
+          summaryTop - 36,
+          12,
+        );
+        const topSavingsRgb =
+          inPersonSummary.totalSavings > 0.005
+            ? POSITIVE_RGB
+            : inPersonSummary.totalSavings < -0.005
+              ? NEGATIVE_RGB
+              : null;
+        if (topSavingsRgb) {
+          drawCenteredTextRgb(
+            this.formatPdfMoneySigned(inPersonSummary.totalSavings),
+            summaryX + summaryColWidth * 2,
+            summaryColWidth,
+            summaryTop - 36,
+            12,
+            topSavingsRgb,
+          );
+        } else {
+          drawCenteredText(
+            this.formatPdfMoneySigned(inPersonSummary.totalSavings),
+            summaryX + summaryColWidth * 2,
+            summaryColWidth,
+            summaryTop - 36,
+            12,
+          );
+        }
+        cursorY = summaryBottom - 34;
+
+        drawText('Items (Combined)', LEFT, cursorY, 11, true);
+        cursorY -= 18;
 
         const tableTop = cursorY;
-        const rowsRemaining = rows.length - rowOffset;
+        const rowsRemaining = combinedRows.length - rowOffset;
         let rowsThatFit = Math.floor(
-          (tableTop - BOTTOM - 22 - TABLE_HEADER_HEIGHT) / TABLE_ROW_HEIGHT,
+          (tableTop - BOTTOM - 28 - TABLE_HEADER_HEIGHT) / TABLE_ROW_HEIGHT,
         );
         rowsThatFit = Math.max(1, rowsThatFit);
         let rowsThisPage = Math.min(rowsRemaining, rowsThatFit);
-
-        const tentativeFinalChunk = rowOffset + rowsThisPage >= rows.length;
+        const tentativeFinalChunk = rowOffset + rowsThisPage >= combinedRows.length;
         if (tentativeFinalChunk) {
           const finalRowsThatFit = Math.floor(
-            (tableTop - BOTTOM - 52 - TABLE_HEADER_HEIGHT) / TABLE_ROW_HEIGHT,
+            (tableTop - BOTTOM - 104 - TABLE_HEADER_HEIGHT) / TABLE_ROW_HEIGHT,
           );
           rowsThisPage = Math.min(rowsThisPage, Math.max(1, finalRowsThatFit));
         }
         if (rowsThisPage <= 0) {
-          pushPage();
+          pageIndexForOrder += 1;
           continue;
         }
 
-        const chunkRows = rows.slice(rowOffset, rowOffset + rowsThisPage);
+        const chunkRows = combinedRows.slice(rowOffset, rowOffset + rowsThisPage);
         fillRect(
           tableX,
           tableTop - TABLE_HEADER_HEIGHT,
@@ -2974,57 +3273,63 @@ export class CompanyOrdersService {
           TABLE_HEADER_HEIGHT,
           TABLE_HEADER_GRAY,
         );
-        drawText('#', tableX + 6, tableTop - 13, 10);
-        drawText('Item', colIndexRight + 8, tableTop - 13, 10);
-        drawText('Case Count', colItemRight + 6, tableTop - 13, 8);
-        drawText('Lbs', colCaseCountRight + 18, tableTop - 13, 10);
-        drawText('Store $', colLbsRight + 8, tableTop - 13, 8);
-        drawText('Supplier $', colStorePriceRight + 4, tableTop - 13, 8);
+        drawCenteredText('#', tableX, colIndexRight - tableX, tableTop - 14, 9, false, 1);
+        drawText('Item', colIndexRight + 8, tableTop - 14, 9, false, 1);
+        drawCenteredText('Ord', colItemRight, colOrderedRight - colItemRight, tableTop - 14, 9, false, 1);
+        drawCenteredText('Bgt', colOrderedRight, colBoughtRight - colOrderedRight, tableTop - 14, 9, false, 1);
+        drawCenteredText('Lbs', colBoughtRight, colLbsRight - colBoughtRight, tableTop - 14, 9, false, 1);
+        drawCenteredText('Our $', colLbsRight, colOurPriceRight - colLbsRight, tableTop - 14, 9, false, 1);
+        drawCenteredText('Sup $', colOurPriceRight, colSupplierPriceRight - colOurPriceRight, tableTop - 14, 9, false, 1);
+        drawCenteredText('Our Tot', colSupplierPriceRight, colOurTotalRight - colSupplierPriceRight, tableTop - 14, 8, false, 1);
+        drawCenteredText('Sup Tot', colOurTotalRight, colSupplierTotalRight - colOurTotalRight, tableTop - 14, 8, false, 1);
+        drawCenteredText('Save', colSupplierTotalRight, tableRight - colSupplierTotalRight, tableTop - 14, 9, false, 1);
 
         chunkRows.forEach((row, rowIndex) => {
-          const textY = tableTop - 13 - TABLE_ROW_HEIGHT * (rowIndex + 1);
-          drawText(String(row.rowNumber), tableX + 6, textY, 10);
-          drawText(
-            this.truncatePdfText(row.itemLabel, 156, 10),
-            colIndexRight + 8,
+          const textY = tableTop - 14 - TABLE_ROW_HEIGHT * (rowIndex + 1);
+          drawCenteredText(
+            String(row.rowNumber),
+            tableX,
+            colIndexRight - tableX,
             textY,
-            10,
-          );
-          const caseCountText = this.truncatePdfText(row.caseCount, 48, 10);
-          const caseCountWidth = this.estimatePdfTextWidth(caseCountText, 10);
-          const caseCountX = Math.max(
-            colItemRight + 6,
-            colCaseCountRight - 6 - caseCountWidth,
-          );
-          drawText(caseCountText, caseCountX, textY, 10);
-          const lbsText = this.truncatePdfText(row.lbs, 50, 10);
-          const lbsWidth = this.estimatePdfTextWidth(lbsText, 10);
-          const lbsX = Math.max(
-            colCaseCountRight + 6,
-            colLbsRight - 6 - lbsWidth,
-          );
-          drawText(lbsText, lbsX, textY, 10);
-          const storePriceText = this.truncatePdfText(row.storePrice, 44, 9);
-          const storePriceWidth = this.estimatePdfTextWidth(storePriceText, 9);
-          const storePriceX = Math.max(
-            colLbsRight + 6,
-            colStorePriceRight - 6 - storePriceWidth,
-          );
-          drawText(storePriceText, storePriceX, textY + 1, 9);
-          const supplierPriceText = this.truncatePdfText(
-            row.supplierPrice,
-            46,
             9,
           );
-          const supplierPriceWidth = this.estimatePdfTextWidth(
-            supplierPriceText,
+          drawText(
+            this.truncatePdfText(row.itemLabel, 118, 9),
+            colIndexRight + 6,
+            textY,
             9,
           );
-          const supplierPriceX = Math.max(
-            colStorePriceRight + 6,
-            tableRight - 6 - supplierPriceWidth,
-          );
-          drawText(supplierPriceText, supplierPriceX, textY + 1, 9);
+          drawCenteredText(row.orderedCount, colItemRight, colOrderedRight - colItemRight, textY, 9);
+          drawCenteredText(row.boughtCount, colOrderedRight, colBoughtRight - colOrderedRight, textY, 9);
+          drawCenteredText(row.lbs, colBoughtRight, colLbsRight - colBoughtRight, textY, 9);
+          drawCenteredText(row.ourPrice, colLbsRight, colOurPriceRight - colLbsRight, textY, 9);
+          drawCenteredText(row.supplierPrice, colOurPriceRight, colSupplierPriceRight - colOurPriceRight, textY, 9);
+          drawCenteredText(row.ourTotal, colSupplierPriceRight, colOurTotalRight - colSupplierPriceRight, textY, 9);
+          drawCenteredText(row.supplierTotal, colOurTotalRight, colSupplierTotalRight - colOurTotalRight, textY, 9);
+          const saveRgb =
+            row.saveValue !== null && row.saveValue > 0.005
+              ? POSITIVE_RGB
+              : row.saveValue !== null && row.saveValue < -0.005
+                ? NEGATIVE_RGB
+                : null;
+          if (saveRgb) {
+            drawCenteredTextRgb(
+              row.save,
+              colSupplierTotalRight,
+              tableRight - colSupplierTotalRight,
+              textY,
+              9,
+              saveRgb,
+            );
+          } else {
+            drawCenteredText(
+              row.save,
+              colSupplierTotalRight,
+              tableRight - colSupplierTotalRight,
+              textY,
+              9,
+            );
+          }
         });
 
         const tableHeight =
@@ -3038,166 +3343,86 @@ export class CompanyOrdersService {
         drawLine(tableX, tableBottom, tableX, tableTop);
         drawLine(colIndexRight, tableBottom, colIndexRight, tableTop);
         drawLine(colItemRight, tableBottom, colItemRight, tableTop);
-        drawLine(colCaseCountRight, tableBottom, colCaseCountRight, tableTop);
+        drawLine(colOrderedRight, tableBottom, colOrderedRight, tableTop);
+        drawLine(colBoughtRight, tableBottom, colBoughtRight, tableTop);
         drawLine(colLbsRight, tableBottom, colLbsRight, tableTop);
+        drawLine(colOurPriceRight, tableBottom, colOurPriceRight, tableTop);
         drawLine(
-          colStorePriceRight,
+          colSupplierPriceRight,
           tableBottom,
-          colStorePriceRight,
+          colSupplierPriceRight,
+          tableTop,
+        );
+        drawLine(colOurTotalRight, tableBottom, colOurTotalRight, tableTop);
+        drawLine(
+          colSupplierTotalRight,
+          tableBottom,
+          colSupplierTotalRight,
           tableTop,
         );
         drawLine(tableRight, tableBottom, tableRight, tableTop);
 
-        cursorY = tableBottom - 10;
+        cursorY = tableBottom - 20;
         rowOffset += rowsThisPage;
-        const isFinalChunk = rowOffset >= rows.length;
+        const isFinalChunk = rowOffset >= combinedRows.length;
         if (isFinalChunk) {
-          drawText(
-            `Total Items Remaining: ${this.formatPdfQuantity(remainingTotals.itemCount)}`,
-            LEFT,
-            cursorY,
-            10,
-            true,
-          );
-          cursorY -= 14;
-          drawText(
-            `Remaining Quantity: ${this.formatOrderQuantitySummaryByUnit(
-              remainingTotals.quantitiesByUnit,
-            )}`,
-            LEFT,
-            cursorY,
-            10,
-            true,
-          );
-          cursorY -= 14;
-          if (remainingTotals.totalRemainingWeightLb > 0) {
-            drawText(
-              `Remaining Weight: ${this.formatPdfWeightWithUnit(
-                remainingTotals.totalRemainingWeightLb,
-              )}`,
-              LEFT,
-              cursorY,
-              10,
-              true,
-            );
-            cursorY -= 14;
-          }
-          const notes = this.normalizePdfText(order.notes || '');
-          if (notes) {
-            drawText(
-              `Notes: ${this.truncatePdfText(notes, CONTENT_WIDTH - 12, 10)}`,
-              LEFT,
-              cursorY,
-              10,
-            );
-            cursorY -= 14;
-          }
-          if (inPersonSummary.items.length) {
-            ensureSpace(26);
-            const inPersonParts = [
-              `In-Person Shopping: Bought ${this.formatOrderQuantitySummaryByUnit(
-                inPersonSummary.purchasedQuantitiesByUnit,
-              )}`,
-            ];
-            if (inPersonSummary.totalPurchasedWeightLb > 0) {
-              inPersonParts.push(
-                `Total Weight ${this.formatPdfQuantity(
-                  inPersonSummary.totalPurchasedWeightLb,
-                )} lb`,
-              );
-            }
-            inPersonParts.push(
-              `In-Person Total ${this.formatPdfMoney(inPersonSummary.totalInPersonSpend)}`,
-            );
-            inPersonParts.push(
-              `Supplier Total ${this.formatPdfMoney(inPersonSummary.totalCompanySpend)}`,
-            );
-            inPersonParts.push(
-              this.formatPdfSavingsLabel(inPersonSummary.totalSavings),
-            );
-            drawText(
-              inPersonParts.join(' | '),
-              LEFT,
-              cursorY,
-              10,
-              true,
-            );
-            cursorY -= 14;
+          const summaryBoxX = LEFT + 40;
+          const summaryBoxWidth = TABLE_WIDTH - 80;
+          const summaryLabelRight = summaryBoxX + 190;
+          const summaryRowHeight = 26;
+          const summaryTableTop = cursorY;
+          const summaryTableBottom = summaryTableTop - summaryRowHeight * 3;
+          const remainingWeightLabel =
+            remainingTotals.totalRemainingWeightLb > 0
+              ? this.formatPdfWeightLabel(remainingTotals.totalRemainingWeightLb)
+              : '0 lb';
+          const summaryRows = [
+            ['Items Remaining', this.formatPdfQuantity(remainingTotals.itemCount)],
+            [
+              'Remaining Qty',
+              this.formatOrderQuantitySummaryByUnit(remainingTotals.quantitiesByUnit),
+            ],
+            ['Remaining Weight', remainingWeightLabel],
+          ];
 
-            inPersonSummary.items.forEach((purchase) => {
-              const lineParts = [
-                `- ${purchase.nameEs}${purchase.nameEn && purchase.nameEn !== purchase.nameEs ? ` / ${purchase.nameEn}` : ''}`,
-                `Case Count ${this.formatPdfRemainingOrderCaseCount(
-                  purchase.purchasedQuantity,
-                  purchase.orderQuantityUnit,
-                )}`,
-              ];
-              if (
-                purchase.comparisonUnit === LB_COMPARISON_UNIT &&
-                purchase.purchasedWeightLb !== null &&
-                purchase.purchasedWeightLb > 0
-              ) {
-                lineParts.push(
-                  `Lbs ${this.formatPdfWeightWithUnit(
-                    purchase.purchasedWeightLb,
-                  )}`,
-                );
-              }
-              if (
-                purchase.caseSizeLb !== null &&
-                purchase.orderQuantityUnit === 'case'
-              ) {
-                lineParts.push(
-                  `Case Size ${this.formatPdfQuantity(purchase.caseSizeLb)} lb`,
-                );
-              }
-              lineParts.push(
-                purchase.unitPrice !== null
-                  ? `Store ${this.formatPdfUnitPriceShort(
-                      purchase.unitPrice,
-                      purchase.comparisonUnit,
-                    )}${purchase.inPersonSpend !== null ? ` (${this.formatPdfMoney(purchase.inPersonSpend)})` : ''}`
-                  : 'Store n/a',
-              );
-              lineParts.push(
-                purchase.companyUnitPrice !== null
-                  ? `Supplier ${this.formatPdfUnitPriceShort(
-                      purchase.companyUnitPrice,
-                      purchase.comparisonUnit,
-                    )}${purchase.companySpend !== null ? ` (${this.formatPdfMoney(purchase.companySpend)})` : ''}`
-                  : 'Supplier n/a',
-              );
-              lineParts.push(
-                purchase.savings !== null
-                  ? this.formatPdfSavingsLabel(purchase.savings)
-                  : 'Savings n/a',
-              );
-              const line = lineParts.join(' | ');
-              const wrapped = this.wrapPdfText(line, CONTENT_WIDTH - 18, 10);
-              wrapped.forEach((wrappedLine) => {
-                ensureSpace(14);
-                drawText(wrappedLine, LEFT + 10, cursorY, 10);
-                cursorY -= 12;
-              });
-            });
-          }
           drawLine(
-            LEFT,
-            cursorY,
-            LEFT + CONTENT_WIDTH,
-            cursorY,
-            0.5,
-            TABLE_BORDER_GRAY,
+            summaryBoxX,
+            summaryTableTop,
+            summaryBoxX + summaryBoxWidth,
+            summaryTableTop,
           );
-          cursorY -= 16;
-        } else {
-          pushPage();
+          for (let row = 1; row <= summaryRows.length; row += 1) {
+            const y = summaryTableTop - summaryRowHeight * row;
+            drawLine(summaryBoxX, y, summaryBoxX + summaryBoxWidth, y);
+          }
+          drawLine(summaryBoxX, summaryTableBottom, summaryBoxX, summaryTableTop);
+          drawLine(
+            summaryLabelRight,
+            summaryTableBottom,
+            summaryLabelRight,
+            summaryTableTop,
+          );
+          drawLine(
+            summaryBoxX + summaryBoxWidth,
+            summaryTableBottom,
+            summaryBoxX + summaryBoxWidth,
+            summaryTableTop,
+          );
+
+          summaryRows.forEach((summaryRow, index) => {
+            const textY = summaryTableTop - 18 - summaryRowHeight * index;
+            drawText(summaryRow[0], summaryBoxX + 10, textY, 10);
+            drawText(summaryRow[1], summaryLabelRight + 12, textY, 10);
+          });
+          cursorY = summaryTableBottom - 16;
         }
+
+        pageIndexForOrder += 1;
       }
     });
 
     if (commands.length === 0) {
-      drawText('COMPANY PURCHASE ORDERS', LEFT, TOP, 18, true);
+      drawCenteredText('COMPANY PURCHASE ORDERS', LEFT, CONTENT_WIDTH, TOP, 18, true);
     }
     pages.push(commands.join('\n'));
     return this.buildPdfDocument(pages, PAGE_WIDTH, PAGE_HEIGHT);
@@ -3205,6 +3430,29 @@ export class CompanyOrdersService {
 
   private formatPdfWeekLabel(weekStartDate: string, weekEndDate: string) {
     return `${this.formatDateKeyUs(weekStartDate)} - ${this.formatDateKeyUs(weekEndDate)}`;
+  }
+
+  private formatPdfWeekLabelLong(weekStartDate: string, weekEndDate: string) {
+    const weekStart = dateKeyToUtc(weekStartDate);
+    const weekEnd = dateKeyToUtc(weekEndDate);
+    if (
+      Number.isNaN(weekStart.getTime()) ||
+      Number.isNaN(weekEnd.getTime())
+    ) {
+      return this.formatPdfWeekLabel(weekStartDate, weekEndDate);
+    }
+    const startLabel = weekStart.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+    const endLabel = weekEnd.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    return `${startLabel} - ${endLabel}`;
   }
 
   private formatPdfSubmittedDates(dateKeys: string[]) {
@@ -3229,6 +3477,37 @@ export class CompanyOrdersService {
       return '$0.00';
     }
     return `$${value.toFixed(2)}`;
+  }
+
+  private formatPdfMoneySigned(value: number) {
+    if (!Number.isFinite(value) || Math.abs(value) < 0.005) {
+      return '$0.00';
+    }
+    if (value < 0) {
+      return `-${this.formatPdfMoney(Math.abs(value))}`;
+    }
+    return this.formatPdfMoney(value);
+  }
+
+  private formatPdfCompactMoney(value: number | null) {
+    if (value === null || !Number.isFinite(value) || value <= 0) {
+      return '-';
+    }
+    return value.toFixed(2);
+  }
+
+  private formatPdfCompactDifference(value: number | null) {
+    if (value === null || !Number.isFinite(value)) {
+      return '-';
+    }
+    if (Math.abs(value) < 0.005) {
+      return '0.00';
+    }
+    return value < 0 ? `-${Math.abs(value).toFixed(2)}` : value.toFixed(2);
+  }
+
+  private formatPdfWeightLabel(value: number) {
+    return `${this.formatPdfQuantity(value)} lb`;
   }
 
   private formatPdfSavingsLabel(value: number) {
