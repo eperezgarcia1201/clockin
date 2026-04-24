@@ -70,6 +70,51 @@ const sanitizePermissions = (value: unknown): AccessPermissions | null => {
   };
 };
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+type CompanyOrderPushPayload = {
+  key: string;
+  supplierName: string;
+  weekStartDate: string;
+  officeId: string | null;
+};
+
+const parseCompanyOrderPushPayload = (
+  response: Notifications.NotificationResponse | null | undefined,
+): CompanyOrderPushPayload | null => {
+  const identifier =
+    typeof response?.notification?.request?.identifier === "string"
+      ? response.notification.request.identifier.trim()
+      : "";
+  const data = asRecord(response?.notification?.request?.content?.data);
+  const kind = typeof data?.kind === "string" ? data.kind.trim() : "";
+  if (kind !== "COMPANY_ORDER_SUBMITTED") {
+    return null;
+  }
+
+  const supplierName =
+    typeof data?.supplierName === "string" ? data.supplierName.trim() : "";
+  const weekStartDate =
+    typeof data?.weekStartDate === "string" ? data.weekStartDate.trim() : "";
+  const officeId =
+    typeof data?.officeId === "string" && data.officeId.trim()
+      ? data.officeId.trim()
+      : null;
+  if (!supplierName || !weekStartDate) {
+    return null;
+  }
+
+  return {
+    key: identifier || `${kind}:${supplierName}:${weekStartDate}:${officeId || "all"}`,
+    supplierName,
+    weekStartDate,
+    officeId,
+  };
+};
+
 type LiquorFormState = {
   itemId: string;
   officeId: string;
@@ -488,4 +533,174 @@ export function useAdminNotificationRefreshEffect({
       }
     };
   }, [loadNotifications, loggedIn, setDataSyncError]);
+}
+
+type UseAdminCompanyOrderNotificationOpenEffectArgs = {
+  loggedIn: boolean;
+  hasCompanyOrdersAccess: boolean;
+  setScreen: Dispatch<SetStateAction<Screen>>;
+  setActiveLocationId: Dispatch<SetStateAction<string>>;
+  setCompanyOrderMode: Dispatch<SetStateAction<"orders" | "inPerson">>;
+  setCompanyOrderSupplier: Dispatch<SetStateAction<string>>;
+  setCompanyOrderExportAllCompanies: Dispatch<SetStateAction<boolean>>;
+  setLastSubmittedCompanyOrderWeekStart: Dispatch<SetStateAction<string>>;
+  setCompanyOrderStatus: Dispatch<SetStateAction<string | null>>;
+  setCompanyOrderExportingFormat: Dispatch<
+    SetStateAction<"pdf" | "csv" | "excel" | null>
+  >;
+  fetchCompanyOrderExport: (
+    format: "pdf" | "csv" | "excel",
+    weekStartDate: string,
+    supplierName?: string | null,
+    officeIdOverride?: string | null,
+  ) => Promise<boolean>;
+  loadCompanyOrders: () => Promise<void>;
+  setDataSyncError: Dispatch<SetStateAction<string | null>>;
+};
+
+export function useAdminCompanyOrderNotificationOpenEffect({
+  loggedIn,
+  hasCompanyOrdersAccess,
+  setScreen,
+  setActiveLocationId,
+  setCompanyOrderMode,
+  setCompanyOrderSupplier,
+  setCompanyOrderExportAllCompanies,
+  setLastSubmittedCompanyOrderWeekStart,
+  setCompanyOrderStatus,
+  setCompanyOrderExportingFormat,
+  fetchCompanyOrderExport,
+  loadCompanyOrders,
+  setDataSyncError,
+}: UseAdminCompanyOrderNotificationOpenEffectArgs) {
+  const pendingPayloadRef = useRef<CompanyOrderPushPayload | null>(null);
+  const lastHandledKeyRef = useRef("");
+
+  const handlePayload = async (payload: CompanyOrderPushPayload) => {
+    if (lastHandledKeyRef.current === payload.key) {
+      return;
+    }
+    lastHandledKeyRef.current = payload.key;
+    pendingPayloadRef.current = null;
+
+    if (payload.officeId) {
+      setActiveLocationId(payload.officeId);
+    }
+    setScreen("companyOrders");
+    setCompanyOrderMode("orders");
+    setCompanyOrderExportAllCompanies(false);
+    setCompanyOrderSupplier(payload.supplierName);
+    setLastSubmittedCompanyOrderWeekStart(payload.weekStartDate);
+    setCompanyOrderStatus(`Opening ${payload.supplierName} PDF...`);
+    setCompanyOrderExportingFormat("pdf");
+    void loadCompanyOrders();
+
+    try {
+      const ok = await fetchCompanyOrderExport(
+        "pdf",
+        payload.weekStartDate,
+        payload.supplierName,
+        payload.officeId,
+      );
+      setCompanyOrderStatus(
+        ok
+          ? `PDF ready for ${payload.supplierName}.`
+          : "Unable to open company order PDF.",
+      );
+    } catch (error) {
+      setCompanyOrderStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to open company order PDF.",
+      );
+    } finally {
+      setCompanyOrderExportingFormat(null);
+      try {
+        if (
+          typeof Notifications.clearLastNotificationResponseAsync === "function"
+        ) {
+          await Notifications.clearLastNotificationResponseAsync();
+        }
+      } catch {
+        // noop
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (
+      !loggedIn ||
+      !hasCompanyOrdersAccess ||
+      !pendingPayloadRef.current
+    ) {
+      return;
+    }
+    void handlePayload(pendingPayloadRef.current);
+  }, [hasCompanyOrdersAccess, loggedIn]);
+
+  useEffect(() => {
+    let active = true;
+
+    const queueResponse = async (
+      response: Notifications.NotificationResponse | null | undefined,
+    ) => {
+      const payload = parseCompanyOrderPushPayload(response);
+      if (!payload || !active) {
+        return;
+      }
+      if (lastHandledKeyRef.current === payload.key) {
+        return;
+      }
+      pendingPayloadRef.current = payload;
+      if (loggedIn && hasCompanyOrdersAccess) {
+        await handlePayload(payload);
+      }
+    };
+
+    let subscription: ReturnType<
+      typeof Notifications.addNotificationResponseReceivedListener
+    > | null = null;
+    try {
+      subscription = Notifications.addNotificationResponseReceivedListener(
+        (response) => {
+          void queueResponse(response);
+        },
+      );
+      const loadLastResponse = async () => {
+        if (
+          typeof Notifications.getLastNotificationResponseAsync !== "function"
+        ) {
+          return;
+        }
+        const response = await Notifications.getLastNotificationResponseAsync();
+        await queueResponse(response);
+      };
+      void loadLastResponse();
+    } catch (error) {
+      setDataSyncError(resolveNotificationListenerErrorMessage(error));
+    }
+
+    return () => {
+      active = false;
+      try {
+        subscription?.remove();
+      } catch {
+        // noop
+      }
+    };
+  }, [
+    fetchCompanyOrderExport,
+    hasCompanyOrdersAccess,
+    loadCompanyOrders,
+    loggedIn,
+    setActiveLocationId,
+    setCompanyOrderExportAllCompanies,
+    setCompanyOrderExportingFormat,
+    setCompanyOrderMode,
+    setCompanyOrderStatus,
+    setCompanyOrderSupplier,
+    setDataSyncError,
+    setLastSubmittedCompanyOrderWeekStart,
+    setScreen,
+  ]);
 }

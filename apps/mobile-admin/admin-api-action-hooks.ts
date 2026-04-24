@@ -51,11 +51,13 @@ export const useAdminApiActions = (params: {
       format: "pdf" | "csv" | "excel",
       weekStartDate: string,
       supplierName?: string | null,
+      officeIdOverride?: string | null,
     ) => {
       const result = await fetchCompanyOrderExportRequest({
         format,
         weekStartDate,
         supplierName,
+        officeIdOverride,
         resolvedApiBase: params.resolvedApiBase,
         loggedIn: params.loggedIn,
         activeTenant: params.activeTenant,

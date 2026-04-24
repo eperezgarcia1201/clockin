@@ -81,6 +81,7 @@ export const fetchCompanyOrderExportRequest = async (params: {
   format: "pdf" | "csv" | "excel";
   weekStartDate: string;
   supplierName?: string | null;
+  officeIdOverride?: string | null;
   resolvedApiBase: string | null;
   loggedIn: boolean;
   activeTenant: string;
@@ -106,7 +107,8 @@ export const fetchCompanyOrderExportRequest = async (params: {
     weekStartDate: params.weekStartDate,
     supplierName: params.supplierName,
     orderedBases,
-    companyOrdersOfficeId: params.companyOrdersOfficeId,
+    companyOrdersOfficeId:
+      params.officeIdOverride?.trim() || params.companyOrdersOfficeId,
     tenantHeader,
     activeLoginName,
     language: params.language,

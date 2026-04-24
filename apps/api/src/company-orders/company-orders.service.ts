@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { NotificationType, type Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
@@ -27,6 +27,7 @@ const supplierCatalogItemKey = (
 
 const dateKeyToUtc = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const COMPANY_ORDER_META_PREFIX = '__company_order_meta__';
+const COMPANY_ORDER_SUBMITTED_KIND = 'COMPANY_ORDER_SUBMITTED';
 const MAX_SUBMITTED_DATES = 28;
 const MAX_CONTRIBUTORS = 40;
 const MAX_NOTE_LINES = 120;
@@ -506,7 +507,19 @@ export class CompanyOrdersService {
       })) as CompanyOrderDbRow;
     });
 
-    return this.serializeOrder(order);
+    const serializedOrder = this.serializeOrder(order);
+    await this.notifyCompanyOrderSubmitted(tenantId, {
+      orderId: serializedOrder.id,
+      supplierName: serializedOrder.supplierName,
+      weekStartDate: serializedOrder.weekStartDate,
+      weekEndDate: serializedOrder.weekEndDate,
+      officeId: serializedOrder.officeId,
+      officeName: serializedOrder.officeName,
+      contributor: actorName,
+      submittedAt: submissionDate.toISOString(),
+    });
+
+    return serializedOrder;
   }
 
   async deleteOrder(authUser: AuthUser, orderId: string) {
@@ -2681,6 +2694,120 @@ export class CompanyOrdersService {
       return dateKey;
     }
     return this.formatDateUs(value);
+  }
+
+  private async notifyCompanyOrderSubmitted(
+    tenantId: string,
+    order: {
+      orderId: string;
+      supplierName: string;
+      weekStartDate: string;
+      weekEndDate: string;
+      officeId?: string | null;
+      officeName?: string | null;
+      contributor?: string | null;
+      submittedAt?: string | null;
+    },
+  ) {
+    const supplierName = order.supplierName.trim();
+    if (!supplierName) {
+      return;
+    }
+
+    const officeLabel =
+      order.officeName && order.officeName.trim()
+        ? ` for ${order.officeName.trim()}`
+        : '';
+    const contributorLabel =
+      order.contributor && order.contributor.trim()
+        ? `${order.contributor.trim()} submitted`
+        : 'A team member submitted';
+    const message =
+      `${contributorLabel} ${supplierName} company order${officeLabel} ` +
+      `for week ${this.formatDateKeyUs(order.weekStartDate)}.`;
+    const metadata = {
+      kind: COMPANY_ORDER_SUBMITTED_KIND,
+      scope: 'company_orders',
+      orderId: order.orderId,
+      supplierName,
+      weekStartDate: order.weekStartDate,
+      weekEndDate: order.weekEndDate,
+      officeId: order.officeId || null,
+      officeName: order.officeName?.trim() || null,
+      contributor: order.contributor?.trim() || null,
+      submittedAt: order.submittedAt || new Date().toISOString(),
+    };
+
+    await this.prisma.notification.create({
+      data: {
+        tenantId,
+        employeeId: null,
+        type: NotificationType.LATE_CLOCK_IN_5M,
+        message,
+        metadata,
+      },
+    });
+
+    await this.sendAdminPushNotification(
+      tenantId,
+      message,
+      NotificationType.LATE_CLOCK_IN_5M,
+      metadata,
+    );
+  }
+
+  private async sendAdminPushNotification(
+    tenantId: string,
+    message: string,
+    type: NotificationType,
+    metadata: {
+      kind: string;
+      scope: string;
+      orderId: string;
+      supplierName: string;
+      weekStartDate: string;
+      weekEndDate: string;
+      officeId: string | null;
+      officeName: string | null;
+      contributor: string | null;
+      submittedAt: string;
+    },
+  ) {
+    const devices = await this.prisma.adminDevice.findMany({
+      where: { tenantId },
+      select: { expoPushToken: true },
+    });
+    if (!devices.length) {
+      return;
+    }
+
+    const payload = devices.map((device) => ({
+      to: device.expoPushToken,
+      sound: 'default',
+      title: 'ClockIn Admin',
+      body: message,
+      data: {
+        type,
+        kind: metadata.kind,
+        supplierName: metadata.supplierName,
+        weekStartDate: metadata.weekStartDate,
+        weekEndDate: metadata.weekEndDate,
+        officeId: metadata.officeId || '',
+        orderId: metadata.orderId,
+      },
+    }));
+
+    try {
+      await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      // ignore push failures
+    }
   }
 
   private resolveOrderContributor(order: CompanyOrderDbRow) {

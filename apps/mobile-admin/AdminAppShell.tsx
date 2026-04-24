@@ -46,6 +46,7 @@ import {
   useVisibleTabSyncEffect,
 } from "./data-load-effects";
 import {
+  useAdminCompanyOrderNotificationOpenEffect,
   useAdminLiquorBootstrapEffects,
   useAdminNotificationRefreshEffect,
   useAdminSessionPersistenceEffect,
@@ -162,6 +163,21 @@ export default function App() {
   const { sendEmployeeMessage, handleScheduleOverrideDecision } =
     useAlertsActions({ fetchJson, employeeMessageEmployeeId, employeeMessageSubject, employeeMessageBody, setEmployeeMessageStatus, setEmployeeMessageSending, setEmployeeMessageSubject, setEmployeeMessageBody, loadNotifications, loadActiveNow, setAlertsStatus, setScheduleOverrideLoadingId, });
   useAdminNotificationRefreshEffect({ loggedIn, loadNotifications, setDataSyncError, });
+  useAdminCompanyOrderNotificationOpenEffect({
+    loggedIn,
+    hasCompanyOrdersAccess: permissions.companyOrders,
+    setScreen,
+    setActiveLocationId,
+    setCompanyOrderMode,
+    setCompanyOrderSupplier,
+    setCompanyOrderExportAllCompanies,
+    setLastSubmittedCompanyOrderWeekStart,
+    setCompanyOrderStatus,
+    setCompanyOrderExportingFormat,
+    fetchCompanyOrderExport,
+    loadCompanyOrders,
+    setDataSyncError,
+  });
   const {
     loadLiquorControlData,
     updateLiquorSheetDraft,
