@@ -23,6 +23,12 @@ export type PunchUpsertInput = {
   notes?: string;
 };
 
+export type PunchUpdateInput = {
+  type?: string;
+  occurredAt?: string;
+  notes?: string;
+};
+
 type EmployeesResponse = {
   employees?: Employee[];
 };
@@ -85,7 +91,7 @@ export async function createPunchRecord(
 
 export async function updatePunchRecord(
   id: string,
-  payload: PunchUpsertInput,
+  payload: PunchUpdateInput,
 ): Promise<void> {
   await requestJson<unknown>(`/api/employee-punches/records/${id}`, {
     method: "PATCH",

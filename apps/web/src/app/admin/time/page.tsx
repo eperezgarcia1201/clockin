@@ -137,18 +137,20 @@ export default function TimeAdmin() {
       return false;
     }
 
-    const payload = {
-      employeeId,
-      type,
-      occurredAt: new Date(occurredAt).toISOString(),
-      notes: notes || undefined,
-    };
-
     try {
       if (editingId) {
-        await updatePunchRecord(editingId, payload);
+        await updatePunchRecord(editingId, {
+          type,
+          occurredAt: new Date(occurredAt).toISOString(),
+          notes: notes || undefined,
+        });
       } else {
-        await createPunchRecord(payload);
+        await createPunchRecord({
+          employeeId,
+          type,
+          occurredAt: new Date(occurredAt).toISOString(),
+          notes: notes || undefined,
+        });
       }
       setStatus(
         editingId
