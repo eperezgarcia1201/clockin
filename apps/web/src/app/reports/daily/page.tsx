@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   fetchDailyReportRequest,
   fetchEmployeesRequest,
@@ -129,22 +130,40 @@ const formatSpan = (minutes: number) => {
 export default function DailyReport() {
   const lang = useUiLanguage();
   const t = useUiCopy(copy, lang);
+  const searchParams = useSearchParams();
   const today = useMemo(() => new Date(), []);
   const sevenDaysAgo = useMemo(() => {
     const date = new Date();
     date.setDate(date.getDate() - 6);
     return date;
   }, []);
+  const initialFrom = searchParams.get("from") || formatDate(sevenDaysAgo);
+  const initialTo = searchParams.get("to") || formatDate(today);
+  const initialPeriod =
+    searchParams.get("period") || (searchParams.get("from") ? "custom" : "weekly");
 
-  const [period, setPeriod] = useState("weekly");
-  const [from, setFrom] = useState(formatDate(sevenDaysAgo));
-  const [to, setTo] = useState(formatDate(today));
-  const [round, setRound] = useState("0");
+  const [period, setPeriod] = useState(initialPeriod);
+  const [from, setFrom] = useState(initialFrom);
+  const [to, setTo] = useState(initialTo);
+  const [round, setRound] = useState(searchParams.get("round") || "0");
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [employeeId, setEmployeeId] = useState("");
+  const [employeeId, setEmployeeId] = useState(searchParams.get("employeeId") || "");
   const [report, setReport] = useState<ReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [tzOffset, setTzOffset] = useState(0);
+
+  const dailyReturnTo = useMemo(() => {
+    const params = new URLSearchParams({
+      period,
+      from,
+      to,
+      round,
+    });
+    if (employeeId) {
+      params.set("employeeId", employeeId);
+    }
+    return `/reports/daily?${params.toString()}`;
+  }, [employeeId, from, period, round, to]);
 
   useEffect(() => {
     setTzOffset(-new Date().getTimezoneOffset());
@@ -342,7 +361,7 @@ export default function DailyReport() {
                       employeeId: employee.id,
                       from: report.range.from,
                       to: report.range.to,
-                      returnTo: "/reports/daily",
+                      returnTo: dailyReturnTo,
                     }).toString()}`}
                   >
                     {t.editTimes}
@@ -425,6 +444,7 @@ export default function DailyReport() {
                                 employeeId: employee.id,
                                 from: day.date,
                                 to: day.date,
+                                returnTo: dailyReturnTo,
                               }).toString()}`}
                             >
                               {t.editTimes}

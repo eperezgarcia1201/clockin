@@ -33,10 +33,19 @@ export default function TimeAdmin() {
   }, [searchParams]);
   const lockedFromContext = Boolean(lockedEmployeeId);
   const returnToParam = searchParams.get("returnTo");
+  const fallbackReturnTo = useMemo(() => {
+    const from = searchParams.get("from")?.trim();
+    const to = searchParams.get("to")?.trim();
+    if (from && to) {
+      const params = new URLSearchParams({ from, to });
+      return `/reports/daily?${params.toString()}`;
+    }
+    return "/admin/users";
+  }, [searchParams]);
   const returnTo =
     returnToParam && returnToParam.startsWith("/")
       ? returnToParam
-      : "/admin/users";
+      : fallbackReturnTo;
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [records, setRecords] = useState<PunchRecord[]>([]);
   const [allowManual, setAllowManual] = useState(true);
