@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { formatPunchNoteForDisplay } from "../../../lib/punch-note-format";
 import { useUiLanguage } from "../../../lib/ui-language";
 import {
   createPunchRecord,
@@ -46,6 +47,12 @@ export default function TimeAdmin() {
   const [type, setType] = useState("IN");
   const [occurredAt, setOccurredAt] = useState("");
   const [notes, setNotes] = useState("");
+  const [editingOriginalNotes, setEditingOriginalNotes] = useState<
+    string | null
+  >(null);
+  const [editingDisplayNotes, setEditingDisplayNotes] = useState<string | null>(
+    null,
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [pendingDeleteRecord, setPendingDeleteRecord] =
@@ -126,6 +133,8 @@ export default function TimeAdmin() {
     setType("IN");
     setOccurredAt("");
     setNotes("");
+    setEditingOriginalNotes(null);
+    setEditingDisplayNotes(null);
     setEditingId(null);
   };
 
@@ -137,19 +146,27 @@ export default function TimeAdmin() {
       return false;
     }
 
+    const noteToSave =
+      editingId &&
+      editingOriginalNotes !== null &&
+      editingDisplayNotes !== null &&
+      notes === editingDisplayNotes
+        ? editingOriginalNotes
+        : notes;
+
     try {
       if (editingId) {
         await updatePunchRecord(editingId, {
           type,
           occurredAt: new Date(occurredAt).toISOString(),
-          notes: notes || undefined,
+          notes: noteToSave || undefined,
         });
       } else {
         await createPunchRecord({
           employeeId,
           type,
           occurredAt: new Date(occurredAt).toISOString(),
-          notes: notes || undefined,
+          notes: noteToSave || undefined,
         });
       }
       setStatus(
@@ -185,7 +202,11 @@ export default function TimeAdmin() {
     setEmployeeId(record.employeeId);
     setType(record.type);
     setOccurredAt(toLocalInput(record.occurredAt));
-    setNotes(record.notes || "");
+    const originalNotes = record.notes || "";
+    const displayNotes = formatPunchNoteForDisplay(originalNotes);
+    setNotes(displayNotes);
+    setEditingOriginalNotes(originalNotes);
+    setEditingDisplayNotes(displayNotes);
     setStatus(
       tr(
         "Editing time entry. Update fields and click Save Changes.",
@@ -438,38 +459,45 @@ export default function TimeAdmin() {
               </tr>
             </thead>
             <tbody>
-              {records.map((record) => (
-                <tr key={record.id}>
-                  <td>{record.employeeName}</td>
-                  <td>{record.type}</td>
-                  <td>{new Date(record.occurredAt).toLocaleString()}</td>
-                  <td>{record.office || "—"}</td>
-                  <td>{record.group || "—"}</td>
-                  <td>{record.notes || "—"}</td>
-                  <td>
-                    <div className="d-flex gap-2">
-                      <button
-                        className="btn btn-sm btn-outline-primary"
-                        onClick={() => handleEdit(record)}
-                        disabled={!allowManual}
-                      >
-                        {tr("Edit", "Editar")}
-                      </button>
-                      <button
-                        className="btn btn-sm btn-outline-danger"
-                        onClick={() => setPendingDeleteRecord(record)}
-                        disabled={
-                          !allowManual || deletingRecordId === record.id
-                        }
-                      >
-                        {deletingRecordId === record.id
-                          ? tr("Deleting...", "Eliminando...")
-                          : tr("Delete", "Eliminar")}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {records.map((record) => {
+                const rawNotes = record.notes || "";
+                const displayNotes = formatPunchNoteForDisplay(rawNotes);
+                const noteTitle =
+                  rawNotes && rawNotes !== displayNotes ? rawNotes : undefined;
+
+                return (
+                  <tr key={record.id}>
+                    <td>{record.employeeName}</td>
+                    <td>{record.type}</td>
+                    <td>{new Date(record.occurredAt).toLocaleString()}</td>
+                    <td>{record.office || "—"}</td>
+                    <td>{record.group || "—"}</td>
+                    <td title={noteTitle}>{displayNotes || "—"}</td>
+                    <td>
+                      <div className="d-flex gap-2">
+                        <button
+                          className="btn btn-sm btn-outline-primary"
+                          onClick={() => handleEdit(record)}
+                          disabled={!allowManual}
+                        >
+                          {tr("Edit", "Editar")}
+                        </button>
+                        <button
+                          className="btn btn-sm btn-outline-danger"
+                          onClick={() => setPendingDeleteRecord(record)}
+                          disabled={
+                            !allowManual || deletingRecordId === record.id
+                          }
+                        >
+                          {deletingRecordId === record.id
+                            ? tr("Deleting...", "Eliminando...")
+                            : tr("Delete", "Eliminar")}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {records.length === 0 && (
                 <tr>
                   <td colSpan={7} className="text-center text-muted py-4">
