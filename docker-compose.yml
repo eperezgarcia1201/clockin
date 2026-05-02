@@ -5,6 +5,11 @@ services:
       POSTGRES_USER: clockin
       POSTGRES_PASSWORD: clockin
       POSTGRES_DB: clockin
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     volumes:
       - db_data:/var/lib/postgresql/data
 
@@ -36,6 +41,11 @@ services:
     command: npm run start:docker
     depends_on:
       - db
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     networks:
       - default
       - proxy
@@ -72,6 +82,11 @@ services:
       - web_next:/app/apps/web/.next
     depends_on:
       - api
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     command: sh -c "npm --workspace apps/web run build && npm --workspace apps/web run start -- --hostname 0.0.0.0 --port 3000"
     networks:
       - default
