@@ -1771,10 +1771,8 @@ export class CompanyOrdersService {
   private serializeOrder(order: CompanyOrderDbRow) {
     const parsedNotes = this.readStoredOrderNotes(order.notes);
     const fallbackWeek = this.getWeekBounds(order.orderDate);
-    const weekStartDate =
-      this.normalizeDateKey(parsedNotes.weekStart) || fallbackWeek.weekStartKey;
-    const weekEndDate =
-      this.normalizeDateKey(parsedNotes.weekEnd) || fallbackWeek.weekEndKey;
+    const weekStartDate = fallbackWeek.weekStartKey;
+    const weekEndDate = fallbackWeek.weekEndKey;
 
     const submittedDates = this.normalizeDateKeys(
       parsedNotes.submittedDates.length
