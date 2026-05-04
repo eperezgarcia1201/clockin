@@ -3153,10 +3153,10 @@ export class CompanyOrdersService {
   private getWeekBounds(value: Date) {
     const base = dateKeyToUtc(this.toCompanyOrderDateKey(value));
     const day = base.getUTCDay();
-    const distanceToMonday = (day + 6) % 7;
+    const distanceToSunday = day;
 
     const weekStartKeyDate = new Date(base);
-    weekStartKeyDate.setUTCDate(base.getUTCDate() - distanceToMonday);
+    weekStartKeyDate.setUTCDate(base.getUTCDate() - distanceToSunday);
     const weekStartKey = weekStartKeyDate.toISOString().slice(0, 10);
 
     const weekEndKeyDate = new Date(weekStartKeyDate);

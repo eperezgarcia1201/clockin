@@ -86,8 +86,7 @@ const getCurrentWeekStartDateKey = () => {
   const dateKey = getLocalDateKey();
   const localDate = new Date(`${dateKey}T00:00:00`);
   const day = localDate.getDay();
-  const distanceToMonday = (day + 6) % 7;
-  localDate.setDate(localDate.getDate() - distanceToMonday);
+  localDate.setDate(localDate.getDate() - day);
   return getLocalDateKey(localDate);
 };
 
@@ -875,7 +874,7 @@ export default function AdminCompanyOrdersPage() {
                 <div className="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
                   <div>
                     <div className="fw-semibold">
-                      {tr("Week Ending Sunday", "Semana que termina domingo")}
+                      {tr("Week Ending Saturday", "Semana que termina sábado")}
                     </div>
                     <div className="text-muted small">
                       {formatWeekRange(week.weekStartDate, week.weekEndDate)}
