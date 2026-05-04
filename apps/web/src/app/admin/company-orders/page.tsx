@@ -60,6 +60,13 @@ const formatDate = (value: string) => {
   });
 };
 
+const getLocalDateKey = (value = new Date()) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const formatDateTime = (value: string) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
@@ -76,14 +83,21 @@ const formatDateTime = (value: string) => {
 };
 
 const getCurrentWeekStartDateKey = () => {
-  const now = new Date();
-  const utcDate = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-  const day = utcDate.getUTCDay();
+  const dateKey = getLocalDateKey();
+  const localDate = new Date(`${dateKey}T00:00:00`);
+  const day = localDate.getDay();
   const distanceToMonday = (day + 6) % 7;
-  utcDate.setUTCDate(utcDate.getUTCDate() - distanceToMonday);
-  return utcDate.toISOString().slice(0, 10);
+  localDate.setDate(localDate.getDate() - distanceToMonday);
+  return getLocalDateKey(localDate);
+};
+
+const formatWeekRange = (weekStartDate?: string, weekEndDate?: string) => {
+  if (!weekStartDate) {
+    return "Current week";
+  }
+  return `${formatDate(weekStartDate)} - ${formatDate(
+    weekEndDate || weekStartDate,
+  )}`;
 };
 
 const buildWeekExportHref = (
@@ -260,6 +274,44 @@ export default function AdminCompanyOrdersPage() {
     return formatQuantitySummaryByUnit(totals);
   }, [cartItems]);
 
+  const ordersByWeek = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        weekStartDate: string;
+        weekEndDate: string;
+        orders: CompanyOrderRow[];
+        updatedAtMs: number;
+      }
+    >();
+
+    orders.forEach((order) => {
+      const weekStartDate = order.weekStartDate || getCurrentWeekStartDateKey();
+      const weekEndDate = order.weekEndDate || weekStartDate;
+      const group = groups.get(weekStartDate) || {
+        weekStartDate,
+        weekEndDate,
+        orders: [],
+        updatedAtMs: 0,
+      };
+      group.orders.push(order);
+      group.weekEndDate = weekEndDate;
+      group.updatedAtMs = Math.max(
+        group.updatedAtMs,
+        Date.parse(order.updatedAt || order.orderDate || order.createdAt) || 0,
+      );
+      groups.set(weekStartDate, group);
+    });
+
+    return Array.from(groups.values()).sort((a, b) => {
+      const weekDiff = b.weekStartDate.localeCompare(a.weekStartDate);
+      if (weekDiff !== 0) {
+        return weekDiff;
+      }
+      return b.updatedAtMs - a.updatedAtMs;
+    });
+  }, [orders]);
+
   const loadCatalog = useCallback(async () => {
     const suppliers = await getCompanyOrderCatalog();
     setCatalog(suppliers);
@@ -435,21 +487,6 @@ export default function AdminCompanyOrdersPage() {
       );
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleDownload = async (format: "pdf" | "csv" | "excel") => {
-    setExportingFormat(format);
-    try {
-      const query = new URLSearchParams();
-      query.set("format", format);
-      query.set(
-        "weekStart",
-        lastSubmittedWeekStart || getCurrentWeekStartDateKey(),
-      );
-      window.open(`/api/company-orders/export?${query.toString()}`, "_blank");
-    } finally {
-      setExportingFormat(null);
     }
   };
 
@@ -832,99 +869,138 @@ export default function AdminCompanyOrdersPage() {
             {tr("No company orders yet.", "Aún no hay órdenes de empresa.")}
           </div>
         ) : (
-          <div className="d-flex flex-column gap-2">
-            {orders.map((order) => (
-              <div className="border rounded p-3" key={order.id}>
-                <div className="d-flex flex-column flex-md-row gap-3 align-items-start">
-                  <div className="flex-grow-1">
+          <div className="d-flex flex-column gap-3">
+            {ordersByWeek.map((week) => (
+              <section className="border rounded p-3" key={week.weekStartDate}>
+                <div className="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
+                  <div>
                     <div className="fw-semibold">
-                      {tr("Order of the Week", "Orden de la Semana")}
+                      {tr("Week Ending Sunday", "Semana que termina domingo")}
                     </div>
                     <div className="text-muted small">
-                      {tr("Suppliers:", "Proveedores:")}{" "}
-                      {Array.isArray(order.supplierNames) &&
-                      order.supplierNames.length > 0
-                        ? order.supplierNames.join(", ")
-                        : order.supplierName}
+                      {formatWeekRange(week.weekStartDate, week.weekEndDate)}
                     </div>
-                    {order.orderLabel ? (
-                      <div className="text-muted small">{order.orderLabel}</div>
-                    ) : null}
-                    <div className="text-muted small">
-                      {tr("Created:", "Creada:")}{" "}
-                      {formatDateTime(order.createdAt)}
-                    </div>
-                    <div className="text-muted small">
-                      {tr("Last modified:", "Última modificación:")}{" "}
-                      {formatDateTime(order.updatedAt || order.orderDate)} |{" "}
-                      {order.itemCount} {tr("items", "artículos")} |{" "}
-                      {order.totalQuantity}
-                    </div>
-                    <div className="fw-semibold small text-primary-emphasis">
-                      {tr("Restaurant:", "Ubicación:")}{" "}
-                      {order.officeName ||
-                        tr("All locations", "Todas las ubicaciones")}
-                      {order.createdBy
-                        ? lang === "es"
-                          ? ` | por ${order.createdBy}`
-                          : ` | by ${order.createdBy}`
-                        : ""}
-                    </div>
-                    {Array.isArray(order.contributors) &&
-                    order.contributors.length > 0 ? (
-                      <div className="text-muted small">
-                        {tr("Contributors:", "Contribuyentes:")}{" "}
-                        {order.contributors.join(", ")}
-                      </div>
-                    ) : null}
-                    {order.notes ? (
-                      <div className="mt-2">{order.notes}</div>
-                    ) : null}
                   </div>
-
-                  <div
-                    className="d-flex flex-column gap-2 ms-md-auto"
-                    style={{ minWidth: 220 }}
-                  >
+                  <div className="d-flex flex-wrap gap-2">
                     <button
                       type="button"
-                      className="btn btn-outline-danger btn-sm text-nowrap"
+                      className="btn btn-primary btn-sm text-nowrap"
                       onClick={() => {
-                        void handleDeleteOrder(order);
+                        void handleDownloadForWeek("pdf", week.weekStartDate);
                       }}
-                      disabled={deletingOrderId === order.id}
+                      disabled={exportingFormat === "pdf"}
                     >
-                      {deletingOrderId === order.id
-                        ? tr("Deleting...", "Eliminando...")
-                        : tr("Delete Week Order", "Eliminar Orden Semanal")}
+                      {exportingFormat === "pdf"
+                        ? tr("Opening...", "Abriendo...")
+                        : tr(
+                            "Download This Week PDF",
+                            "Descargar PDF de esta semana",
+                          )}
                     </button>
                     <a
-                      className="btn btn-primary btn-sm text-nowrap"
-                      href={`/api/company-orders/${encodeURIComponent(order.id)}/pdf`}
+                      className="btn btn-outline-secondary btn-sm text-nowrap"
+                      href={buildWeekExportHref("csv", week.weekStartDate)}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      {tr("Download Order PDF", "Descargar PDF de la Orden")}
+                      {tr("Download CSV", "Descargar CSV")}
                     </a>
                     <a
                       className="btn btn-outline-secondary btn-sm text-nowrap"
-                      href={buildWeekExportHref("csv", order.weekStartDate)}
+                      href={buildWeekExportHref("excel", week.weekStartDate)}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      {tr("Download Week CSV", "Descargar CSV Semanal")}
-                    </a>
-                    <a
-                      className="btn btn-outline-secondary btn-sm text-nowrap"
-                      href={buildWeekExportHref("excel", order.weekStartDate)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {tr("Download Week Excel", "Descargar Excel Semanal")}
+                      {tr("Download Excel", "Descargar Excel")}
                     </a>
                   </div>
                 </div>
-              </div>
+
+                <div className="d-flex flex-column gap-2">
+                  {week.orders.map((order) => (
+                    <div className="border rounded p-3" key={order.id}>
+                      <div className="d-flex flex-column flex-md-row gap-3 align-items-start">
+                        <div className="flex-grow-1">
+                          <div className="fw-semibold">
+                            {tr("Order of the Week", "Orden de la Semana")}
+                          </div>
+                          <div className="text-muted small">
+                            {tr("Suppliers:", "Proveedores:")}{" "}
+                            {Array.isArray(order.supplierNames) &&
+                            order.supplierNames.length > 0
+                              ? order.supplierNames.join(", ")
+                              : order.supplierName}
+                          </div>
+                          {order.orderLabel ? (
+                            <div className="text-muted small">
+                              {order.orderLabel}
+                            </div>
+                          ) : null}
+                          <div className="text-muted small">
+                            {tr("Created:", "Creada:")}{" "}
+                            {formatDateTime(order.createdAt)}
+                          </div>
+                          <div className="text-muted small">
+                            {tr("Last modified:", "Última modificación:")}{" "}
+                            {formatDateTime(order.updatedAt || order.orderDate)} |{" "}
+                            {order.itemCount} {tr("items", "artículos")} |{" "}
+                            {order.totalQuantity}
+                          </div>
+                          <div className="fw-semibold small text-primary-emphasis">
+                            {tr("Restaurant:", "Ubicación:")}{" "}
+                            {order.officeName ||
+                              tr("All locations", "Todas las ubicaciones")}
+                            {order.createdBy
+                              ? lang === "es"
+                                ? ` | por ${order.createdBy}`
+                                : ` | by ${order.createdBy}`
+                              : ""}
+                          </div>
+                          {Array.isArray(order.contributors) &&
+                          order.contributors.length > 0 ? (
+                            <div className="text-muted small">
+                              {tr("Contributors:", "Contribuyentes:")}{" "}
+                              {order.contributors.join(", ")}
+                            </div>
+                          ) : null}
+                          {order.notes ? (
+                            <div className="mt-2">{order.notes}</div>
+                          ) : null}
+                        </div>
+
+                        <div
+                          className="d-flex flex-column gap-2 ms-md-auto"
+                          style={{ minWidth: 220 }}
+                        >
+                          <button
+                            type="button"
+                            className="btn btn-outline-danger btn-sm text-nowrap"
+                            onClick={() => {
+                              void handleDeleteOrder(order);
+                            }}
+                            disabled={deletingOrderId === order.id}
+                          >
+                            {deletingOrderId === order.id
+                              ? tr("Deleting...", "Eliminando...")
+                              : tr(
+                                  "Delete Week Order",
+                                  "Eliminar Orden Semanal",
+                                )}
+                          </button>
+                          <a
+                            className="btn btn-outline-primary btn-sm text-nowrap"
+                            href={`/api/company-orders/${encodeURIComponent(order.id)}/pdf`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {tr("Supplier PDF", "PDF del proveedor")}
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         )}

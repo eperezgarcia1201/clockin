@@ -26,6 +26,23 @@ const supplierCatalogItemKey = (
 ) => `${supplierName.trim().toLowerCase()}|${catalogItemKey(nameEs, nameEn)}`;
 
 const dateKeyToUtc = (value: string) => new Date(`${value}T00:00:00.000Z`);
+const COMPANY_ORDER_TIME_ZONE = 'America/Chicago';
+const COMPANY_ORDER_DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: COMPANY_ORDER_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+const COMPANY_ORDER_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: COMPANY_ORDER_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
 const COMPANY_ORDER_META_PREFIX = '__company_order_meta__';
 const COMPANY_ORDER_SUBMITTED_KIND = 'COMPANY_ORDER_SUBMITTED';
 const MAX_SUBMITTED_DATES = 28;
@@ -3132,29 +3149,95 @@ export class CompanyOrdersService {
   }
 
   private toDateKey(value: Date) {
-    return value.toISOString().slice(0, 10);
+    return this.toCompanyOrderDateKey(value);
   }
 
   private getWeekBounds(value: Date) {
-    const base = new Date(
-      Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
-    );
+    const base = dateKeyToUtc(this.toCompanyOrderDateKey(value));
     const day = base.getUTCDay();
     const distanceToMonday = (day + 6) % 7;
 
-    const weekStart = new Date(base);
-    weekStart.setUTCDate(base.getUTCDate() - distanceToMonday);
-    weekStart.setUTCHours(0, 0, 0, 0);
+    const weekStartKeyDate = new Date(base);
+    weekStartKeyDate.setUTCDate(base.getUTCDate() - distanceToMonday);
+    const weekStartKey = weekStartKeyDate.toISOString().slice(0, 10);
 
-    const weekEnd = new Date(weekStart);
-    weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
-    weekEnd.setUTCHours(23, 59, 59, 999);
+    const weekEndKeyDate = new Date(weekStartKeyDate);
+    weekEndKeyDate.setUTCDate(weekStartKeyDate.getUTCDate() + 6);
+    const weekEndKey = weekEndKeyDate.toISOString().slice(0, 10);
 
     return {
-      weekStart,
-      weekEnd,
-      weekStartKey: this.toDateKey(weekStart),
-      weekEndKey: this.toDateKey(weekEnd),
+      weekStart: this.companyOrderDateTimeToUtc(weekStartKey, 0, 0, 0, 0),
+      weekEnd: this.companyOrderDateTimeToUtc(weekEndKey, 23, 59, 59, 999),
+      weekStartKey,
+      weekEndKey,
+    };
+  }
+
+  private toCompanyOrderDateKey(value: Date) {
+    const parts = COMPANY_ORDER_DATE_FORMATTER.formatToParts(value);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+    if (!year || !month || !day) {
+      return value.toISOString().slice(0, 10);
+    }
+    return `${year}-${month}-${day}`;
+  }
+
+  private companyOrderDateTimeToUtc(
+    dateKey: string,
+    hour: number,
+    minute: number,
+    second: number,
+    millisecond: number,
+  ) {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const desiredUtcMs = Date.UTC(
+      year,
+      month - 1,
+      day,
+      hour,
+      minute,
+      second,
+      millisecond,
+    );
+    let utcMs = desiredUtcMs;
+
+    for (let index = 0; index < 3; index += 1) {
+      const parts = this.companyOrderDateTimeParts(new Date(utcMs));
+      const actualUtcMs = Date.UTC(
+        parts.year,
+        parts.month - 1,
+        parts.day,
+        parts.hour,
+        parts.minute,
+        parts.second,
+        millisecond,
+      );
+      const diff = desiredUtcMs - actualUtcMs;
+      if (diff === 0) {
+        break;
+      }
+      utcMs += diff;
+    }
+
+    return new Date(utcMs);
+  }
+
+  private companyOrderDateTimeParts(value: Date) {
+    const values = new Map(
+      COMPANY_ORDER_DATE_TIME_FORMATTER.formatToParts(value).map((part) => [
+        part.type,
+        part.value,
+      ]),
+    );
+    return {
+      year: Number(values.get('year') || value.getUTCFullYear()),
+      month: Number(values.get('month') || value.getUTCMonth() + 1),
+      day: Number(values.get('day') || value.getUTCDate()),
+      hour: Number(values.get('hour') || 0),
+      minute: Number(values.get('minute') || 0),
+      second: Number(values.get('second') || 0),
     };
   }
 
