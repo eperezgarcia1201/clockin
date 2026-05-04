@@ -48,8 +48,8 @@ main() {
     rotate_large_docker_logs "$docker_root"
 
     docker container prune -f --filter "until=${DOCKER_RETENTION_HOURS}h" >>"$LOG_FILE" 2>&1 || true
-    docker image prune -af --filter "until=${DOCKER_RETENTION_HOURS}h" >>"$LOG_FILE" 2>&1 || true
-    docker builder prune -af --filter "until=${DOCKER_RETENTION_HOURS}h" >>"$LOG_FILE" 2>&1 || true
+    docker image prune -af >>"$LOG_FILE" 2>&1 || true
+    docker builder prune -af >>"$LOG_FILE" 2>&1 || true
     docker network prune -f >>"$LOG_FILE" 2>&1 || true
   fi
 
