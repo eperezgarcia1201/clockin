@@ -43,14 +43,9 @@ export const localDateKey = (date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 export const getCurrentWeekStartDateKey = () => {
-  const now = new Date();
-  const utcDate = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-  const day = utcDate.getUTCDay();
-  const distanceToMonday = (day + 6) % 7;
-  utcDate.setUTCDate(utcDate.getUTCDate() - distanceToMonday);
-  return utcDate.toISOString().slice(0, 10);
+  const localDate = new Date(`${localDateKey()}T00:00:00`);
+  localDate.setDate(localDate.getDate() - localDate.getDay());
+  return localDateKey(localDate);
 };
 export const todayDateKey = () => localDateKey();
 export const getTipSubmissionKey = (employeeId: string, workDate?: string) => {

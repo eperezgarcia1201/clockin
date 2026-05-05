@@ -173,6 +173,8 @@ const buildExportSupplierOptions = ({
     companyOrderCatalog.forEach((supplier) => addOption(supplier.supplierName));
   }
 
+  companyOrderCatalog.forEach((supplier) => addOption(supplier.supplierName));
+
   companyOrderRows.forEach((order) => {
     if (
       !exportWeekStartDate ||

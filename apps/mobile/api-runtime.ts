@@ -66,9 +66,9 @@ export const apiBaseCandidates = (() => {
   if (fromEnv) {
     const fromEnvHost = parseHostCandidate(fromEnv);
     if (runningOnSimulator || !fromEnvHost || !isLoopbackHost(fromEnvHost)) {
-      if (!preferLocalBase) {
-        pushCandidate(fromEnv);
-      }
+      // Explicit remote API URLs should win so phones do not hang while
+      // probing local developer hosts before falling back to production.
+      pushCandidate(fromEnv);
     }
   }
 

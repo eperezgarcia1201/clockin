@@ -4,6 +4,7 @@ import type {
   CompanyOrderComparisonUnit,
   CompanyOrderRow,
 } from "./types";
+import { getCurrentWeekStartDateKey } from "./app-helpers";
 
 type FetchJson = (path: string, init?: RequestInit) => Promise<unknown>;
 
@@ -125,9 +126,10 @@ export const resolveCompanyOrderRowsLoad = (payload: {
   lastSubmittedWeekStart: string | null;
 } => {
   const orders = normalizeCompanyOrderRows(payload);
+  const currentWeekStart = getCurrentWeekStartDateKey();
   return {
     orders,
-    lastSubmittedWeekStart: orders[0]?.weekStartDate || null,
+    lastSubmittedWeekStart: currentWeekStart,
   };
 };
 
