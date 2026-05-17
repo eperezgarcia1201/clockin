@@ -1,4 +1,5 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { getCurrentWeekStartDateKey } from "./app-helpers";
 import { loadCompanyOrderCatalogSuppliers, loadCompanyOrderRows } from "./company-order-load-runtime";
 import { loadLiquorControlSnapshot } from "./liquor-control-runtime";
 import type {
@@ -98,9 +99,7 @@ export const useWorkspaceDataLoadActions = (params: {
         limit: 20,
       });
       params.setCompanyOrderRows(orders);
-      if (typeof orders[0]?.weekStartDate === "string") {
-        params.setLastSubmittedCompanyOrderWeekStart(orders[0].weekStartDate);
-      }
+      params.setLastSubmittedCompanyOrderWeekStart(getCurrentWeekStartDateKey());
       params.setCompanyOrderStatus(null);
     } catch (error) {
       params.setCompanyOrderRows([]);

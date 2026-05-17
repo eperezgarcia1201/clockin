@@ -258,8 +258,8 @@ export class CompanyOrdersService {
     const orders = (await this.prisma.companyOrder.findMany({
       where,
       orderBy: [
-        { updatedAt: 'desc' },
         { orderDate: 'desc' },
+        { updatedAt: 'desc' },
         { createdAt: 'desc' },
       ],
       take: Math.min(400, Math.max(limit * 8, limit)),
@@ -2007,6 +2007,10 @@ export class CompanyOrdersService {
         };
       })
       .sort((a, b) => {
+        const weekDiff = b.weekStartDate.localeCompare(a.weekStartDate);
+        if (weekDiff !== 0) {
+          return weekDiff;
+        }
         const updatedDiff = Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
         if (updatedDiff !== 0) {
           return updatedDiff;
