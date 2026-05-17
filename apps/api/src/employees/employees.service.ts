@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
@@ -26,6 +30,40 @@ export class EmployeesService {
     return {
       OR: [{ officeId: scopedOfficeId }, { officeId: null }],
     };
+  }
+
+  private async resolveGroupForOffice(
+    tenantId: string,
+    groupId: string | null | undefined,
+    officeId: string | null,
+  ) {
+    const normalizedGroupId = groupId?.trim() || null;
+    if (!normalizedGroupId) {
+      return null;
+    }
+
+    const group = await this.prisma.group.findFirst({
+      where: {
+        id: normalizedGroupId,
+        tenantId,
+      },
+      select: {
+        id: true,
+        officeId: true,
+      },
+    });
+
+    if (!group) {
+      throw new BadRequestException('Group not found for this tenant.');
+    }
+
+    if (group.officeId && officeId && group.officeId !== officeId) {
+      throw new BadRequestException(
+        'The selected group belongs to a different location.',
+      );
+    }
+
+    return group.id;
   }
 
   async listEmployees(
@@ -96,6 +134,12 @@ export class EmployeesService {
     const { tenant } = access;
     const officeScope = this.tenancy.resolveOfficeScope(access, dto.officeId);
 
+    const officeId = officeScope.officeId || null;
+    const groupId = await this.resolveGroupForOffice(
+      tenant.id,
+      dto.groupId,
+      officeId,
+    );
     const pinHash = dto.pin ? await hash(dto.pin, 10) : null;
     const isManager = dto.isManager ?? false;
     const isOwnerManager = dto.isOwnerManager ?? false;
@@ -114,8 +158,8 @@ export class EmployeesService {
         email: dto.email,
         pinHash,
         hourlyRate: dto.hourlyRate ?? null,
-        officeId: officeScope.officeId || null,
-        groupId: dto.groupId || null,
+        officeId,
+        groupId,
         isManager,
         managerPermissions,
         isAdmin,
@@ -216,12 +260,34 @@ export class EmployeesService {
     if (dto.hourlyRate !== undefined) {
       data.hourlyRate = dto.hourlyRate ?? null;
     }
+    const nextOfficeId =
+      dto.officeId !== undefined
+        ? this.tenancy.resolveOfficeScope(access, dto.officeId).officeId || null
+        : existing.officeId;
+
     if (dto.officeId !== undefined) {
       const officeScope = this.tenancy.resolveOfficeScope(access, dto.officeId);
       data.officeId = officeScope.officeId || null;
     }
     if (dto.groupId !== undefined) {
-      data.groupId = dto.groupId || null;
+      data.groupId = await this.resolveGroupForOffice(
+        tenant.id,
+        dto.groupId,
+        nextOfficeId,
+      );
+    } else if (dto.officeId !== undefined && existing.groupId) {
+      const existingGroup = await this.prisma.group.findFirst({
+        where: {
+          id: existing.groupId,
+          tenantId: tenant.id,
+        },
+        select: {
+          officeId: true,
+        },
+      });
+      if (existingGroup?.officeId && existingGroup.officeId !== nextOfficeId) {
+        data.groupId = null;
+      }
     }
 
     const existingOwnerManager = this.hasOwnerManagerPermission(

@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useUiLanguage } from "../../../lib/ui-language";
-import { listGroups } from "../../../lib/api/groups";
-import { listOffices } from "../../../lib/api/offices";
+import { listGroups, type Group } from "../../../lib/api/groups";
+import { listOffices, type Office } from "../../../lib/api/offices";
 import {
   archiveEmployee,
   deleteEmployeePermanent,
@@ -32,6 +32,8 @@ export default function UsersSummary() {
   const searchParams = useSearchParams();
   const [viewMode, setViewMode] = useState<ViewMode>("active");
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
+  const [offices, setOffices] = useState<Office[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [officeMap, setOfficeMap] = useState<Record<string, string>>({});
   const [groupMap, setGroupMap] = useState<Record<string, string>>({});
   const [showAdminsOnly, setShowAdminsOnly] = useState(false);
@@ -50,6 +52,14 @@ export default function UsersSummary() {
     null,
   );
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [transferEmployee, setTransferEmployee] = useState<EmployeeRow | null>(
+    null,
+  );
+  const [transferOfficeId, setTransferOfficeId] = useState("");
+  const [transferGroupId, setTransferGroupId] = useState("");
+  const [transferringEmployeeId, setTransferringEmployeeId] = useState<
+    string | null
+  >(null);
 
   const loadEmployees = useCallback(async (mode: ViewMode) => {
     try {
@@ -78,6 +88,7 @@ export default function UsersSummary() {
           offices.forEach((office) => {
             map[office.id] = office.name;
           });
+          setOffices(offices);
           setOfficeMap(map);
         })
         .catch(() => {
@@ -90,6 +101,7 @@ export default function UsersSummary() {
           groups.forEach((group) => {
             map[group.id] = group.name;
           });
+          setGroups(groups);
           setGroupMap(map);
         })
         .catch(() => {
@@ -213,6 +225,80 @@ export default function UsersSummary() {
       setPurgingEmployeeId(null);
     }
   };
+
+  const openTransfer = (employee: EmployeeRow) => {
+    setStatus(null);
+    setTransferEmployee(employee);
+    setTransferOfficeId(employee.officeId || "");
+    setTransferGroupId(employee.groupId || "");
+  };
+
+  const transferGroupOptions = useMemo(
+    () =>
+      groups.filter(
+        (group) => !group.officeId || group.officeId === transferOfficeId,
+      ),
+    [groups, transferOfficeId],
+  );
+
+  const handleTransferOfficeChange = (officeId: string) => {
+    setTransferOfficeId(officeId);
+    const selectedGroup = groups.find((group) => group.id === transferGroupId);
+    if (
+      selectedGroup?.officeId &&
+      officeId &&
+      selectedGroup.officeId !== officeId
+    ) {
+      setTransferGroupId("");
+    }
+  };
+
+  const handleTransferUser = async () => {
+    if (!transferEmployee || !transferOfficeId) {
+      return;
+    }
+    setStatus(null);
+    setTransferringEmployeeId(transferEmployee.id);
+    try {
+      await updateEmployee(transferEmployee.id, {
+        officeId: transferOfficeId,
+        groupId: transferGroupId || "",
+      });
+      setEmployees((prev) =>
+        prev.map((employee) =>
+          employee.id === transferEmployee.id
+            ? {
+                ...employee,
+                officeId: transferOfficeId,
+                groupId: transferGroupId || null,
+              }
+            : employee,
+        ),
+      );
+      setStatus(
+        tr(
+          `${transferEmployee.name} was transferred to ${
+            officeMap[transferOfficeId] || "the selected location"
+          }. Their time records stayed attached to the user.`,
+          `${transferEmployee.name} fue transferido a ${
+            officeMap[transferOfficeId] || "la ubicacion seleccionada"
+          }. Sus registros de tiempo siguen conectados al usuario.`,
+        ),
+      );
+      setTransferEmployee(null);
+    } catch (error) {
+      setStatus(
+        statusFromError(
+          error,
+          "Unable to transfer user.",
+          "No se pudo transferir el usuario.",
+        ),
+      );
+    } finally {
+      setTransferringEmployeeId(null);
+    }
+  };
+
   useEffect(() => {
     const role = searchParams.get("role") || "";
     setRoleFilter(role);
@@ -440,6 +526,20 @@ export default function UsersSummary() {
                           {tr("Edit Times", "Editar Horas")}
                         </a>
                         <button
+                          type="button"
+                          className="btn btn-sm btn-outline-info"
+                          disabled={
+                            transferringEmployeeId === employee.id ||
+                            deletingEmployeeId === employee.id ||
+                            disablingEmployeeId === employee.id
+                          }
+                          onClick={() => openTransfer(employee)}
+                        >
+                          {transferringEmployeeId === employee.id
+                            ? tr("Moving...", "Moviendo...")
+                            : tr("Transfer", "Transferir")}
+                        </button>
+                        <button
                           className="btn btn-sm btn-outline-warning"
                           disabled={
                             deletingEmployeeId === employee.id ||
@@ -479,7 +579,7 @@ export default function UsersSummary() {
                 ))}
                 {filteredEmployees.length === 0 && (
                   <tr>
-                    <td colSpan={14} className="text-center text-muted py-4">
+                    <td colSpan={16} className="text-center text-muted py-4">
                       {tr(
                         "No active users found.",
                         "No se encontraron usuarios activos.",
@@ -567,6 +667,112 @@ export default function UsersSummary() {
           )}
         </div>
       </div>
+
+      {transferEmployee && (
+        <div
+          className="embedded-confirm-backdrop"
+          onClick={() => {
+            if (transferringEmployeeId !== transferEmployee.id) {
+              setTransferEmployee(null);
+            }
+          }}
+        >
+          <div
+            className="embedded-confirm-dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="embedded-confirm-title">
+              {tr("Transfer User", "Transferir Usuario")}
+            </h2>
+            <p className="embedded-confirm-message">
+              {tr(
+                `Move "${transferEmployee.name}" to another business/location inside this tenant. Their time records stay attached to the user.`,
+                `Mueve a "${transferEmployee.name}" a otro negocio/ubicacion dentro del mismo tenant. Sus registros de tiempo siguen conectados al usuario.`,
+              )}
+            </p>
+            <div className="d-flex flex-column gap-3">
+              <label className="d-flex flex-column gap-1">
+                <span className="fw-semibold">
+                  {tr("New Location", "Nueva Ubicacion")}
+                </span>
+                <select
+                  className="form-select"
+                  value={transferOfficeId}
+                  disabled={transferringEmployeeId === transferEmployee.id}
+                  onChange={(event) =>
+                    handleTransferOfficeChange(event.target.value)
+                  }
+                >
+                  <option value="">
+                    {tr("Select a location", "Selecciona una ubicacion")}
+                  </option>
+                  {offices.map((office) => (
+                    <option key={office.id} value={office.id}>
+                      {office.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="d-flex flex-column gap-1">
+                <span className="fw-semibold">
+                  {tr("New Group", "Nuevo Grupo")}
+                </span>
+                <select
+                  className="form-select"
+                  value={transferGroupId}
+                  disabled={
+                    !transferOfficeId ||
+                    transferringEmployeeId === transferEmployee.id
+                  }
+                  onChange={(event) => setTransferGroupId(event.target.value)}
+                >
+                  <option value="">
+                    {tr(
+                      "No group / choose later",
+                      "Sin grupo / elegir despues",
+                    )}
+                  </option>
+                  {transferGroupOptions.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-muted small">
+                  {tr(
+                    "Only groups for the selected location are shown.",
+                    "Solo aparecen los grupos de la ubicacion seleccionada.",
+                  )}
+                </span>
+              </label>
+            </div>
+            <div className="embedded-confirm-actions">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                disabled={transferringEmployeeId === transferEmployee.id}
+                onClick={() => setTransferEmployee(null)}
+              >
+                {tr("Cancel", "Cancelar")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={
+                  !transferOfficeId ||
+                  transferringEmployeeId === transferEmployee.id
+                }
+                onClick={() => void handleTransferUser()}
+              >
+                {transferringEmployeeId === transferEmployee.id
+                  ? tr("Transferring...", "Transfiriendo...")
+                  : tr("Transfer User", "Transferir Usuario")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pendingAction && (
         <div
