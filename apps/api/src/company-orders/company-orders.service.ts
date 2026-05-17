@@ -1159,7 +1159,9 @@ export class CompanyOrdersService {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
       throw new BadRequestException('Invalid weekStart date.');
     }
-    const parsed = new Date(`${value}T00:00:00.000Z`);
+    // Parse at midday UTC so the company-order timezone formatter cannot push
+    // a date-only week start back into the previous local day.
+    const parsed = new Date(`${value}T12:00:00.000Z`);
     if (Number.isNaN(parsed.getTime())) {
       throw new BadRequestException('Invalid weekStart date.');
     }
