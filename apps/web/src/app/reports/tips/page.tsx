@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import {
   fetchEmployeesRequest,
   fetchTipsReportRequest,
 } from "../../../lib/api/reports-core";
 import { useUiLanguage } from "../../../lib/ui-language";
 import { tipsCopy, type TipsLang as Lang } from "./tips-copy";
-type Employee = { id: string; name: string };
+type Employee = { id: string; name: string; isServer?: boolean };
 
 type DayTip = {
+  id: string;
   date: string;
   cashTips: number;
   creditCardTips: number;
@@ -28,6 +29,17 @@ type EmployeeTipReport = {
 type TipsReportResponse = {
   range: { from: string; to: string };
   employees: EmployeeTipReport[];
+};
+
+type TipFormMode = "create" | "edit";
+
+type TipFormState = {
+  mode: TipFormMode;
+  tipId?: string;
+  employeeId: string;
+  workDate: string;
+  cashTips: string;
+  creditCardTips: string;
 };
 
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
@@ -55,6 +67,14 @@ export default function TipsReportPage() {
   const [employeeId, setEmployeeId] = useState("");
   const [report, setReport] = useState<TipsReportResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [tipForm, setTipForm] = useState<TipFormState | null>(null);
+  const [tipActionId, setTipActionId] = useState<string | null>(null);
+  const [tipStatus, setTipStatus] = useState<string | null>(null);
+
+  const serverEmployees = useMemo(
+    () => employees.filter((employee) => employee.isServer !== false),
+    [employees],
+  );
 
   const applyPeriod = (value: string) => {
     if (value === "custom") return;
@@ -79,7 +99,11 @@ export default function TipsReportPage() {
       const response = await fetchEmployeesRequest();
       if (!response.ok) return;
       const data = (await response.json()) as { employees: Employee[] };
-      setEmployees(data.employees || []);
+      setEmployees(
+        (data.employees || []).filter(
+          (employee) => employee.isServer !== false,
+        ),
+      );
     };
 
     void loadEmployees();
@@ -110,6 +134,115 @@ export default function TipsReportPage() {
       setReport(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const parseApiError = async (response: Response, fallback: string) => {
+    const data = await response.json().catch(() => null);
+    if (data && typeof data.message === "string") return data.message;
+    if (data && typeof data.error === "string") return data.error;
+    if (data && Array.isArray(data.message)) return data.message.join(", ");
+    return fallback;
+  };
+
+  const openCreateForm = () => {
+    setTipStatus(null);
+    setTipForm({
+      mode: "create",
+      employeeId: employeeId || serverEmployees[0]?.id || "",
+      workDate: to,
+      cashTips: "0.00",
+      creditCardTips: "0.00",
+    });
+  };
+
+  const openEditForm = (employee: EmployeeTipReport, day: DayTip) => {
+    setTipStatus(null);
+    setTipForm({
+      mode: "edit",
+      tipId: day.id,
+      employeeId: employee.id,
+      workDate: day.date,
+      cashTips: String(day.cashTips.toFixed(2)),
+      creditCardTips: String(day.creditCardTips.toFixed(2)),
+    });
+  };
+
+  const saveTipForm = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!tipForm) return;
+
+    const payload = {
+      employeeId: tipForm.employeeId,
+      workDate: tipForm.workDate,
+      cashTips: Number(tipForm.cashTips || 0),
+      creditCardTips: Number(tipForm.creditCardTips || 0),
+    };
+
+    setTipStatus(null);
+    setTipActionId(tipForm.tipId || "create");
+    try {
+      const response =
+        tipForm.mode === "create"
+          ? await fetch("/api/employee-tips/admin", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            })
+          : await fetch(`/api/employee-tips/admin/${tipForm.tipId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                cashTips: payload.cashTips,
+                creditCardTips: payload.creditCardTips,
+              }),
+            });
+
+      if (!response.ok) {
+        throw new Error(
+          await parseApiError(response, "Unable to save tip entry."),
+        );
+      }
+
+      setTipForm(null);
+      setTipStatus(
+        tipForm.mode === "create" ? "Tip entry created." : "Tip entry updated.",
+      );
+      await runReport();
+    } catch (error) {
+      setTipStatus(
+        error instanceof Error ? error.message : "Unable to save tip entry.",
+      );
+    } finally {
+      setTipActionId(null);
+    }
+  };
+
+  const deleteTip = async (employee: EmployeeTipReport, day: DayTip) => {
+    const confirmed = window.confirm(
+      `Delete tips for ${employee.name} on ${day.date}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setTipStatus(null);
+    setTipActionId(day.id);
+    try {
+      const response = await fetch(`/api/employee-tips/admin/${day.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error(
+          await parseApiError(response, "Unable to delete tip entry."),
+        );
+      }
+      setTipStatus("Tip entry deleted.");
+      await runReport();
+    } catch (error) {
+      setTipStatus(
+        error instanceof Error ? error.message : "Unable to delete tip entry.",
+      );
+    } finally {
+      setTipActionId(null);
     }
   };
 
@@ -179,8 +312,19 @@ export default function TipsReportPage() {
             </select>
           </div>
           <div className="col-12 d-flex gap-2 flex-wrap">
-            <button className="btn btn-primary" onClick={() => void runReport()}>
+            <button
+              className="btn btn-primary"
+              onClick={() => void runReport()}
+            >
               {loading ? t.running : t.runReport}
+            </button>
+            <button
+              className="btn btn-outline-primary"
+              type="button"
+              onClick={openCreateForm}
+              disabled={serverEmployees.length === 0}
+            >
+              Add Tip Entry
             </button>
             <a
               className="btn btn-outline-secondary"
@@ -195,6 +339,8 @@ export default function TipsReportPage() {
           </div>
         </div>
       </div>
+
+      {tipStatus && <div className="alert alert-info">{tipStatus}</div>}
 
       {report && report.employees.length === 0 && (
         <div className="admin-card">
@@ -219,8 +365,9 @@ export default function TipsReportPage() {
                     <div className="report-total-value">
                       {formatMoney(employee.totalTips, lang)}
                       <span className="report-total-decimal">
-                        {t.creditCard} {formatMoney(employee.totalCreditCardTips, lang)} / {t.cash}{" "}
-                        {formatMoney(employee.totalCashTips, lang)}
+                        {t.creditCard}{" "}
+                        {formatMoney(employee.totalCreditCardTips, lang)} /{" "}
+                        {t.cash} {formatMoney(employee.totalCashTips, lang)}
                       </span>
                     </div>
                   </div>
@@ -234,6 +381,7 @@ export default function TipsReportPage() {
                       <th>{t.cash}</th>
                       <th>{t.creditCard}</th>
                       <th>{t.totalTips}</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -243,6 +391,28 @@ export default function TipsReportPage() {
                         <td>{formatMoney(day.cashTips, lang)}</td>
                         <td>{formatMoney(day.creditCardTips, lang)}</td>
                         <td>{formatMoney(day.totalTips, lang)}</td>
+                        <td>
+                          <div className="d-flex gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary"
+                              disabled={tipActionId === day.id}
+                              onClick={() => openEditForm(employee, day)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger"
+                              disabled={tipActionId === day.id}
+                              onClick={() => void deleteTip(employee, day)}
+                            >
+                              {tipActionId === day.id
+                                ? "Deleting..."
+                                : "Delete"}
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -250,6 +420,130 @@ export default function TipsReportPage() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {tipForm && (
+        <div
+          className="embedded-confirm-backdrop"
+          onClick={() => {
+            if (!tipActionId) setTipForm(null);
+          }}
+        >
+          <form
+            className="embedded-confirm-dialog"
+            onSubmit={(event) => void saveTipForm(event)}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 className="embedded-confirm-title">
+              {tipForm.mode === "create" ? "Add Tip Entry" : "Edit Tip Entry"}
+            </h2>
+            <p className="embedded-confirm-message">
+              Create or correct the cash and credit card tips for one server and
+              one work date.
+            </p>
+            <div className="d-flex flex-column gap-3">
+              <label className="d-flex flex-column gap-1">
+                <span className="fw-semibold">Employee</span>
+                <select
+                  className="form-select"
+                  value={tipForm.employeeId}
+                  disabled={tipForm.mode === "edit" || Boolean(tipActionId)}
+                  onChange={(event) =>
+                    setTipForm((current) =>
+                      current
+                        ? { ...current, employeeId: event.target.value }
+                        : current,
+                    )
+                  }
+                  required
+                >
+                  <option value="">Select server</option>
+                  {serverEmployees.map((employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="d-flex flex-column gap-1">
+                <span className="fw-semibold">Work Date</span>
+                <input
+                  className="form-control"
+                  type="date"
+                  value={tipForm.workDate}
+                  disabled={tipForm.mode === "edit" || Boolean(tipActionId)}
+                  onChange={(event) =>
+                    setTipForm((current) =>
+                      current
+                        ? { ...current, workDate: event.target.value }
+                        : current,
+                    )
+                  }
+                  required
+                />
+              </label>
+
+              <div className="row g-3">
+                <div className="col-12 col-md-6">
+                  <label className="form-label">Cash Tips</label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={tipForm.cashTips}
+                    disabled={Boolean(tipActionId)}
+                    onChange={(event) =>
+                      setTipForm((current) =>
+                        current
+                          ? { ...current, cashTips: event.target.value }
+                          : current,
+                      )
+                    }
+                    required
+                  />
+                </div>
+                <div className="col-12 col-md-6">
+                  <label className="form-label">Credit Card Tips</label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={tipForm.creditCardTips}
+                    disabled={Boolean(tipActionId)}
+                    onChange={(event) =>
+                      setTipForm((current) =>
+                        current
+                          ? { ...current, creditCardTips: event.target.value }
+                          : current,
+                      )
+                    }
+                    required
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="embedded-confirm-actions">
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                disabled={Boolean(tipActionId)}
+                onClick={() => setTipForm(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={Boolean(tipActionId)}
+              >
+                {tipActionId ? "Saving..." : "Save Tip Entry"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

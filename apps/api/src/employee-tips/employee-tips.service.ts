@@ -9,6 +9,10 @@ import { TenancyService } from '../tenancy/tenancy.service';
 import type { AuthUser } from '../auth/auth.types';
 import type { SubmitEmployeeTipDto } from './dto/submit-employee-tip.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import type {
+  CreateAdminEmployeeTipDto,
+  UpdateAdminEmployeeTipDto,
+} from './dto/admin-employee-tip.dto';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TIP_EDIT_WINDOW_DAYS = 7;
@@ -197,6 +201,137 @@ export class EmployeeTipsService {
         creditCardTips: toCurrency(totals.creditCardTips),
         totalTips: toCurrency(totals.cashTips + totals.creditCardTips),
       },
+    };
+  }
+
+  async createAdminTip(authUser: AuthUser, dto: CreateAdminEmployeeTipDto) {
+    const access = await this.tenancy.requireAnyFeature(authUser, [
+      'tips',
+      'reports',
+    ]);
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
+    const workDateUtc = this.dateKeyToUtc(dto.workDate);
+
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        tenantId: tenant.id,
+        id: dto.employeeId,
+        deletedAt: null,
+        isServer: true,
+        ...this.scopedOfficeFilter(
+          officeScope.officeId,
+          officeScope.restrictedToAllowedOffice,
+        ),
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('Server employee not found.');
+    }
+
+    const existing = await this.prisma.employeeTip.findUnique({
+      where: {
+        tenantId_employeeId_workDate: {
+          tenantId: tenant.id,
+          employeeId: employee.id,
+          workDate: workDateUtc,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existing) {
+      throw new BadRequestException(
+        'Tips already exist for this employee and date. Edit the existing row instead.',
+      );
+    }
+
+    const tip = await this.prisma.employeeTip.create({
+      data: {
+        tenantId: tenant.id,
+        employeeId: employee.id,
+        workDate: workDateUtc,
+        cashTips: toCurrency(dto.cashTips),
+        creditCardTips: toCurrency(dto.creditCardTips),
+      },
+    });
+
+    return this.toTipResponse(tip);
+  }
+
+  async updateAdminTip(
+    authUser: AuthUser,
+    tipId: string,
+    dto: UpdateAdminEmployeeTipDto,
+  ) {
+    const tip = await this.findAdminTip(authUser, tipId);
+
+    const updated = await this.prisma.employeeTip.update({
+      where: { id: tip.id },
+      data: {
+        cashTips: toCurrency(dto.cashTips),
+        creditCardTips: toCurrency(dto.creditCardTips),
+      },
+    });
+
+    return this.toTipResponse(updated);
+  }
+
+  async deleteAdminTip(authUser: AuthUser, tipId: string) {
+    const tip = await this.findAdminTip(authUser, tipId);
+    await this.prisma.employeeTip.delete({
+      where: { id: tip.id },
+    });
+    return { ok: true, id: tip.id, deleted: true };
+  }
+
+  private async findAdminTip(authUser: AuthUser, tipId: string) {
+    const access = await this.tenancy.requireAnyFeature(authUser, [
+      'tips',
+      'reports',
+    ]);
+    const { tenant } = access;
+    const officeScope = this.tenancy.resolveOfficeScope(access);
+
+    const tip = await this.prisma.employeeTip.findFirst({
+      where: {
+        id: tipId,
+        tenantId: tenant.id,
+        employee: {
+          deletedAt: null,
+          ...this.scopedOfficeFilter(
+            officeScope.officeId,
+            officeScope.restrictedToAllowedOffice,
+          ),
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!tip) {
+      throw new NotFoundException('Tip entry not found.');
+    }
+
+    return tip;
+  }
+
+  private scopedOfficeFilter(
+    officeId?: string | null,
+    strictOfficeMatch = false,
+  ) {
+    const scopedOfficeId = officeId?.trim() || undefined;
+    if (!scopedOfficeId) {
+      return {};
+    }
+    if (strictOfficeMatch) {
+      return { officeId: scopedOfficeId };
+    }
+    return {
+      OR: [{ officeId: scopedOfficeId }, { officeId: null }],
     };
   }
 

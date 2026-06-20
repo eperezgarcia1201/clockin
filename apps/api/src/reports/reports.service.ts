@@ -69,6 +69,7 @@ type PunchPhotoSummary = {
 };
 
 type DayTips = {
+  id: string;
   date: string;
   cashTips: number;
   creditCardTips: number;
@@ -569,6 +570,7 @@ export class ReportsService {
           const cashTips = Number(tip.cashTips.toFixed(2));
           const creditCardTips = Number(tip.creditCardTips.toFixed(2));
           return {
+            id: tip.id,
             date: tip.workDate.toISOString().slice(0, 10),
             cashTips,
             creditCardTips,
@@ -2769,10 +2771,7 @@ export function buildDailySummary({
 }) {
   const intervals: Array<{ start: number; end: number }> = [];
   let currentStart: number | null = null;
-  const effectiveRangeEndUtc = Math.min(
-    rangeEndUtc,
-    nowUtc ?? Date.now(),
-  );
+  const effectiveRangeEndUtc = Math.min(rangeEndUtc, nowUtc ?? Date.now());
 
   if (before && WORKING_TYPES.has(before.type)) {
     currentStart = rangeStartUtc;
