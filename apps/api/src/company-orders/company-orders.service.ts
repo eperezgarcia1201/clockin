@@ -13,9 +13,7 @@ import type {
   UpdateCompanyOrderCatalogDto,
 } from './dto/update-company-order-catalog.dto';
 import type { UpdateCompanyOrderInPersonDto } from './dto/update-company-order-in-person.dto';
-import {
-  COMPANY_ORDER_CATALOG,
-} from './company-order-catalog';
+import { COMPANY_ORDER_CATALOG } from './company-order-catalog';
 
 const catalogItemKey = (nameEs: string, nameEn: string) =>
   `${nameEs.trim().toLowerCase()}|${nameEn.trim().toLowerCase()}`;
@@ -92,10 +90,7 @@ type CatalogItemSettings = {
   caseSizeLb: number | null;
   companyUnitPrice: number | null;
 };
-type CatalogSettingsLookup = Map<
-  string,
-  Map<string, CatalogItemSettings>
->;
+type CatalogSettingsLookup = Map<string, Map<string, CatalogItemSettings>>;
 
 type CompanyOrderDbRow = {
   id: string;
@@ -718,7 +713,8 @@ export class CompanyOrdersService {
 
     const normalizedSupplierKey = supplierName.toLowerCase();
     const matchingOrders = orders.filter(
-      (order) => order.supplierName.trim().toLowerCase() === normalizedSupplierKey,
+      (order) =>
+        order.supplierName.trim().toLowerCase() === normalizedSupplierKey,
     );
 
     if (!matchingOrders.length) {
@@ -839,7 +835,10 @@ export class CompanyOrdersService {
           nameEn: item.nameEn,
         });
       });
-      validItemsBySupplier.set(order.supplierName.trim().toLowerCase(), itemMap);
+      validItemsBySupplier.set(
+        order.supplierName.trim().toLowerCase(),
+        itemMap,
+      );
     });
 
     if (!ordersBySupplier.size) {
@@ -888,7 +887,8 @@ export class CompanyOrdersService {
         nameEn: item.nameEn.trim(),
         purchasedQuantity: item.purchasedQuantity,
         purchasedWeightLb:
-          item.purchasedWeightLb === undefined || item.purchasedWeightLb === null
+          item.purchasedWeightLb === undefined ||
+          item.purchasedWeightLb === null
             ? null
             : item.purchasedWeightLb,
         unitPrice:
@@ -1129,17 +1129,13 @@ export class CompanyOrdersService {
       };
     }
 
-    const pdf = this.buildOrdersPdf(
-      serializedOrders,
-      catalogSettingsLookup,
-      {
-        weekStartDate: week.weekStartKey,
-        weekEndDate: week.weekEndKey,
-        locationLabel: this.resolvePdfLocationLabel(serializedOrders),
-        supplierLabel: supplierName || null,
-        generatedAt: new Date(),
-      },
-    );
+    const pdf = this.buildOrdersPdf(serializedOrders, catalogSettingsLookup, {
+      weekStartDate: week.weekStartKey,
+      weekEndDate: week.weekEndKey,
+      locationLabel: this.resolvePdfLocationLabel(serializedOrders),
+      supplierLabel: supplierName || null,
+      generatedAt: new Date(),
+    });
     return {
       filename: this.buildWeeklyExportFilename(
         week.weekStartKey,
@@ -1227,7 +1223,7 @@ export class CompanyOrdersService {
     } else {
       orders.forEach((order) => {
         const submittedDatesLabel = order.submittedDates
-          .map((dateKey) => this.formatDateKeyUs(dateKey))
+          .map((dateKey) => this.formatDateKeyUsWithDay(dateKey))
           .join('; ');
         if (!order.items.length) {
           rows.push([
@@ -1299,7 +1295,7 @@ export class CompanyOrdersService {
     } else {
       orders.forEach((order) => {
         const submittedDatesLabel = order.submittedDates
-          .map((dateKey) => this.formatDateKeyUs(dateKey))
+          .map((dateKey) => this.formatDateKeyUsWithDay(dateKey))
           .join('; ');
         const baseCells = [
           formattedWeekStartDate,
@@ -1562,9 +1558,7 @@ export class CompanyOrdersService {
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return bucket;
     }
-    bucket[orderUnit] = Number(
-      (bucket[orderUnit] + quantity).toFixed(2),
-    );
+    bucket[orderUnit] = Number((bucket[orderUnit] + quantity).toFixed(2));
     return bucket;
   }
 
@@ -1600,11 +1594,7 @@ export class CompanyOrdersService {
     if (comparisonUnit !== LB_COMPARISON_UNIT) {
       return '-';
     }
-    if (
-      orderQuantityUnit === 'case' &&
-      caseSizeLb !== null &&
-      caseSizeLb > 0
-    ) {
+    if (orderQuantityUnit === 'case' && caseSizeLb !== null && caseSizeLb > 0) {
       const totalWeight = Number((quantity * caseSizeLb).toFixed(2));
       return this.formatPdfWeightWithUnit(totalWeight);
     }
@@ -1773,8 +1763,10 @@ export class CompanyOrdersService {
   private serializeOrder(order: CompanyOrderDbRow) {
     const parsedNotes = this.readStoredOrderNotes(order.notes);
     const fallbackWeek = this.getWeekBounds(order.orderDate);
-    const weekStartDate = fallbackWeek.weekStartKey;
-    const weekEndDate = fallbackWeek.weekEndKey;
+    const weekStartDate =
+      this.normalizeDateKey(parsedNotes.weekStart) || fallbackWeek.weekStartKey;
+    const weekEndDate =
+      this.normalizeDateKey(parsedNotes.weekEnd) || fallbackWeek.weekEndKey;
 
     const submittedDates = this.normalizeDateKeys(
       parsedNotes.submittedDates.length
@@ -2082,7 +2074,8 @@ export class CompanyOrdersService {
               caseSizeLb: settings.caseSizeLb,
               purchasedWeightLb,
               unitPrice:
-                purchase?.unitPrice === null || purchase?.unitPrice === undefined
+                purchase?.unitPrice === null ||
+                purchase?.unitPrice === undefined
                   ? null
                   : Number(purchase.unitPrice.toFixed(2)),
               companyUnitPrice:
@@ -2118,10 +2111,7 @@ export class CompanyOrdersService {
           ),
           totalPurchasedWeightLb: Number(
             items
-              .reduce(
-                (total, item) => total + (item.purchasedWeightLb || 0),
-                0,
-              )
+              .reduce((total, item) => total + (item.purchasedWeightLb || 0), 0)
               .toFixed(2),
           ),
           items,
@@ -2150,8 +2140,10 @@ export class CompanyOrdersService {
               catalogItemKey(item.nameEs, item.nameEn),
             );
             const remainingQuantity = Number(
-              Math.max(0, item.quantity - (purchase?.purchasedQuantity || 0))
-                .toFixed(2),
+              Math.max(
+                0,
+                item.quantity - (purchase?.purchasedQuantity || 0),
+              ).toFixed(2),
             );
             if (remainingQuantity <= 0) {
               return null;
@@ -2194,7 +2186,10 @@ export class CompanyOrdersService {
   ) {
     const purchasesByKey = new Map<string, StoredInPersonPurchase>();
     order.inPersonPurchases.forEach((purchase) => {
-      purchasesByKey.set(catalogItemKey(purchase.nameEs, purchase.nameEn), purchase);
+      purchasesByKey.set(
+        catalogItemKey(purchase.nameEs, purchase.nameEn),
+        purchase,
+      );
     });
 
     const rows = order.items
@@ -2203,7 +2198,10 @@ export class CompanyOrdersService {
           catalogItemKey(item.nameEs, item.nameEn),
         );
         const remainingQuantity = Number(
-          Math.max(0, item.quantity - (purchase?.purchasedQuantity || 0)).toFixed(2),
+          Math.max(
+            0,
+            item.quantity - (purchase?.purchasedQuantity || 0),
+          ).toFixed(2),
         );
         if (remainingQuantity <= 0) {
           return null;
@@ -2298,7 +2296,10 @@ export class CompanyOrdersService {
   ) {
     const purchasesByKey = new Map<string, StoredInPersonPurchase>();
     order.inPersonPurchases.forEach((purchase) => {
-      purchasesByKey.set(catalogItemKey(purchase.nameEs, purchase.nameEn), purchase);
+      purchasesByKey.set(
+        catalogItemKey(purchase.nameEs, purchase.nameEn),
+        purchase,
+      );
     });
 
     const quantitiesByUnit = this.createOrderQuantityByUnit();
@@ -2323,7 +2324,10 @@ export class CompanyOrdersService {
       );
       this.addOrderQuantityByUnit(
         quantitiesByUnit,
-        this.resolveOrderQuantityUnit(settings.comparisonUnit, order.lbOrderMode),
+        this.resolveOrderQuantityUnit(
+          settings.comparisonUnit,
+          order.lbOrderMode,
+        ),
         remainingQuantity,
       );
       if (settings.comparisonUnit === LB_COMPARISON_UNIT) {
@@ -2331,9 +2335,16 @@ export class CompanyOrdersService {
           settings.comparisonUnit,
           order.lbOrderMode,
         );
-        if (orderQuantityUnit === 'case' && settings.caseSizeLb && settings.caseSizeLb > 0) {
+        if (
+          orderQuantityUnit === 'case' &&
+          settings.caseSizeLb &&
+          settings.caseSizeLb > 0
+        ) {
           totalRemainingWeightLb = Number(
-            (totalRemainingWeightLb + remainingQuantity * settings.caseSizeLb).toFixed(2),
+            (
+              totalRemainingWeightLb +
+              remainingQuantity * settings.caseSizeLb
+            ).toFixed(2),
           );
         } else if (orderQuantityUnit === 'lb') {
           totalRemainingWeightLb = Number(
@@ -2376,7 +2387,9 @@ export class CompanyOrdersService {
                 Math.max(
                   0,
                   purchase.purchasedWeightLb ??
-                    (orderQuantityUnit === 'lb' ? purchase.purchasedQuantity || 0 : 0),
+                    (orderQuantityUnit === 'lb'
+                      ? purchase.purchasedQuantity || 0
+                      : 0),
                 ).toFixed(2),
               )
             : purchasedQuantity;
@@ -2467,7 +2480,9 @@ export class CompanyOrdersService {
       items,
       purchasedQuantitiesByUnit,
       totalPurchasedWeightLb: Number(
-        items.reduce((total, item) => total + (item.purchasedWeightLb || 0), 0).toFixed(2),
+        items
+          .reduce((total, item) => total + (item.purchasedWeightLb || 0), 0)
+          .toFixed(2),
       ),
       totalInPersonSpend: Number(
         items
@@ -2480,7 +2495,9 @@ export class CompanyOrdersService {
           .toFixed(2),
       ),
       totalSavings: Number(
-        items.reduce((total, item) => total + (item.savings || 0), 0).toFixed(2),
+        items
+          .reduce((total, item) => total + (item.savings || 0), 0)
+          .toFixed(2),
       ),
     };
   }
@@ -2513,7 +2530,9 @@ export class CompanyOrdersService {
         return {
           purchasedQuantitiesByUnit: acc.purchasedQuantitiesByUnit,
           totalPurchasedWeightLb: Number(
-            (acc.totalPurchasedWeightLb + summary.totalPurchasedWeightLb).toFixed(2),
+            (
+              acc.totalPurchasedWeightLb + summary.totalPurchasedWeightLb
+            ).toFixed(2),
           ),
           totalInPersonSpend: Number(
             (acc.totalInPersonSpend + summary.totalInPersonSpend).toFixed(2),
@@ -2610,7 +2629,7 @@ export class CompanyOrdersService {
           purchase?.companyUnitPrice !== undefined &&
           purchase.companyUnitPrice > 0
             ? Number(purchase.companyUnitPrice.toFixed(2))
-            : settings.companyUnitPrice ?? null;
+            : (settings.companyUnitPrice ?? null);
         const comparisonQuantity =
           settings.comparisonUnit === LB_COMPARISON_UNIT
             ? purchasedWeightLb
@@ -2637,7 +2656,9 @@ export class CompanyOrdersService {
           itemLabel: this.formatPdfItemLabel(nameEs, nameEn),
           requestedCount: this.formatPdfQuantity(orderedQuantity),
           storeCount:
-            purchasedQuantity > 0 ? this.formatPdfQuantity(purchasedQuantity) : '-',
+            purchasedQuantity > 0
+              ? this.formatPdfQuantity(purchasedQuantity)
+              : '-',
           needCount: this.formatPdfQuantity(remainingQuantity),
           lbs:
             settings.comparisonUnit === LB_COMPARISON_UNIT &&
@@ -2715,6 +2736,20 @@ export class CompanyOrdersService {
       return dateKey;
     }
     return this.formatDateUs(value);
+  }
+
+  private formatDateKeyUsWithDay(dateKey: string) {
+    const value = dateKeyToUtc(dateKey);
+    if (Number.isNaN(value.getTime())) {
+      return dateKey;
+    }
+    return value.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: '2-digit',
+      day: '2-digit',
+      year: '2-digit',
+      timeZone: 'UTC',
+    });
   }
 
   private async notifyCompanyOrderSubmitted(
@@ -2922,7 +2957,8 @@ export class CompanyOrdersService {
           ? null
           : Number(value.companyUnitPrice);
       const purchasedWeightLbRaw =
-        value.purchasedWeightLb === null || value.purchasedWeightLb === undefined
+        value.purchasedWeightLb === null ||
+        value.purchasedWeightLb === undefined
           ? null
           : Number(value.purchasedWeightLb);
       const safePurchasedQuantity =
@@ -2936,7 +2972,9 @@ export class CompanyOrdersService {
           ? Number(purchasedWeightLbRaw.toFixed(2))
           : null;
       const safeUnitPrice =
-        unitPriceRaw !== null && Number.isFinite(unitPriceRaw) && unitPriceRaw >= 0
+        unitPriceRaw !== null &&
+        Number.isFinite(unitPriceRaw) &&
+        unitPriceRaw >= 0
           ? Number(unitPriceRaw.toFixed(2))
           : null;
       const safeCompanyUnitPrice =
@@ -3085,10 +3123,8 @@ export class CompanyOrdersService {
                     !Array.isArray(value),
                 )
                 .map((value) => ({
-                  nameEs:
-                    typeof value.nameEs === 'string' ? value.nameEs : '',
-                  nameEn:
-                    typeof value.nameEn === 'string' ? value.nameEn : '',
+                  nameEs: typeof value.nameEs === 'string' ? value.nameEs : '',
+                  nameEn: typeof value.nameEn === 'string' ? value.nameEn : '',
                   purchasedQuantity:
                     typeof value.purchasedQuantity === 'number'
                       ? value.purchasedQuantity
@@ -3541,7 +3577,12 @@ export class CompanyOrdersService {
           summaryX + summaryWidth,
           summaryHeaderBottom,
         );
-        drawLine(summaryX, summaryBottom, summaryX + summaryWidth, summaryBottom);
+        drawLine(
+          summaryX,
+          summaryBottom,
+          summaryX + summaryWidth,
+          summaryBottom,
+        );
         drawLine(summaryX, summaryBottom, summaryX, summaryTop);
         drawLine(
           summaryX + summaryColWidth,
@@ -3561,7 +3602,15 @@ export class CompanyOrdersService {
           summaryX + summaryWidth,
           summaryTop,
         );
-        drawCenteredText('In-Person', summaryX, summaryColWidth, summaryTop - 14, 10, false, 1);
+        drawCenteredText(
+          'In-Person',
+          summaryX,
+          summaryColWidth,
+          summaryTop - 14,
+          10,
+          false,
+          1,
+        );
         drawCenteredText(
           'Supplier',
           summaryX + summaryColWidth,
@@ -3637,7 +3686,8 @@ export class CompanyOrdersService {
         );
         rowsThatFit = Math.max(1, rowsThatFit);
         let rowsThisPage = Math.min(rowsRemaining, rowsThatFit);
-        const tentativeFinalChunk = rowOffset + rowsThisPage >= combinedRows.length;
+        const tentativeFinalChunk =
+          rowOffset + rowsThisPage >= combinedRows.length;
         if (tentativeFinalChunk) {
           const finalRowsThatFit = Math.floor(
             (tableTop - BOTTOM - 104 - TABLE_HEADER_HEIGHT) / TABLE_ROW_HEIGHT,
@@ -3649,7 +3699,10 @@ export class CompanyOrdersService {
           continue;
         }
 
-        const chunkRows = combinedRows.slice(rowOffset, rowOffset + rowsThisPage);
+        const chunkRows = combinedRows.slice(
+          rowOffset,
+          rowOffset + rowsThisPage,
+        );
         fillRect(
           tableX,
           tableTop - TABLE_HEADER_HEIGHT,
@@ -3657,17 +3710,97 @@ export class CompanyOrdersService {
           TABLE_HEADER_HEIGHT,
           TABLE_HEADER_GRAY,
         );
-        drawCenteredText('#', tableX, colIndexRight - tableX, tableTop - 14, 9, false, 1);
+        drawCenteredText(
+          '#',
+          tableX,
+          colIndexRight - tableX,
+          tableTop - 14,
+          9,
+          false,
+          1,
+        );
         drawText('Item', colIndexRight + 8, tableTop - 14, 9, false, 1);
-        drawCenteredText('Req', colItemRight, colRequestedRight - colItemRight, tableTop - 14, 9, false, 1);
-        drawCenteredText('Store', colRequestedRight, colStoreRight - colRequestedRight, tableTop - 14, 8, false, 1);
-        drawCenteredText('Need', colStoreRight, colNeedRight - colStoreRight, tableTop - 14, 9, false, 1);
-        drawCenteredText('Lbs', colNeedRight, colLbsRight - colNeedRight, tableTop - 14, 9, false, 1);
-        drawCenteredText('Store $', colLbsRight, colOurPriceRight - colLbsRight, tableTop - 14, 8, false, 1);
-        drawCenteredText('Sup $', colOurPriceRight, colSupplierPriceRight - colOurPriceRight, tableTop - 14, 9, false, 1);
-        drawCenteredText('Store Tot', colSupplierPriceRight, colOurTotalRight - colSupplierPriceRight, tableTop - 14, 7, false, 1);
-        drawCenteredText('Sup Tot', colOurTotalRight, colSupplierTotalRight - colOurTotalRight, tableTop - 14, 8, false, 1);
-        drawCenteredText('Save', colSupplierTotalRight, tableRight - colSupplierTotalRight, tableTop - 14, 9, false, 1);
+        drawCenteredText(
+          'Req',
+          colItemRight,
+          colRequestedRight - colItemRight,
+          tableTop - 14,
+          9,
+          false,
+          1,
+        );
+        drawCenteredText(
+          'Store',
+          colRequestedRight,
+          colStoreRight - colRequestedRight,
+          tableTop - 14,
+          8,
+          false,
+          1,
+        );
+        drawCenteredText(
+          'Need',
+          colStoreRight,
+          colNeedRight - colStoreRight,
+          tableTop - 14,
+          9,
+          false,
+          1,
+        );
+        drawCenteredText(
+          'Lbs',
+          colNeedRight,
+          colLbsRight - colNeedRight,
+          tableTop - 14,
+          9,
+          false,
+          1,
+        );
+        drawCenteredText(
+          'Store $',
+          colLbsRight,
+          colOurPriceRight - colLbsRight,
+          tableTop - 14,
+          8,
+          false,
+          1,
+        );
+        drawCenteredText(
+          'Sup $',
+          colOurPriceRight,
+          colSupplierPriceRight - colOurPriceRight,
+          tableTop - 14,
+          9,
+          false,
+          1,
+        );
+        drawCenteredText(
+          'Store Tot',
+          colSupplierPriceRight,
+          colOurTotalRight - colSupplierPriceRight,
+          tableTop - 14,
+          7,
+          false,
+          1,
+        );
+        drawCenteredText(
+          'Sup Tot',
+          colOurTotalRight,
+          colSupplierTotalRight - colOurTotalRight,
+          tableTop - 14,
+          8,
+          false,
+          1,
+        );
+        drawCenteredText(
+          'Save',
+          colSupplierTotalRight,
+          tableRight - colSupplierTotalRight,
+          tableTop - 14,
+          9,
+          false,
+          1,
+        );
 
         chunkRows.forEach((row, rowIndex) => {
           const textY = tableTop - 14 - TABLE_ROW_HEIGHT * (rowIndex + 1);
@@ -3684,14 +3817,62 @@ export class CompanyOrdersService {
             textY,
             9,
           );
-          drawCenteredText(row.requestedCount, colItemRight, colRequestedRight - colItemRight, textY, 9);
-          drawCenteredText(row.storeCount, colRequestedRight, colStoreRight - colRequestedRight, textY, 9);
-          drawCenteredText(row.needCount, colStoreRight, colNeedRight - colStoreRight, textY, 9);
-          drawCenteredText(row.lbs, colNeedRight, colLbsRight - colNeedRight, textY, 9);
-          drawCenteredText(row.ourPrice, colLbsRight, colOurPriceRight - colLbsRight, textY, 9);
-          drawCenteredText(row.supplierPrice, colOurPriceRight, colSupplierPriceRight - colOurPriceRight, textY, 9);
-          drawCenteredText(row.ourTotal, colSupplierPriceRight, colOurTotalRight - colSupplierPriceRight, textY, 9);
-          drawCenteredText(row.supplierTotal, colOurTotalRight, colSupplierTotalRight - colOurTotalRight, textY, 9);
+          drawCenteredText(
+            row.requestedCount,
+            colItemRight,
+            colRequestedRight - colItemRight,
+            textY,
+            9,
+          );
+          drawCenteredText(
+            row.storeCount,
+            colRequestedRight,
+            colStoreRight - colRequestedRight,
+            textY,
+            9,
+          );
+          drawCenteredText(
+            row.needCount,
+            colStoreRight,
+            colNeedRight - colStoreRight,
+            textY,
+            9,
+          );
+          drawCenteredText(
+            row.lbs,
+            colNeedRight,
+            colLbsRight - colNeedRight,
+            textY,
+            9,
+          );
+          drawCenteredText(
+            row.ourPrice,
+            colLbsRight,
+            colOurPriceRight - colLbsRight,
+            textY,
+            9,
+          );
+          drawCenteredText(
+            row.supplierPrice,
+            colOurPriceRight,
+            colSupplierPriceRight - colOurPriceRight,
+            textY,
+            9,
+          );
+          drawCenteredText(
+            row.ourTotal,
+            colSupplierPriceRight,
+            colOurTotalRight - colSupplierPriceRight,
+            textY,
+            9,
+          );
+          drawCenteredText(
+            row.supplierTotal,
+            colOurTotalRight,
+            colSupplierTotalRight - colOurTotalRight,
+            textY,
+            9,
+          );
           const saveRgb =
             row.saveValue !== null && row.saveValue > 0.005
               ? POSITIVE_RGB
@@ -3761,13 +3942,20 @@ export class CompanyOrdersService {
           const summaryTableBottom = summaryTableTop - summaryRowHeight * 3;
           const remainingWeightLabel =
             remainingTotals.totalRemainingWeightLb > 0
-              ? this.formatPdfWeightLabel(remainingTotals.totalRemainingWeightLb)
+              ? this.formatPdfWeightLabel(
+                  remainingTotals.totalRemainingWeightLb,
+                )
               : '0 lb';
           const summaryRows = [
-            ['Items To Order', this.formatPdfQuantity(remainingTotals.itemCount)],
+            [
+              'Items To Order',
+              this.formatPdfQuantity(remainingTotals.itemCount),
+            ],
             [
               'To Order Qty',
-              this.formatOrderQuantitySummaryByUnit(remainingTotals.quantitiesByUnit),
+              this.formatOrderQuantitySummaryByUnit(
+                remainingTotals.quantitiesByUnit,
+              ),
             ],
             ['To Order Weight', remainingWeightLabel],
           ];
@@ -3782,7 +3970,12 @@ export class CompanyOrdersService {
             const y = summaryTableTop - summaryRowHeight * row;
             drawLine(summaryBoxX, y, summaryBoxX + summaryBoxWidth, y);
           }
-          drawLine(summaryBoxX, summaryTableBottom, summaryBoxX, summaryTableTop);
+          drawLine(
+            summaryBoxX,
+            summaryTableBottom,
+            summaryBoxX,
+            summaryTableTop,
+          );
           drawLine(
             summaryLabelRight,
             summaryTableBottom,
@@ -3809,7 +4002,14 @@ export class CompanyOrdersService {
     });
 
     if (commands.length === 0) {
-      drawCenteredText('COMPANY PURCHASE ORDERS', LEFT, CONTENT_WIDTH, TOP, 18, true);
+      drawCenteredText(
+        'COMPANY PURCHASE ORDERS',
+        LEFT,
+        CONTENT_WIDTH,
+        TOP,
+        18,
+        true,
+      );
     }
     pages.push(commands.join('\n'));
     return this.buildPdfDocument(pages, PAGE_WIDTH, PAGE_HEIGHT);
@@ -3822,10 +4022,7 @@ export class CompanyOrdersService {
   private formatPdfWeekLabelLong(weekStartDate: string, weekEndDate: string) {
     const weekStart = dateKeyToUtc(weekStartDate);
     const weekEnd = dateKeyToUtc(weekEndDate);
-    if (
-      Number.isNaN(weekStart.getTime()) ||
-      Number.isNaN(weekEnd.getTime())
-    ) {
+    if (Number.isNaN(weekStart.getTime()) || Number.isNaN(weekEnd.getTime())) {
       return this.formatPdfWeekLabel(weekStartDate, weekEndDate);
     }
     const startLabel = weekStart.toLocaleDateString('en-US', {
@@ -3848,7 +4045,7 @@ export class CompanyOrdersService {
       return 'N/A';
     }
     return normalized
-      .map((dateKey) => this.formatDateKeyUs(dateKey))
+      .map((dateKey) => this.formatDateKeyUsWithDay(dateKey))
       .join(', ');
   }
 

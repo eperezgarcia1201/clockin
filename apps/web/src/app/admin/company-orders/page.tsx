@@ -60,6 +60,33 @@ const formatDate = (value: string) => {
   });
 };
 
+const formatSubmittedDate = (value: string) => {
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  const parsed = dateOnlyMatch
+    ? new Date(`${value.trim()}T00:00:00.000Z`)
+    : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return formatDate(value);
+  }
+  return parsed.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "2-digit",
+    day: "2-digit",
+    year: "2-digit",
+    timeZone: dateOnlyMatch ? "UTC" : undefined,
+  });
+};
+
+const formatSubmittedDates = (values?: string[]) => {
+  const normalized = Array.isArray(values)
+    ? values.filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value.trim()))
+    : [];
+  if (!normalized.length) {
+    return "";
+  }
+  return normalized.map(formatSubmittedDate).join(", ");
+};
+
 const getLocalDateKey = (value = new Date()) => {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -935,14 +962,20 @@ export default function AdminCompanyOrdersPage() {
                               {order.orderLabel}
                             </div>
                           ) : null}
+                          {formatSubmittedDates(order.submittedDates) ? (
+                            <div className="fw-semibold small text-success">
+                              {tr("Submitted:", "Enviada:")}{" "}
+                              {formatSubmittedDates(order.submittedDates)}
+                            </div>
+                          ) : null}
                           <div className="text-muted small">
                             {tr("Created:", "Creada:")}{" "}
                             {formatDateTime(order.createdAt)}
                           </div>
                           <div className="text-muted small">
                             {tr("Last modified:", "Última modificación:")}{" "}
-                            {formatDateTime(order.updatedAt || order.orderDate)} |{" "}
-                            {order.itemCount} {tr("items", "artículos")} |{" "}
+                            {formatDateTime(order.updatedAt || order.orderDate)}{" "}
+                            | {order.itemCount} {tr("items", "artículos")} |{" "}
                             {order.totalQuantity}
                           </div>
                           <div className="fw-semibold small text-primary-emphasis">
