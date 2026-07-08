@@ -81,13 +81,15 @@ export function TerminalEntryScreens({
           onChangeText={onTenantInputChange}
           autoCapitalize="none"
           autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={() => onConfigureTenant()}
         />
 
         {tenantStatus && <Text style={styles.statusText}>{tenantStatus}</Text>}
 
         <TouchableOpacity
           style={[styles.button, styles.primary]}
-          onPress={onConfigureTenant}
+          onPress={() => onConfigureTenant()}
           disabled={resolvingTenant}
         >
           <Text style={styles.primaryText}>

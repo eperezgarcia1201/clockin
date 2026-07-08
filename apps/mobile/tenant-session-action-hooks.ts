@@ -37,8 +37,11 @@ export const useTenantSessionActions = (params: {
   setLanguage: Dispatch<SetStateAction<"en" | "es">>;
   setEmployeeName: Dispatch<SetStateAction<string>>;
 }) => {
-  const configureTenant = async () => {
-    const value = params.tenantInput.trim();
+  const configureTenant = async (valueOverride?: string) => {
+    const value =
+      typeof valueOverride === "string"
+        ? valueOverride.trim()
+        : params.tenantInput.trim();
     if (!value) {
       params.setTenantStatus(params.t.enterTenantNameOrSlug);
       return;
